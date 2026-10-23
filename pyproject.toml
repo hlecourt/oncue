@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "subtitle-guard"
+version = "0.1.0"
+description = "Verify and repair subtitle timing against a subtitle track embedded in the video, with a Bazarr integration."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.optional-dependencies]
+audio = ["ffsubsync>=0.4.25"]
+test = ["pytest>=8"]
+
+[project.scripts]
+subtitle-guard = "subtitle_guard.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/subtitle_guard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
