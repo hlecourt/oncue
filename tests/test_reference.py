@@ -34,8 +34,8 @@ def test_forced_and_commentary_tracks_are_not_references():
 
 
 def test_track_choice_prefers_complete_text_tracks_then_english():
-    short_english = {"language": "eng", "image": False, "sdh": False, "starts": list(range(60)), "ends": []}
-    full_french = {"language": "fre", "image": False, "sdh": False, "starts": list(range(600)), "ends": []}
-    full_english_image = {"language": "eng", "image": True, "sdh": False, "starts": list(range(600)), "ends": []}
+    short_english = {"index": 2, "language": "eng", "image": False, "sdh": False, "starts": list(range(60)), "ends": []}
+    full_french = {"index": 3, "language": "fre", "image": False, "sdh": False, "starts": list(range(600)), "ends": []}
+    full_english_image = {"index": 4, "language": "eng", "image": True, "sdh": False, "starts": list(range(600)), "ends": []}
     chosen = reference.choose_reference([short_english, full_french, full_english_image], False, 550)
-    assert chosen["kind"] == "fre-text"
+    assert chosen["kind"] == "fre-text" and chosen["index"] == 3 and not chosen["image"]

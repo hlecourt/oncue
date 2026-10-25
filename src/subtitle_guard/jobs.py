@@ -16,6 +16,7 @@ SCHEMA = (
     "decision text, confidence integer, confidence_band text, summary text, error text)",
     "create index if not exists jobs_waiting on jobs (status, run_after)",
     "create table if not exists seen (path text primary key, signature text not null, updated text not null)",
+    "create table if not exists reviews (path text primary key, signature text not null, accepted text not null)",
 )
 
 
@@ -97,6 +98,21 @@ def remember(path, signature):
     with closing(connect()) as connection:
         connection.execute("insert into seen (path, signature, updated) values (?, ?, ?) "
                            "on conflict (path) do update set signature = excluded.signature, updated = excluded.updated", (path, signature, now()))
+
+
+def accept(path, signature):
+    with closing(connect()) as connection:
+        connection.execute("insert into reviews (path, signature, accepted) values (?, ?, ?) "
+                           "on conflict (path) do update set signature = excluded.signature, accepted = excluded.accepted", (path, signature, now()))
+
+
+def accepted():
+    with closing(connect()) as connection:
+        return dict(connection.execute("select path, signature from reviews").fetchall())
+
+
+def for_subtitle(path, limit=20):
+    return [item for item in recent(limit=1000) if item["arguments"].get("subtitle") == path][:limit]
 
 
 def connect():
