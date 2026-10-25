@@ -18,19 +18,27 @@ SUPERVISION_SECONDS = 5.0
 
 
 def run_workers(count=WORKERS):
+    return supervise(worker_roles(count))
+
+
+def worker_roles(count):
+    return {f"worker-{number}": (work_forever, (number,)) for number in range(1, count + 1)}
+
+
+def supervise(roles):
     settings["echo"] = True
-    log("workers-started", workers=count, recovered=jobs.recover_running())
-    processes = {number: start_worker(number) for number in range(1, count + 1)}
+    log("supervisor-started", roles=sorted(roles), recovered=jobs.recover_running())
+    processes = {name: start(*role) for name, role in roles.items()}
     while True:
         time.sleep(SUPERVISION_SECONDS)
-        for number, process in list(processes.items()):
+        for name, process in list(processes.items()):
             if not process.is_alive():
-                log("worker-restarted", worker=number, exit_code=process.exitcode)
-                processes[number] = start_worker(number)
+                log("role-restarted", role=name, exit_code=process.exitcode)
+                processes[name] = start(*roles[name])
 
 
-def start_worker(number):
-    process = multiprocessing.Process(target=work_forever, args=(number,), daemon=True)
+def start(target, arguments):
+    process = multiprocessing.Process(target=target, args=arguments, daemon=True)
     process.start()
     return process
 

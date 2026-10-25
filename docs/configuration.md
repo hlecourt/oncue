@@ -9,23 +9,14 @@ subtitle-guard scan-movies [--apply]
 subtitle-guard scan-all [--apply]
 subtitle-guard needs-human
 subtitle-guard hook VIDEO SUBTITLE LANGUAGE PROVIDER SUBTITLE_ID MEDIA_ID [SERIES_ID]
+subtitle-guard scan-folder PATH [--apply] [--queue]
+subtitle-guard watch PATH... [--apply]
+subtitle-guard serve [--workers N] [--apply]
 ```
 
-As a Bazarr post-processing command (Settings > Subtitles > Post-processing), with the package available to Bazarr's Python:
+## Without Bazarr
 
-```
-python -m subtitle_guard hook "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
-```
-
-Bazarr runs this command without a shell. To keep its post-processing instant and let workers do the checks in parallel, queue the job instead:
-
-```
-/usr/bin/env PYTHONPATH=/opt/subtitle-guard /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
-```
-
-The hook needs a Python with numpy; on the linuxserver.io Bazarr image that is `/lsiopy/bin/python`.
-
-Turn off Bazarr's own audio sync (`use_subsync`) when the guard is in place: the guard falls back to ffsubsync by itself for videos without any embedded subtitle track, and marks those results as not verified.
+`scan-folder` checks every video under a folder against its external subtitles (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`...). Samples and hidden folders are skipped, and episode neighbours for the wrong-episode check come from `SxxEyy` or `NxNN` file names. `watch` queues every new or changed subtitle under one or more folders; `serve` does the same for the folders in `SUBTITLE_GUARD_LIBRARY`. Without Bazarr a rejected subtitle stays as it is and shows up for review; nothing is downloaded.
 
 ## Running as a service
 
@@ -50,6 +41,10 @@ Settings come from the environment:
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
+| `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
+| `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
+| `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` |
+| `SUBTITLE_GUARD_UI_TOKEN` | unset; when set, the UI asks for it |
 | `BAZARR_URL` | `http://localhost:6767` |
 | `BAZARR_API_KEY` | read from `BAZARR_CONFIG` |
 | `BAZARR_CONFIG` | `/config/config/config.yaml` |
