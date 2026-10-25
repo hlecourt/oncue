@@ -9,7 +9,7 @@ video start: the words do not matter, so the reference can be in any language, t
    programming (0.05 s steps over +/-400 s), using line starts and ends.
 4. It runs the same search against the reference reversed in time, which has the same density but no relation to the
    subtitle, and keeps the fix only if it clearly beats that null and every part is supported by the reference.
-5. It writes the fix after a backup when the result can be trusted.
+5. It scores the result from 0 to 100, and writes the fix after a backup when the result can be trusted.
 
 ## Decisions
 
@@ -22,7 +22,9 @@ video start: the words do not matter, so the reference can be in any language, t
 | `audio-synced` | no embedded track; synced to the audio with ffsubsync, not verified |
 | `unverified` | nothing to compare with, or too few lines (forced subtitles) |
 
-`needs-human` lists every subtitle whose last decision is not settled, or that still has weak minutes.
+Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up), `medium` (60 to 79), `low` (below 60), `none` (nothing accepted). It takes the weakest of three measures (the margin over noise or over the null alignment, the margin of the worst 2-minute window, and for realigned files the share of lines in supported segments), then removes 10 points per weak minute. On the benchmark, accepted results are almost all `high`; the few `medium` or `low` ones are the cases that really are less precise, such as very sloppy source timing.
+
+`needs-human` lists every subtitle whose last decision is not settled, has weak minutes, or has low confidence.
 
 ## Accuracy
 

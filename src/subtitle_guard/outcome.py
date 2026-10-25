@@ -6,8 +6,10 @@ SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"])
 
 
 def describe(outcome):
-    if outcome["decision"] in (DECISION["unverified"], DECISION["audio_synced"]):
+    if outcome["decision"] == DECISION["unverified"]:
         return f"subtitle-guard: {outcome['decision']} ({outcome['reason']})"
+    if outcome["decision"] == DECISION["audio_synced"]:
+        return f"subtitle-guard: {outcome['decision']} ({outcome['reason']}) | confidence {outcome.get('confidence', 0)} ({outcome.get('confidence_band', 'low')})"
     before, after = outcome["before"], outcome["after"]
     details = [f"subtitle-guard: {outcome['decision']}", f"reference {outcome['reference']}", f"noise {before['noise']:.2f}",
                f"matched {before['matched']:.2f} -> {after['matched']:.2f}", f"worst 2-min window {before['worst_window']:.2f} -> {after['worst_window']:.2f}"]
@@ -23,4 +25,6 @@ def describe(outcome):
         details.append("weak minutes " + ",".join(str(minute) for minute in outcome["weak_minutes"]))
     if outcome.get("matches"):
         details.append(f"matches {outcome['matches']}")
+    if "confidence" in outcome:
+        details.append(f"confidence {outcome['confidence']} ({outcome['confidence_band']})")
     return " | ".join(details)
