@@ -1,0 +1,18 @@
+# subtitle-guard on its own: it watches your media folders and checks every external subtitle it finds.
+# For Bazarr, use docker-compose.bazarr.yml instead.
+services:
+  subtitle-guard:
+    build: ..
+    image: subtitle-guard:latest
+    command: serve --workers 2          # add --apply to let the folder watch write fixes, not only report them
+    restart: unless-stopped
+    ports:
+      - "8484:8484"                     # web UI
+    environment:
+      SUBTITLE_GUARD_STATE: /config
+      SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
+      SUBTITLE_GUARD_UI_TOKEN: ${SUBTITLE_GUARD_UI_TOKEN}
+      SUBTITLE_GUARD_LIBRARY: /data/media/movies:/data/media/series   # the folders to watch
+    volumes:
+      - ./subtitle-guard:/config
+      - /mnt/media:/data

@@ -2,9 +2,9 @@
 
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Out-of-sync subtitles, fixed for you. subtitle-guard checks the external subtitles of your media folders against the subtitle
-track embedded in each video, fixes the timing when it is sure, and reports the rest. It works on the folders of a Jellyfin,
-Plex or Emby library, and can also plug into Bazarr.
+Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the subtitle
+track embedded in the video, fixes the timing on its own when it is sure, and lists the rest for you in a web UI. It works on
+the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
 
 Status: alpha.
 
@@ -18,7 +18,7 @@ automatic syncs rarely tell you when they got it wrong. subtitle-guard instead:
   source of timing made for that exact file;
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
 - only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
-- anything it cannot fix with confidence is left as it is and reported;
+- anything it cannot fix with confidence is left as it is and listed for you in the web UI;
 - changes only the timings, after a backup.
 
 How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
@@ -26,13 +26,17 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 ## Quick start
 
 ```
-pip install .
-subtitle-guard scan-folder /mnt/media/movies
-subtitle-guard watch /mnt/media/movies /mnt/media/series
+git clone https://github.com/hlecourt/subtitle-guard.git
+cd subtitle-guard/examples
+docker compose up -d
 ```
 
-`scan-folder` checks every external subtitle under a folder (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) once, and `watch` keeps
-checking new or changed ones. Both only report what they would do until `--apply` is given.
+Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch. Then open `http://<host>:8484`
+with the token you set in `SUBTITLE_GUARD_UI_TOKEN`.
+
+The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one after
+that. By default it only reports what it would do: add `--apply` to the `serve` command to let it write the fixes it is sure
+about.
 
 It needs Python 3.11+, `ffmpeg` and `ffprobe` on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
@@ -55,10 +59,17 @@ And turn off two Bazarr options, or the guard never sees the downloads as they a
 
 To check it works, download a subtitle from Bazarr: its log shows the hook's output.
 
+## The web UI
+
+`serve` also opens a web UI on port 8484 that lists what the guard was not sure about, with Keep, Check again and Ask Bazarr
+for another.
+
 ## Safety
 
-- `check` and the scans only report until `--apply` is given; the Bazarr hook writes the fixes it is sure about.
+- `check`, the scans and the folder watch only report until `--apply` is given; the Bazarr hook writes the fixes it is sure
+  about.
 - Every write is atomic, after a backup.
+- Beyond the machine itself, the web UI asks for a token.
 
 ## Settings
 
@@ -66,7 +77,9 @@ Settings are environment variables. The ones you are most likely to need:
 
 | Variable | Default |
 |---|---|
+| `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
+| `SUBTITLE_GUARD_UI_TOKEN` | unset: required beyond the machine itself |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
 All of them and the CLI: [docs/configuration.md](docs/configuration.md).
@@ -91,8 +104,9 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 
 ## Troubleshooting
 
-- **A subtitle is never checked**: it must sit next to its video with the video's name (`Movie.mkv`, `Movie.fr.srt`). With
-  Bazarr, check that post-processing is on and that the command's paths exist inside the Bazarr container.
+- **A subtitle is never checked**: it must sit next to its video with the video's name (`Movie.mkv`, `Movie.fr.srt`) under a
+  folder of `SUBTITLE_GUARD_LIBRARY`. With Bazarr, check that post-processing is on and that the command's paths exist inside
+  the Bazarr container.
 
 ## Development
 
