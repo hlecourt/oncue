@@ -2,8 +2,9 @@
 
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Out-of-sync subtitles, fixed for you. subtitle-guard checks a subtitle against the subtitle track embedded in its video, and
-fixes the timing when it is sure. It runs from the command line or as a Bazarr post-processing hook.
+Out-of-sync subtitles, fixed for you. subtitle-guard checks the external subtitles of your media folders against the subtitle
+track embedded in each video, fixes the timing when it is sure, and reports the rest. It works on the folders of a Jellyfin,
+Plex or Emby library, and can also plug into Bazarr.
 
 Status: alpha.
 
@@ -26,11 +27,12 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 
 ```
 pip install .
-subtitle-guard check Movie.mkv Movie.fr.srt
+subtitle-guard scan-folder /mnt/media/movies
+subtitle-guard watch /mnt/media/movies /mnt/media/series
 ```
 
-`check` compares the subtitle with the video's embedded track and reports what it would do; add `--apply` to write the fix it
-is sure about.
+`scan-folder` checks every external subtitle under a folder (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) once, and `watch` keeps
+checking new or changed ones. Both only report what they would do until `--apply` is given.
 
 It needs Python 3.11+, `ffmpeg` and `ffprobe` on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
@@ -89,8 +91,8 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 
 ## Troubleshooting
 
-- **A subtitle is never checked**: with Bazarr, check that post-processing is on and that the command's paths exist inside the
-  Bazarr container.
+- **A subtitle is never checked**: it must sit next to its video with the video's name (`Movie.mkv`, `Movie.fr.srt`). With
+  Bazarr, check that post-processing is on and that the command's paths exist inside the Bazarr container.
 
 ## Development
 

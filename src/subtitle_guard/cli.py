@@ -7,6 +7,8 @@ Commands:
   scan-series SERIES_ID [--apply] [--queue]                                 every external subtitle of a Bazarr series
   scan-movies [--apply] [--queue]                                           every external subtitle of every Bazarr movie
   scan-all [--apply] [--queue]                                              every Bazarr series, then every movie
+  scan-folder PATH [--apply] [--queue]                                      every external subtitle under a media folder, without Bazarr
+  watch PATH... [--apply]                                                   queue every new or changed subtitle under media folders
   worker [--workers N]                                                      run queued jobs with N parallel workers
   status                                                                    jobs by status and confidence band
   jobs [STATUS]                                                             latest jobs, optionally one status
@@ -16,7 +18,7 @@ Commands:
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
-SUBTITLE_GUARD_WORKERS, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
+SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
 """
 
 import json
@@ -27,6 +29,7 @@ import sys
 from . import jobs
 from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
+from .library import scan_folder, watch
 from .outcome import describe
 from .storage import print_needs_human, report
 from .worker import WORKERS, run_workers
@@ -61,6 +64,10 @@ def main():
         for series in bazarr_get("/api/series?start=0&length=-1")["data"]:
             scan_series(series["sonarrSeriesId"], apply, queue)
         return scan_movies(apply, queue)
+    if command == "scan-folder" and len(arguments) == 1:
+        return scan_folder(arguments[0], apply, queue)
+    if command == "watch" and arguments:
+        return watch(arguments, apply)
     if command == "worker":
         return run_workers(workers)
     if command == "status":
