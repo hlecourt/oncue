@@ -10,15 +10,18 @@ import time
 import urllib.parse
 import urllib.request
 
+from . import jobs
 from .guard import evaluate_and_fix
+from .logs import log
 from .outcome import DECISION, describe
-from .storage import STATE_DIRECTORY, load_state, now, report, save_state
+from .storage import load_state, now, report, save_state, state_path
 
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")
 MAX_SUBTITLES_PER_MEDIA = 4
 RETRY_WAIT_SECONDS = 900
+BLACKLIST_DELAY_SECONDS = 20
 NEIGHBOUR_EPISODES = 2
 
 
@@ -33,25 +36,36 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     state["attempts"].append({"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, **outcome})
     save_state(video, subtitle, state)
     report(subtitle, provider, outcome)
-    print(describe(outcome))
     if outcome["decision"] != DECISION["rejected"] or media_number is None:
-        return 0
+        return outcome
     if len(state["attempts"]) >= MAX_SUBTITLES_PER_MEDIA:
         restore_best(subtitle, state)
-        return 0
+        return outcome
     state["pending_retry"] = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number,
                               "subtitle": subtitle, "provider": provider, "subtitle_id": subtitle_id, "language": language}
     save_state(video, subtitle, state)
-    log_file = open(os.path.join(STATE_DIRECTORY, "retries.log"), "a")
+    request_another(video, subtitle)
+    return outcome
+
+
+def request_another(video, subtitle):
+    if queue_enabled():
+        jobs.enqueue(jobs.KIND["blacklist"], {"video": video, "subtitle": subtitle}, delay_seconds=BLACKLIST_DELAY_SECONDS)
+        log("retry-scheduled", video=video, subtitle=subtitle)
+        return
+    log_file = open(state_path("retries.log"), "a")
     package_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (package_parent, os.environ.get("PYTHONPATH"))))}
     subprocess.Popen([sys.executable, "-m", "subtitle_guard", "try-another", video, subtitle], stdin=subprocess.DEVNULL,
                      stdout=log_file, stderr=log_file, start_new_session=True, env=environment)
-    print("subtitle-guard: asking Bazarr for another subtitle in the background")
-    return 0
+    log("retry-started", video=video, subtitle=subtitle)
 
 
-def scan_series(series_id, apply):
+def queue_enabled():
+    return os.environ.get("SUBTITLE_GUARD_QUEUE") == "1"
+
+
+def scan_series(series_id, apply, queue=False):
     episodes = sorted((episode for episode in bazarr_get(f"/api/episodes?seriesid[]={series_id}")["data"] if episode.get("path")),
                       key=lambda item: (item["season"], item["episode"]))
     for position, episode in enumerate(episodes):
@@ -60,19 +74,23 @@ def scan_series(series_id, apply):
         for subtitle in episode.get("subtitles", []):
             if subtitle.get("path"):
                 label = f"S{episode['season']:02d}E{episode['episode']:02d}"
-                scan_one(label, episode["path"], subtitle, apply, neighbours)
+                scan_one(label, episode["path"], subtitle, apply, neighbours, queue)
     return 0
 
 
-def scan_movies(apply):
+def scan_movies(apply, queue=False):
     for movie in bazarr_get("/api/movies?start=0&length=-1")["data"]:
         for subtitle in movie.get("subtitles", []):
             if movie.get("path") and subtitle.get("path"):
-                scan_one(movie.get("title", "movie"), movie["path"], subtitle, apply, ())
+                scan_one(movie.get("title", "movie"), movie["path"], subtitle, apply, (), queue)
     return 0
 
 
-def scan_one(label, video, subtitle, apply, neighbours):
+def scan_one(label, video, subtitle, apply, neighbours, queue=False):
+    if queue:
+        job_id = jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle["path"], "apply": apply, "neighbours": list(neighbours)})
+        print(f"{label} {subtitle['code2']}: queued job {job_id}", flush=True)
+        return
     try:
         outcome = evaluate_and_fix(video, subtitle["path"], apply, neighbours)
     except (OSError, ValueError) as error:
@@ -97,13 +115,25 @@ def series_neighbours(series_id, video):
 
 
 def try_another_subtitle(video, subtitle):
-    time.sleep(20)
+    time.sleep(BLACKLIST_DELAY_SECONDS)
+    retry = blacklist_for_retry(video, subtitle)
+    if retry is None:
+        return 0
+    deadline = time.time() + RETRY_WAIT_SECONDS
+    while time.time() < deadline:
+        time.sleep(15)
+        if another_arrived(video, subtitle, **retry):
+            return 0
+    finish_retry(video, subtitle, **retry)
+    return 0
+
+
+def blacklist_for_retry(video, subtitle):
     state = load_state(video, subtitle)
     pending = state.pop("pending_retry", None)
     save_state(video, subtitle, state)
     if not pending:
-        return 0
-    print(f"{now()} blacklisting {pending['provider']} {pending['subtitle_id']} for {subtitle}", flush=True)
+        return None
     form = {"provider": pending["provider"], "subs_id": pending["subtitle_id"], "language": pending["language"],
             "subtitles_path": pending["subtitle"]}
     if pending["media_type"] == "series":
@@ -112,17 +142,22 @@ def try_another_subtitle(video, subtitle):
     else:
         form.update(radarrid=pending["media_id"])
         endpoint = "/api/movies/blacklist"
-    attempts_before = len(state["attempts"])
     bazarr_post(endpoint, form)
-    deadline = time.time() + RETRY_WAIT_SECONDS
-    while time.time() < deadline:
-        time.sleep(15)
-        if len(load_state(video, subtitle).get("attempts", [])) > attempts_before or any_subtitle_for_language(pending):
-            return 0
-    print(f"{now()} no other subtitle found, restoring the best version", flush=True)
+    log("blacklisted", video=video, subtitle=subtitle, provider=pending["provider"], subtitle_id=pending["subtitle_id"])
+    return {"pending": pending, "attempts_before": len(state["attempts"])}
+
+
+def another_arrived(video, subtitle, pending, attempts_before):
+    return len(load_state(video, subtitle).get("attempts", [])) > attempts_before or any_subtitle_for_language(pending)
+
+
+def finish_retry(video, subtitle, pending, attempts_before):
+    if another_arrived(video, subtitle, pending, attempts_before):
+        return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
     restore_best(pending["subtitle"], load_state(video, subtitle))
     rescan(pending)
-    return 0
+    log("retry-gave-up", video=video, subtitle=subtitle)
+    return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
 
 def restore_best(subtitle, state):
@@ -133,7 +168,7 @@ def restore_best(subtitle, state):
     best = max(candidates, key=lambda attempt: attempt["after"]["matched"])
     shutil.copy2(best["best_copy"], subtitle)
     report(subtitle, best.get("provider", ""), {**best, "decision": DECISION["best_effort"]})
-    print(f"subtitle-guard: kept best effort ({best['after']['matched']:.2f} matched) from {best.get('provider')}")
+    log("best-effort-restored", subtitle=subtitle, provider=best.get("provider"), matched=best["after"]["matched"])
 
 
 def any_subtitle_for_language(pending):

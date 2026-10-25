@@ -9,7 +9,7 @@ import numpy
 
 from .alignment import MIN_CUES
 from .matroska import matroska_cue_timings
-from .storage import STATE_DIRECTORY, write_json
+from .storage import heavy_disk_read, state_path, write_json
 
 
 REFERENCE_CACHE_VERSION = 4
@@ -27,7 +27,7 @@ def load_reference(video, hearing_impaired=False, subtitle_cue_count=0):
 def load_tracks(video):
     stat = os.stat(video)
     cache_key = hashlib.sha1(f"{REFERENCE_CACHE_VERSION}|{video}|{stat.st_size}|{int(stat.st_mtime)}".encode()).hexdigest()
-    cache_file = os.path.join(STATE_DIRECTORY, "references", f"{cache_key}.json")
+    cache_file = state_path("references", f"{cache_key}.json")
     if os.path.exists(cache_file):
         try:
             return json.load(open(cache_file))
@@ -93,8 +93,9 @@ def cue_times(codec, entries):
 
 
 def packet_timings(video):
-    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "packet=stream_index,pts_time,duration_time,size",
-                            "-of", "json", video], capture_output=True, text=True)
+    with heavy_disk_read():
+        probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "packet=stream_index,pts_time,duration_time,size",
+                                "-of", "json", video], capture_output=True, text=True)
     timings = {}
     for packet in json.loads(probe.stdout or "{}").get("packets", []):
         if packet.get("pts_time") in (None, "N/A"):
