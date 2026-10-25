@@ -15,6 +15,7 @@ SCHEMA = (
     "run_after real not null, created text not null, started text, finished text, attempts integer not null default 0, worker integer, "
     "decision text, confidence integer, confidence_band text, summary text, error text)",
     "create index if not exists jobs_waiting on jobs (status, run_after)",
+    "create table if not exists seen (path text primary key, signature text not null, updated text not null)",
 )
 
 
@@ -84,6 +85,18 @@ def counts():
         by_band = dict(connection.execute("select confidence_band, count(*) from jobs where status = ? and confidence_band is not null "
                                           "group by confidence_band", (STATUS["done"],)).fetchall())
         return {"status": by_status, "confidence": by_band}
+
+
+def seen(path):
+    with closing(connect()) as connection:
+        row = connection.execute("select signature from seen where path = ?", (path,)).fetchone()
+        return row["signature"] if row else None
+
+
+def remember(path, signature):
+    with closing(connect()) as connection:
+        connection.execute("insert into seen (path, signature, updated) values (?, ?, ?) "
+                           "on conflict (path) do update set signature = excluded.signature, updated = excluded.updated", (path, signature, now()))
 
 
 def connect():
