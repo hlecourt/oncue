@@ -16,7 +16,7 @@ automatic syncs rarely tell you when they got it wrong. subtitle-guard instead:
 - compares your subtitle with a track already embedded in the video (text or picture, any language), which is the one
   source of timing made for that exact file;
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
-- only trusts a fix that clearly beats the same search against a meaningless reference;
+- only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
 - anything it cannot fix with confidence is left as it is and reported;
 - changes only the timings, after a backup.
 
@@ -37,8 +37,9 @@ It needs Python 3.11+, `ffmpeg` and `ffprobe` on a Linux or macOS machine; see [
 ## With Bazarr (optional)
 
 With [Bazarr](https://www.bazarr.media/), the guard checks each subtitle as soon as it is downloaded, and a subtitle it cannot
-fix is blacklisted so that Bazarr fetches another one. Install the guard where Bazarr can run it, then in Bazarr, Settings >
-Subtitles > Post-processing, turn post-processing on with this command:
+fix is blacklisted so that Bazarr fetches another one. Use
+[examples/docker-compose.bazarr.yml](examples/docker-compose.bazarr.yml), then in Bazarr, Settings > Subtitles >
+Post-processing, turn post-processing on with this command:
 
 ```
 python -m subtitle_guard hook "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
@@ -63,6 +64,7 @@ Settings are environment variables. The ones you are most likely to need:
 
 | Variable | Default |
 |---|---|
+| `SUBTITLE_GUARD_WORKERS` | `2` |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
 All of them and the CLI: [docs/configuration.md](docs/configuration.md).
