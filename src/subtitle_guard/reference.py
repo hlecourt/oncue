@@ -45,7 +45,8 @@ def choose_reference(tracks, hearing_impaired, subtitle_cue_count):
     best = min(complete, key=lambda track: (track["image"], track["sdh"] != hearing_impaired, track["language"] not in ("en", "eng"),
                                             abs(numpy.log(len(track["starts"]) / max(subtitle_cue_count, 1)))))
     kind = "image" if best["image"] else ("text-sdh" if best["sdh"] else "text")
-    return {"kind": f"{best['language']}-{kind}", "starts": numpy.array(best["starts"]), "ends": numpy.array(best["ends"])}
+    return {"kind": f"{best['language']}-{kind}", "starts": numpy.array(best["starts"]), "ends": numpy.array(best["ends"]), "index": best["index"],
+            "image": best["image"]}
 
 
 def extract_tracks(video):

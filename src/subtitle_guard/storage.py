@@ -29,27 +29,49 @@ def report(subtitle, provider, outcome):
 
 
 def print_needs_human():
-    latest = {}
-    for line in open(os.path.join(STATE_DIRECTORY, "report.tsv")):
-        fields = line.rstrip("\n").split("\t")
-        latest[fields[-1]] = fields
-    for subtitle, fields in sorted(latest.items()):
-        if not os.path.exists(subtitle):
-            continue
-        weak, note = (fields[8], fields[9]) if len(fields) >= 12 else ("", "")
-        score, band = fields[10].split("/") if len(fields) >= 13 else ("", "")
-        if fields[1] in SETTLED_DECISIONS and not weak and band != "low":
-            continue
-        print(f"{fields[1]:13s} {fields[0]}  confidence {score or '-'} {band}  weak minutes {weak or '-'}  {note}  {subtitle}")
+    for row in latest_reports():
+        if needs_review(row):
+            print(f"{row['decision']:13s} {row['time']}  confidence {row['confidence'] or '-'} {row['band']}  weak minutes {row['weak_minutes'] or '-'}  "
+                  f"{row['note']}  {row['subtitle']}")
     return 0
 
 
+def latest_reports():
+    path = state_path("report.tsv")
+    if not os.path.exists(path):
+        return []
+    latest = {}
+    for line in open(path):
+        fields = line.rstrip("\n").split("\t")
+        latest[fields[-1]] = fields
+    rows = []
+    for subtitle, fields in sorted(latest.items()):
+        if not os.path.exists(subtitle):
+            continue
+        score, band = fields[10].split("/") if len(fields) >= 13 else ("", "")
+        rows.append({"time": fields[0], "decision": fields[1], "reference": fields[2], "matched": fields[4], "weak_minutes": fields[8] if len(fields) >= 12 else "",
+                     "note": fields[9] if len(fields) >= 12 else "", "confidence": score, "band": band, "provider": fields[-2], "subtitle": subtitle})
+    return rows
+
+
+def needs_review(row):
+    return row["decision"] not in SETTLED_DECISIONS or bool(row["weak_minutes"]) or row["band"] == "low"
+
+
+def file_signature(path):
+    status = os.stat(path)
+    return f"{status.st_size}:{int(status.st_mtime)}"
+
+
 def backup_path(subtitle):
-    subtitle = os.path.abspath(subtitle)
-    folder = os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))),
-                          os.path.basename(subtitle), datetime.now().strftime("%Y%m%d-%H%M%S"))
+    folder = os.path.join(backup_root(subtitle), datetime.now().strftime("%Y%m%d-%H%M%S"))
     os.makedirs(folder, exist_ok=True)
     return folder
+
+
+def backup_root(subtitle):
+    subtitle = os.path.abspath(subtitle)
+    return os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), os.path.basename(subtitle))
 
 
 def load_state(video, subtitle):

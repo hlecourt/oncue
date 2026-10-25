@@ -1,12 +1,12 @@
 """Decisions the guard can reach and their one-line description."""
 
 DECISION = {"kept": "kept", "fixed": "fixed", "rejected": "rejected", "unverified": "unverified", "wrong_episode": "wrong-episode",
-            "best_effort": "best-effort", "audio_synced": "audio-synced"}
-SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"])
+            "best_effort": "best-effort", "audio_synced": "audio-synced", "manual": "manual", "reverted": "reverted"}
+SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"])
 
 
 def describe(outcome):
-    if outcome["decision"] == DECISION["unverified"]:
+    if outcome["decision"] in (DECISION["unverified"], DECISION["reverted"]):
         return f"subtitle-guard: {outcome['decision']} ({outcome['reason']})"
     if outcome["decision"] == DECISION["audio_synced"]:
         return f"subtitle-guard: {outcome['decision']} ({outcome['reason']}) | confidence {outcome.get('confidence', 0)} ({outcome.get('confidence_band', 'low')})"
