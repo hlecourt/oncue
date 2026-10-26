@@ -85,7 +85,9 @@ def test_review_page_and_manual_shift(server, tmp_path):
 
 def test_token_protects_the_ui(server, monkeypatch):
     monkeypatch.setattr(web, "TOKEN", "secret")
-    assert get(server + "/")[0] == 401
+    storage.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
+    status, page, _ = get(server + "/")
+    assert status == 401 and "To review" not in page and "Private.Name" not in page
     assert get(server + "/health")[0] == 200
     opener = urllib.request.build_opener(NoRedirect)
     try:
