@@ -99,7 +99,7 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 
 ## Limits
 
-- Cumulative offsets beyond +/-400 s are rejected, not fixed.
+- Cumulative offsets beyond +/-1200 s are rejected, not fixed.
 - Lines of a scene missing from the video are placed as well as possible, not removed.
 - Without any embedded subtitle track, timing cannot be verified, and the audio fallback cannot fix a different cut.
 
