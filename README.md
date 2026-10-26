@@ -1,5 +1,6 @@
 # subtitle-guard
 
+[![tests](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml)
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the subtitle
