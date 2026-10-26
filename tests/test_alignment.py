@@ -57,7 +57,13 @@ def test_local_shift_inside_a_good_file_is_fixed(episode):
 
 def test_offset_beyond_search_range_is_rejected(episode):
     reference, cues, truth = episode
-    assert run(distorted(cues, lambda value: value + 600), truth, reference)[0] == "rejected"
+    assert run(distorted(cues, lambda value: value + 1500), truth, reference)[0] == "rejected"
+
+
+def test_offset_beyond_the_normal_range_is_found_by_the_wide_search(episode):
+    reference, cues, truth = episode
+    decision, within_second = run(distorted(cues, lambda value: value + 600), truth, reference)
+    assert decision == "fixed" and within_second >= 0.95
 
 
 def test_subtitle_of_another_episode_is_rejected(episode):
