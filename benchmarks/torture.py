@@ -156,7 +156,8 @@ def cases(truth_cues, other_cues, rng):
     yield "offset +2.5s", "fix", misaligned(truth_cues, offset=2.5), "srt"
     yield "offset -45s", "fix", misaligned(truth_cues, offset=-45), "srt"
     yield "offset +250s", "fix", misaligned(truth_cues, offset=250), "srt"
-    yield "offset +600s (beyond search range)", "reject", misaligned(truth_cues, offset=600), "srt"
+    yield "offset +600s (wide search)", "fix", misaligned(truth_cues, offset=600), "srt"
+    yield "offset +1500s (beyond the wide search)", "reject", misaligned(truth_cues, offset=1500), "srt"
     yield "fps 25 subtitle on 23.976 video", "fix", misaligned(truth_cues, scale=PAL), "srt"
     yield "fps 23.976 subtitle on 25 video", "fix", misaligned(truth_cues, scale=1 / PAL), "srt"
     yield "fps 24 vs 23.976 (0.1% drift)", "fix", misaligned(truth_cues, scale=FILM), "srt"
@@ -169,7 +170,7 @@ def cases(truth_cues, other_cues, rng):
                                                                                               (point(0.5), 3, "video_extra"), (point(0.68), 40, "video_extra"),
                                                                                               (point(0.85), 9, "subtitle_extra")]), "srt"
     yield "TV subtitle with 3 ad breaks of 120s", "fix", misaligned(truth_cues, edits=[(point(share), 120, "subtitle_extra") for share in (0.25, 0.5, 0.75)]), "srt"
-    yield "TV subtitle with 4 ad breaks of 150s (600s total)", "either", misaligned(truth_cues, edits=[(point(share), 150, "subtitle_extra") for share in (0.2, 0.4, 0.6, 0.8)]), "srt"
+    yield "TV subtitle with 4 ad breaks of 150s (600s total)", "fix", misaligned(truth_cues, edits=[(point(share), 150, "subtitle_extra") for share in (0.2, 0.4, 0.6, 0.8)]), "srt"
     yield "different cut + fps 25 + offset", "fix", misaligned(truth_cues, scale=PAL, offset=-12, edits=[(point(0.3), 20, "video_extra"), (point(0.7), 15, "subtitle_extra")]), "srt"
     yield "sloppy timing +-0.25s + offset 3s", "fix", misaligned(jitter(truth_cues, rng, 0.25), offset=3), "srt"
     yield "sloppy timing +-0.6s + offset 3s", "either", misaligned(jitter(truth_cues, rng, 0.6), offset=3), "srt"
