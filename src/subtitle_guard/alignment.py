@@ -32,6 +32,9 @@ SUPPORTED_SEGMENT_MATCHED = 0.55
 MAX_UNSUPPORTED_SHARE = 0.05
 END_WEIGHT = 0.5
 BEFORE_VIDEO_PENALTY = 10.0
+NOTICEABLE_SHIFT_SECONDS = 0.5
+SAME_PART_SECONDS = 0.6
+MIN_PART_LINES = 3
 
 
 def judge(cues, reference):
@@ -44,6 +47,31 @@ def judge(cues, reference):
     if original["passed"] and not better:
         return DECISION["kept"], original, weak, attempt
     return (DECISION["fixed"] if attempt["fixed"] else DECISION["rejected"]), original, weak, attempt
+
+
+def describe_changes(cues, attempt):
+    scale = attempt.get("scale", 1.0)
+    offsets = [new_start - start * scale for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
+    return {"scale": float(scale), "parts": out_of_sync_parts(cues, offsets), "lines": len(cues)}
+
+
+def out_of_sync_parts(cues, shifts):
+    parts, current = [], []
+    for index in sorted(range(len(cues)), key=lambda position: cues[position][0]):
+        if abs(shifts[index]) < NOTICEABLE_SHIFT_SECONDS:
+            parts, current = close_part(parts, current, cues, shifts), []
+            continue
+        if current and abs(shifts[index] - numpy.median([shifts[member] for member in current])) > SAME_PART_SECONDS:
+            parts, current = close_part(parts, current, cues, shifts), []
+        current.append(index)
+    return close_part(parts, current, cues, shifts)
+
+
+def close_part(parts, members, cues, shifts):
+    if len(members) < MIN_PART_LINES:
+        return parts
+    return parts + [{"first": cues[members[0]][0], "last": cues[members[-1]][0], "lines": len(members),
+                     "shift": round(float(numpy.median([shifts[member] for member in members])), 1)}]
 
 
 def assess(cues, reference, wide_retry=True):
@@ -63,7 +91,7 @@ def assess_on_grid(cues, reference, grid):
     null_score = score(numpy.array([start for start, _, _ in null["timings"]]), mirrored["starts"])
     fixed = (aligned_score is not None and aligned_score["passed"] and aligned["objective"] >= null["objective"] + OBJECTIVE_MARGIN
              and aligned["unsupported_share"] <= MAX_UNSUPPORTED_SHARE)
-    return {"timings": aligned["timings"], "score": aligned_score, "null": null_score, "fixed": bool(fixed),
+    return {"timings": aligned["timings"], "score": aligned_score, "null": null_score, "fixed": bool(fixed), "scale": aligned["scale"],
             "objective": aligned["objective"], "null_objective": null["objective"], "segments": aligned["segments"],
             "null_segments": null["segments"], "short_segment_share": aligned["short_segment_share"],
             "unsupported_share": aligned["unsupported_share"],
@@ -132,7 +160,7 @@ def align(cues, reference, grid=None):
         hits |= numpy.abs(nearest_gap(ends * scale + offsets, reference["ends"])) <= TOLERANCE_SECONDS
     support = [segment.mean() for segment in numpy.split(hits, numpy.cumsum(lengths)[:-1])]
     unsupported = sum(length for length, matched in zip(lengths, support) if matched < SUPPORTED_SEGMENT_MATCHED)
-    return {"timings": timings, "objective": objective / len(cues), "segments": len(lengths),
+    return {"timings": timings, "objective": objective / len(cues), "segments": len(lengths), "scale": float(scale),
             "short_segment_share": float(lengths[lengths < SHORT_SEGMENT_CUES].sum() / len(cues)),
             "unsupported_share": float(unsupported / len(cues))}
 

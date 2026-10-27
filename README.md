@@ -58,12 +58,12 @@ And turn off two Bazarr options, or the guard never sees the downloads as they a
 - **Post-processing threshold** (series and movies): it skips the best-scored downloads, and that score rates release names,
   not timing.
 
-To check it works, download a subtitle from Bazarr: its log shows the hook's output.
+To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.hook-received`, then `guard.checked`.
 
 ## The web UI
 
 `serve` also opens a web UI on port 8484 that lists what the guard was not sure about, with Keep, Check again and Ask Bazarr
-for another.
+for another, a history of every check and the technical log.
 
 ## Safety
 
@@ -83,7 +83,7 @@ Settings are environment variables. The ones you are most likely to need:
 | `SUBTITLE_GUARD_UI_TOKEN` | unset: required beyond the machine itself |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
-All of them and the CLI: [docs/configuration.md](docs/configuration.md).
+All of them, the CLI and the log format: [docs/configuration.md](docs/configuration.md).
 
 ## Accuracy
 

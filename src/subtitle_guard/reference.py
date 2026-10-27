@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 
 import numpy
 
 from .alignment import MIN_CUES
+from .logs import LEVEL, log
 from .matroska import matroska_cue_timings
 from .storage import heavy_disk_read, state_path, write_json
 
@@ -31,10 +33,14 @@ def load_tracks(video):
     if os.path.exists(cache_file):
         try:
             return json.load(open(cache_file))
-        except ValueError:
-            pass
+        except ValueError as error:
+            log("reference.cache-corrupt", f"track cache unreadable, re-extracting: {error}", LEVEL["warning"], video=video, cache=cache_file)
+    started = time.time()
     tracks = extract_tracks(video)
     write_json(cache_file, tracks)
+    log("reference.extracted", f"{len(tracks)} candidate tracks extracted in {time.time() - started:.2f}s", LEVEL["debug"], video=video,
+        seconds=round(time.time() - started, 2), tracks=[{key: track[key] for key in ("index", "language", "image", "sdh")} | {"lines": len(track["starts"])}
+                                                        for track in tracks])
     return tracks
 
 
@@ -62,9 +68,13 @@ def extract_tracks(video):
     try:
         track_count = sum(stream.get("codec_type") != "attachment" for stream in streams)
         indexed = matroska_cue_timings(video, track_count, [stream["index"] for stream in candidates if stream.get("codec_name") in SPLIT_BITMAP_CODECS])
-    except (ValueError, IndexError, KeyError, StopIteration, OSError):
+    except (ValueError, IndexError, KeyError, StopIteration, OSError) as error:
+        log("reference.index-unavailable", f"Matroska Cues unusable ({type(error).__name__}: {error}), falling back to a packet scan", LEVEL["debug"],
+            video=video)
         indexed = {}
     missing = [stream["index"] for stream in candidates if stream["index"] not in indexed]
+    if missing:
+        log("reference.packet-scan", f"ffprobe packet scan for streams {missing}", LEVEL["debug"], video=video, tracks=missing)
     packets = packet_timings(video) if missing else {}
     tracks = []
     for stream in candidates:
