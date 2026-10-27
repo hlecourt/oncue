@@ -6,27 +6,31 @@ import json
 import os
 import re
 import shutil
-import subprocess
 
 import numpy
 
 from . import jobs
-from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
+from .errors import MatroskaError, ToolError, UnsafePathError
+from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
+from .alignment import MAX_WRONG_END_SHARE, MIN_CUES, wrong_end_share, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
+from .worker import worker_health
 from .confidence import confidence
 from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours
-from .logs import log
+from .logs import LEVEL, log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
-from .storage import backup_path, backup_root, file_signature, heavy_disk_read, latest_reports, load_state, needs_review, report, save_state, state_path, write_json
-from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, write_subtitle
+from .reports import latest_reports, needs_review, report
+from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, load_state, revert_source, save_state, state_path, write_json
+from .files import restore_version, save_version, subtitle_lock
+from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, write_subtitle
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
 BEFORE_FIX_NAMES = ("original", "before-manual")
-DIAGNOSIS_CACHE_VERSION = 2
+DIAGNOSIS_CACHE_VERSION = 3
 
 
 def review_items():
@@ -42,7 +46,7 @@ def video_for(subtitle):
 
 def side_by_side(video, subtitle, first, last, shifts=None):
     cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    reference = readable_reference(video, subtitle, len(cues))
     if reference is None:
         return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
                 "moments": pair_moments(cues, [], [start for start, _, _ in cues], first, last), "minutes": []}
@@ -103,8 +107,7 @@ def nearest_position(starts, value):
 
 def last_fix(video, subtitle):
     extension = os.path.splitext(subtitle)[1]
-    folders = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*")), reverse=True)
-    candidates = [os.path.join(folder, name + extension) for name in BEFORE_FIX_NAMES for folder in folders]
+    candidates = [os.path.join(folder, name + extension) for folder in reversed(backup_folders(subtitle)) for name in BEFORE_FIX_NAMES]
     before = next((path for path in candidates if os.path.exists(path)), None)
     if before is None:
         return None
@@ -116,14 +119,24 @@ def last_fix(video, subtitle):
     return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "moved_minutes": moved_minutes, "parts": out_of_sync_parts(old, shifts)}
 
 
+def readable_reference(video, subtitle, cue_count):
+    try:
+        return load_reference(video, is_hearing_impaired(subtitle), cue_count)
+    except ToolError as error:
+        log("review.reference-unreadable", f"video unreadable for the review page: {error}", LEVEL["warning"], video=video, subtitle=subtitle)
+        return None
+
+
 def diagnose(video, subtitle):
     cache_file = diagnosis_file(video, subtitle)
     if os.path.exists(cache_file):
         return json.load(open(cache_file))
     cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues)) if len(cues) >= MIN_CUES else None
+    reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES else None
     if len(cues) < MIN_CUES:
         diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
+    elif wrong_end_share(cues) > MAX_WRONG_END_SHARE:
+        diagnosis = {"state": "wrong-ends", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif reference is None:
         diagnosis = {"state": "no-reference", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     else:
@@ -173,17 +186,17 @@ def reference_texts(video, reference):
     cache_file = state_path("texts", hashlib.sha1(f"{video}|{status.st_size}|{int(status.st_mtime)}|{reference['index']}".encode()).hexdigest() + ".json")
     if os.path.exists(cache_file):
         return [tuple(line) for line in json.load(open(cache_file))]
-    probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json", video],
-                                      capture_output=True, text=True).stdout or "{}").get("streams", [])
+    probe = json.loads(run_tool(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json",
+                                 video], PROBE_SECONDS).stdout or "{}").get("streams", [])
     codec = next((stream.get("codec_name") for stream in probe if stream["index"] == reference["index"]), "")
     try:
         texts = matroska_texts(video, sum(stream.get("codec_type") != "attachment" for stream in probe), reference["index"], ass=codec in ("ass", "ssa"))
-    except (ValueError, IndexError, KeyError, StopIteration, OSError):
+    except (MatroskaError, OSError):
         texts = None
     if texts is None:
         with heavy_disk_read():
-            extracted = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", video, "-map", f"0:{reference['index']}", "-f", "srt", "-"],
-                                       capture_output=True, text=True, errors="replace").stdout
+            extracted = run_tool(["ffmpeg", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-i", video, "-map", f"0:{reference['index']}",
+                                  "-f", "srt", "-"], EXTRACT_SECONDS).stdout
         texts = parse_timed_text(extracted.replace("\r\n", "\n"))
     write_json(cache_file, texts)
     return texts
@@ -199,14 +212,16 @@ def measure(cues, reference):
 
 
 def shift_range(video, subtitle, first, last, offset):
-    keep_current(subtitle, "before-manual")
-    document = parse_subtitle(subtitle)
-    timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
-    write_subtitle(subtitle, document, timings)
+    with subtitle_lock(subtitle):
+        document = parse_subtitle(subtitle)
+        save_version(subtitle, backup_path(subtitle), "before-manual")
+        timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
+        write_subtitle(subtitle, document, timings)
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    previous = measure(document["cues"], reference) if reference else None
     measured = measure(cues, reference) if reference else None
-    outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": measured or {}, "after": measured or {},
+    outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": previous or {}, "after": measured or {},
                "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
                "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s",
                "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
@@ -218,14 +233,19 @@ def shift_range(video, subtitle, first, last, offset):
 
 
 def revert(subtitle):
-    originals = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*", "original.*")))
-    if not originals:
+    original = revert_source(subtitle)
+    if original is None:
         return False
-    keep_current(subtitle, "before-revert")
-    shutil.copy2(originals[0], subtitle)
-    report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(originals[0]))}"})
-    log("review.reverted", f"original restored from {originals[0]}", subtitle=subtitle, original=originals[0])
+    with subtitle_lock(subtitle):
+        save_version(subtitle, backup_path(subtitle), "before-revert")
+        restore_version(subtitle, original)
+    report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(original))}"})
+    log("review.reverted", f"original restored from {original}", subtitle=subtitle, original=original)
     return True
+
+
+def has_backup(subtitle):
+    return revert_source(subtitle) is not None
 
 
 def accept(subtitle):
@@ -248,10 +268,13 @@ def move_to_episode(video, subtitle, label):
         return None
     suffix = os.path.basename(subtitle)[len(os.path.splitext(name)[0]):]
     target = os.path.splitext(target_video)[0] + suffix
-    if os.path.exists(target):
-        keep_current(target, "before-move")
-    keep_current(subtitle, "moved-away")
-    os.replace(subtitle, target)
+    if os.path.islink(subtitle) or os.path.islink(target):
+        raise UnsafePathError(f"refusing to move a symlinked subtitle: {subtitle}")
+    with subtitle_lock(subtitle), subtitle_lock(target):
+        if os.path.exists(target):
+            save_version(target, backup_path(target), "before-move")
+        save_version(subtitle, backup_path(subtitle), "moved-away")
+        os.replace(subtitle, target)
     log("review.moved", f"moved to {label} target={target}", subtitle=subtitle, target=target, episode=label)
     return target, recheck(target_video, target)
 
@@ -264,18 +287,9 @@ def ask_for_another(video, subtitle):
     state["pending_retry"] = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
                               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
     save_state(video, subtitle, state)
-    request_another(video, subtitle)
+    request_another(video, subtitle, queued=bool(worker_health()))
     log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True
-
-
-def keep_current(subtitle, label):
-    folder = backup_path(subtitle)
-    shutil.copy2(subtitle, os.path.join(folder, label + os.path.splitext(subtitle)[1]))
-
-
-def is_hearing_impaired(subtitle):
-    return any(tag in os.path.basename(subtitle).lower() for tag in HEARING_IMPAIRED_TAGS)
 
 
 def clean(text):

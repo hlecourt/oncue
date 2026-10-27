@@ -18,6 +18,9 @@ SCHEMA = (
     "create index if not exists jobs_waiting on jobs (status, run_after)",
     "create table if not exists seen (path text primary key, signature text not null, updated text not null)",
     "create table if not exists reviews (path text primary key, signature text not null, accepted text not null)",
+    "create table if not exists reports (id integer primary key, time text not null, subtitle text not null, provider text not null, decision text not null, "
+    "reference text, matched_before text, matched text, weak_minutes text, note text, confidence text, band text, changes text, applied integer not null default 1)",
+    "create index if not exists reports_subtitle on reports (subtitle, id)",
 )
 
 
@@ -63,9 +66,14 @@ def requeue(job_id):
         return cursor.rowcount == 1
 
 
-def recover_running():
+def recover_running(max_attempts, worker=None):
+    owner, parameters = ("", ()) if worker is None else (" and worker = ?", (worker,))
     with closing(connect()) as connection:
-        return connection.execute("update jobs set status = ? where status = ?", (STATUS["queued"], STATUS["running"])).rowcount
+        abandoned = connection.execute(f"update jobs set status = ?, finished = ?, error = ? where status = ? and attempts >= ?{owner}",
+                                       (STATUS["failed"], now(), f"gave up after {max_attempts} attempts, the worker stopped during each one",
+                                        STATUS["running"], max_attempts, *parameters)).rowcount
+        requeued = connection.execute(f"update jobs set status = ? where status = ?{owner}", (STATUS["queued"], STATUS["running"], *parameters)).rowcount
+    return requeued, abandoned
 
 
 def job(job_id):
@@ -93,8 +101,8 @@ def counts():
 
 def seen(path):
     with closing(connect()) as connection:
-        row = connection.execute("select signature from seen where path = ?", (path,)).fetchone()
-        return row["signature"] if row else None
+        row = connection.execute("select signature, updated from seen where path = ?", (path,)).fetchone()
+        return (row["signature"], row["updated"]) if row else (None, None)
 
 
 def remember(path, signature):

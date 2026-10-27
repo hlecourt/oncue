@@ -3,14 +3,15 @@
 import hashlib
 import json
 import os
-import subprocess
 import time
 
 import numpy
 
 from .alignment import MIN_CUES
 from .logs import LEVEL, log
+from .errors import MatroskaError, ProbeError
 from .matroska import matroska_cue_timings
+from .tools import PROBE_SECONDS, run_tool, stderr_tail
 from .storage import heavy_disk_read, state_path, write_json
 
 
@@ -19,6 +20,7 @@ TEXT_CODECS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")
 CUE_PER_PACKET_BITMAP_CODECS = ("dvd_subtitle",)
 SPLIT_BITMAP_CODECS = ("hdmv_pgs_subtitle",)
 BITMAP_MIN_PACKET_BYTES = 100
+FULL_TEXT_TRACK_CUES = 300
 EMPTY_TEXT_PACKET_BYTES = 2
 
 
@@ -56,19 +58,33 @@ def choose_reference(tracks, hearing_impaired, subtitle_cue_count):
 
 
 def extract_tracks(video):
-    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
-                            "stream=index,codec_type,codec_name:stream_tags=language,title:stream_disposition=forced,hearing_impaired",
-                            "-of", "json", video], capture_output=True, text=True)
-    streams = json.loads(probe.stdout or "{}").get("streams", [])
+    streams = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries",
+                          "stream=index,codec_type,codec_name:stream_tags=language,title:stream_disposition=forced,hearing_impaired", "-of", "json", video],
+                         video).get("streams", [])
     candidates = [stream for stream in streams if stream.get("codec_type") == "subtitle" and is_reference_candidate(stream)]
-    text_candidates = [stream for stream in candidates if stream.get("codec_name") in TEXT_CODECS]
-    candidates = text_candidates or candidates
-    if not candidates:
-        return []
+    text_streams = [stream for stream in candidates if stream.get("codec_name") in TEXT_CODECS]
+    bitmap_streams = [stream for stream in candidates if stream.get("codec_name") not in TEXT_CODECS]
+    tracks = read_tracks(video, streams, text_streams) if text_streams else []
+    if bitmap_streams and max((len(track["starts"]) for track in tracks), default=0) < FULL_TEXT_TRACK_CUES:
+        tracks += read_tracks(video, streams, bitmap_streams)
+    return tracks
+
+
+def probe_json(command, video):
+    result = run_tool(command, PROBE_SECONDS)
+    if result.returncode != 0:
+        raise ProbeError(f"ffprobe failed on {video}: {stderr_tail(result) or 'exit code ' + str(result.returncode)}")
+    try:
+        return json.loads(result.stdout or "{}")
+    except ValueError as error:
+        raise ProbeError(f"ffprobe returned unreadable output for {video}") from error
+
+
+def read_tracks(video, streams, candidates):
     try:
         track_count = sum(stream.get("codec_type") != "attachment" for stream in streams)
         indexed = matroska_cue_timings(video, track_count, [stream["index"] for stream in candidates if stream.get("codec_name") in SPLIT_BITMAP_CODECS])
-    except (ValueError, IndexError, KeyError, StopIteration, OSError) as error:
+    except (MatroskaError, OSError) as error:
         log("reference.index-unavailable", f"Matroska Cues unusable ({type(error).__name__}: {error}), falling back to a packet scan", LEVEL["debug"],
             video=video)
         indexed = {}
@@ -105,10 +121,10 @@ def cue_times(codec, entries):
 
 def packet_timings(video):
     with heavy_disk_read():
-        probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "packet=stream_index,pts_time,duration_time,size",
-                                "-of", "json", video], capture_output=True, text=True)
+        packets = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-select_streams", "s", "-show_entries",
+                              "packet=stream_index,pts_time,duration_time,size", "-of", "json", video], video).get("packets", [])
     timings = {}
-    for packet in json.loads(probe.stdout or "{}").get("packets", []):
+    for packet in packets:
         if packet.get("pts_time") in (None, "N/A"):
             continue
         duration = float(packet["duration_time"]) if packet.get("duration_time") not in (None, "N/A") else None

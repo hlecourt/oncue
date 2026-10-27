@@ -28,11 +28,34 @@ def test_srt_encodings(tmp_path):
     assert parse_subtitle(write(tmp_path, "cp1252.srt", "1\n00:00:01,000 --> 00:00:02,000\nÇa été\n", "cp1252"))["cues"][0][2] == "Ça été"
 
 
-def test_srt_is_rewritten_sorted(tmp_path):
+def test_srt_rewrite_changes_only_the_timings_and_keeps_the_order(tmp_path):
     path = write(tmp_path, "unsorted.srt", "1\n00:00:09,000 --> 00:00:10,000\nB\n\n2\n00:00:01,000 --> 00:00:02,000\nA\n")
     document = parse_subtitle(path)
     write_subtitle(path, document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
-    assert [(start, text) for start, _, text in parse_subtitle(path)["cues"]] == [(2.0, "A"), (10.0, "B")]
+    assert open(path).read() == "1\n00:00:10,000 --> 00:00:11,000\nB\n\n2\n00:00:02,000 --> 00:00:03,000\nA\n"
+
+
+def test_a_rewrite_keeps_the_encoding_line_endings_and_bom(tmp_path):
+    russian = tmp_path / "ru.srt"
+    russian.write_bytes("1\r\n00:00:01,000 --> 00:00:02,000\r\nПривет мир\r\n".encode("cp1251"))
+    document = parse_subtitle(str(russian))
+    write_subtitle(str(russian), document, [(start + 2, end + 2, text) for start, end, text in document["cues"]])
+    assert russian.read_bytes() == "1\r\n00:00:03,000 --> 00:00:04,000\r\nПривет мир\r\n".encode("cp1251")
+    bom = tmp_path / "bom.srt"
+    bom.write_bytes(b"\xef\xbb\xbf1\n00:00:01,000 --> 00:00:02,000\nCa va\n")
+    document = parse_subtitle(str(bom))
+    write_subtitle(str(bom), document, document["cues"])
+    assert bom.read_bytes().startswith(b"\xef\xbb\xbf1\n")
+
+
+def test_a_vtt_rewrite_keeps_settings_styles_notes_and_lines_after_a_blank(tmp_path):
+    content = ("WEBVTT\n\nSTYLE\n::cue { color: yellow }\n\nNOTE kept\n\nintro\n00:00:01.000 --> 00:00:02.000 line:0 align:start\nHaut\n\n"
+               "00:00:03.000 --> 00:00:04.000\nPremier\n\nencore\n")
+    path = write(tmp_path, "styled.vtt", content)
+    document = parse_subtitle(path)
+    write_subtitle(path, document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
+    assert open(path).read() == content.replace("00:00:01.000 --> 00:00:02.000", "00:00:02.000 --> 00:00:03.000").replace(
+        "00:00:03.000 --> 00:00:04.000", "00:00:04.000 --> 00:00:05.000")
 
 
 def test_vtt_without_hours_round_trip(tmp_path):
@@ -42,7 +65,7 @@ def test_vtt_without_hours_round_trip(tmp_path):
     assert document["format"] == "vtt"
     assert [start for start, _, _ in document["cues"]] == [62.5, 65.0]
     write_subtitle(path, document, [(start + 0.25, end + 0.25, text) for start, end, text in document["cues"]])
-    assert open(path).read().startswith("WEBVTT\n\n1\n00:01:02.750 --> 00:01:04.250")
+    assert open(path).read().startswith("WEBVTT\n\nNOTE a comment\n\nintro\n00:01:02.750 --> 00:01:04.250 align:start\nSans heures")
 
 
 def test_ass_only_times_change(tmp_path):

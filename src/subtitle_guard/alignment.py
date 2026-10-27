@@ -35,6 +35,14 @@ BEFORE_VIDEO_PENALTY = 10.0
 NOTICEABLE_SHIFT_SECONDS = 0.5
 SAME_PART_SECONDS = 0.6
 MIN_PART_LINES = 3
+MAX_CUE_SECONDS = 30
+MAX_WRONG_END_SHARE = 0.05
+
+
+def wrong_end_share(cues):
+    if not cues:
+        return 0.0
+    return sum(end < start or end - start > MAX_CUE_SECONDS for start, end, _ in cues) / len(cues)
 
 
 def judge(cues, reference):

@@ -30,4 +30,4 @@ def test_hook_queue_flag_works_without_the_environment(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["subtitle-guard", "hook", "--queue", "/m.mkv", "/m.fr.srt", "fr", "opensubtitlescom", "9", "512"])
     assert cli.main() == 0
     assert jobs.recent()[0]["arguments"] == {"video": "/m.mkv", "subtitle": "/m.fr.srt", "language": "fr", "provider": "opensubtitlescom",
-                                             "subtitle_id": "9", "media_id": "512"}
+                                             "subtitle_id": "9", "media_id": "512", "content_hash": None}

@@ -31,13 +31,13 @@ import subprocess
 import sys
 
 from . import jobs
-from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
+from .bazarr import bazarr_get, file_hash, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
 from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
-from .storage import print_needs_human, report
+from .reports import print_needs_human, report
 from .web import HOST as UI_HOST, PORT as UI_PORT, serve_ui
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
@@ -56,8 +56,7 @@ def main():
         return hook(arguments, queue or queue_enabled())
     if command == "check" and len(arguments) == 2:
         outcome = evaluate_and_fix(arguments[0], arguments[1], apply)
-        if apply:
-            report(arguments[1], "check", outcome)
+        report(arguments[1], "check", outcome, applied=apply)
         print(describe(outcome))
         return 0
     if command == "enqueue" and len(arguments) == 2:
@@ -135,7 +134,7 @@ def hook(arguments, queue):
     log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
         f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
-        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], dict(zip(HOOK_FIELDS, arguments)))}")
+        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': file_hash(fields['subtitle']) if os.path.isfile(fields['subtitle']) else None})}")
         return 0
     print(describe(handle_download(*arguments)))
     return 0

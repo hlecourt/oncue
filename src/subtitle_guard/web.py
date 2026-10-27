@@ -1,22 +1,52 @@
 """Web UI in plain words: what needs a look, what is out of sync and where, and one click to fix it."""
 
+import hmac
 import html
 import json
 import os
-from datetime import date, timedelta
+import re
+import secrets
+import sqlite3
+import threading
+import time
+import traceback
 import urllib.parse
+from collections import OrderedDict
+from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
+from .errors import SubtitleGuardError
 from .logs import LEVEL, event_level, event_message, log, log_file, recent_events, settings
 from .outcome import DECISION, DECISION_WORDS
-from .storage import latest_reports, report_history
+from .worker import worker_health
+from .reports import has_report, latest_reports, report_history
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
 TOKEN = os.environ.get("SUBTITLE_GUARD_UI_TOKEN", "")
-TOKEN_COOKIE = "subtitle_guard_token"
+SESSION_COOKIE = "subtitle_guard_session"
+CSRF_COOKIE = "subtitle_guard_csrf"
+SESSION_SECONDS = 30 * 24 * 3600
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+MAX_BODY_BYTES = 64 * 1024
+MAX_FIELDS = 50
+MAX_CONNECTIONS = 32
+MAX_NOTICES = 200
+MAX_MINUTE_DIGITS = 5
+REQUEST_TIMEOUT_SECONDS = 30
+FAILED_LOGIN_LOG_SECONDS = 60
+SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+                    "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; "
+                                               "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
+ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
+AUTH = {"token": TOKEN}
+SESSIONS = set()
+FAILED_LOGINS = {}
+NOTICES = OrderedDict()
+REQUEST = threading.local()
+DIAGNOSES = threading.BoundedSemaphore(2)
 WINDOW_SECONDS = 60
 NOTICEABLE_SECONDS = 0.5
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5fd0'/%3E"
@@ -28,7 +58,7 @@ HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept"
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
                   "unverified": "neutral", "audio-synced": "warn", "reverted": "neutral"}
 BAND_TONES = {"high": "good", "medium": "warn", "low": "bad", "none": "neutral"}
-STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
+STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
 KIND_WORDS = {"hook": "Check a subtitle from Bazarr", "check": "Check", "blacklist": "Ask Bazarr for another subtitle", "retry-check": "Wait for the other subtitle"}
 CHANGES_SHOWN = 3
 UNCHANGED_DECISIONS = ("kept", "rejected", "wrong-episode", "unverified")
@@ -146,6 +176,8 @@ input[type=text] { width: 92px; padding: 6px 8px; border: 1px solid var(--line);
 .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 .message { background: rgba(74, 163, 223, 0.12); border: 1px solid var(--accent); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
 .muted { color: var(--muted); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+aside form.logout { padding: 12px 18px; }
 .keys { color: var(--muted); font-size: 12px; margin-top: 28px; }
 kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
 @media (min-width: 1900px) {
@@ -236,75 +268,230 @@ document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEven
 
 def serve_ui(host=HOST, port=PORT):
     settings["source"] = "web"
-    server = ThreadingHTTPServer((host, port), Handler)
-    log("web.listening", f"HTTP listening on {host}:{server.server_address[1]} auth={'token' if TOKEN else 'none'}", host=host, port=server.server_address[1],
-        token_required=bool(TOKEN))
+    AUTH["token"] = TOKEN or ("" if host in LOOPBACK_HOSTS else generated_token(host))
+    server = Server((host, port), Handler)
+    log("web.listening", f"HTTP listening on {host}:{server.server_address[1]} auth={'token' if AUTH['token'] else 'none'}", host=host,
+        port=server.server_address[1], token_required=bool(AUTH["token"]))
     server.serve_forever()
 
 
+def generated_token(host):
+    path = state_path("ui-token")
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(secrets.token_urlsafe(24))
+        log("web.token-generated", f"SUBTITLE_GUARD_UI_TOKEN unset while listening on {host}, token generated in {path}", LEVEL["warning"], path=path)
+    token = open(path).read().strip()
+    print(f"subtitle-guard: open the UI with the token {token} (stored in {path})", flush=True)
+    return token
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    connections = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+    def process_request(self, request, client_address):
+        if not self.connections.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connections.release()
+
+
 class Handler(BaseHTTPRequestHandler):
+    timeout = REQUEST_TIMEOUT_SECONDS
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
-        query = {key: values[0] for key, values in urllib.parse.parse_qs(url.query).items()}
-        if url.path == "/health":
-            return self.respond(200, "ok", "text/plain")
-        if not self.authorised(query):
+        query = {key: values[0] for key, values in urllib.parse.parse_qs(url.query, max_num_fields=MAX_FIELDS).items()}
+        if url.path in ("/health", "/ready"):
+            return self.respond(*(health_page() if url.path == "/health" else ready_page()))
+        if not self.trusted_host():
+            return self.respond(400, "unknown host", "text/plain; charset=utf-8")
+        self.start_request()
+        if not self.authorised():
             log("web.auth-denied", f"401 GET {url.path} from {self.client_address[0]}", LEVEL["warning"], method="GET", path=url.path, client=self.client_address[0])
-            return self.respond(401, layout("Token needed", '<form><input type="text" name="token" placeholder="token"> <button>Open</button></form>', navigation=False))
-        if TOKEN and query.get("token") == TOKEN:
-            return self.redirect(url.path, cookie=True)
-        pages = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/log.jsonl": raw_log, "/subtitle": subtitle_page,
-                 "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
-        if url.path not in pages:
+            return self.respond(401, login_page())
+        if url.path not in PAGES:
             return self.respond(404, layout("Not found", "<p>Nothing here.</p>"))
-        status, body, content_type = pages[url.path](query)
+        try:
+            status, body, content_type = PAGES[url.path](query)
+        except Exception as error:
+            log("web.error", f"GET {url.path} failed: {type(error).__name__}: {error}", LEVEL["error"], path=url.path, trace=traceback.format_exc(limit=8))
+            return self.respond(500, layout("Something went wrong", "<p>This page failed. The details are in the Log.</p>"))
         self.respond(status, body, content_type)
 
     def do_POST(self):
-        if not self.authorised({}):
+        if not self.trusted_host() or not self.same_origin():
+            log("web.request-refused", f"403 POST {self.path} from {self.client_address[0]}: foreign origin or host", LEVEL["warning"], path=self.path,
+                client=self.client_address[0], origin=self.headers.get("Origin"), host=self.headers.get("Host"))
+            return self.respond(403, "forbidden", "text/plain; charset=utf-8")
+        form = self.read_form()
+        if form is None:
+            return self.respond(413, "request too large or malformed", "text/plain; charset=utf-8")
+        self.start_request()
+        if self.path == "/login":
+            return self.login(form)
+        if not self.authorised():
             log("web.auth-denied", f"401 POST {self.path} from {self.client_address[0]}", LEVEL["warning"], method="POST", path=self.path, client=self.client_address[0])
-            return self.respond(401, layout("Token needed", "<p>Open the UI with its token first.</p>", navigation=False))
-        length = int(self.headers.get("Content-Length", 0))
-        form = {key: values[0] for key, values in urllib.parse.parse_qs(self.rfile.read(length).decode()).items()}
-        self.redirect(perform(form))
+            return self.respond(401, login_page())
+        if not form.get("csrf") or not hmac.compare_digest(form["csrf"], self.cookies().get(CSRF_COOKIE, "")):
+            return self.respond(403, layout("Form expired", '<p>This form expired. <a href="/">Reload the page</a> and try again.</p>'))
+        if self.path == "/logout":
+            SESSIONS.discard(self.cookies().get(SESSION_COOKIE, ""))
+            return self.redirect("/", [f"{SESSION_COOKIE}=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/"])
+        try:
+            location = perform(form)
+        except Exception as error:
+            log("web.error", f"POST action={form.get('action')} failed: {type(error).__name__}: {error}", LEVEL["error"], action=form.get("action"),
+                subtitle=form.get("path"), trace=traceback.format_exc(limit=8))
+            location = "/review?" + urllib.parse.urlencode({"notice": notice("That action failed and nothing more was done. The details are in the Log.")})
+        self.redirect(location)
 
-    def authorised(self, query):
-        if not TOKEN:
+    def start_request(self):
+        REQUEST.cache = {}
+        REQUEST.csrf = self.cookies().get(CSRF_COOKIE) or secrets.token_urlsafe(24)
+        REQUEST.new_csrf = CSRF_COOKIE not in self.cookies()
+
+    def read_form(self):
+        length = self.headers.get("Content-Length", "0")
+        if not length.isdigit() or int(length) > MAX_BODY_BYTES:
+            return None
+        body = self.rfile.read(int(length)).decode(errors="replace")
+        return {key: values[0] for key, values in urllib.parse.parse_qs(body, max_num_fields=MAX_FIELDS).items()}
+
+    def login(self, form):
+        if not AUTH["token"]:
+            return self.redirect("/")
+        if not hmac.compare_digest(form.get("token", ""), AUTH["token"]):
+            log_failed_login(self.client_address[0])
+            return self.respond(401, login_page("That token is not right."))
+        session = secrets.token_urlsafe(32)
+        SESSIONS.add(session)
+        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+        log("web.login", f"session opened from {self.client_address[0]}", client=self.client_address[0])
+        self.redirect("/", [f"{SESSION_COOKIE}={session}; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Strict; Path=/{secure}"])
+
+    def authorised(self):
+        return not AUTH["token"] or self.cookies().get(SESSION_COOKIE, "") in SESSIONS
+
+    def trusted_host(self):
+        if AUTH["token"]:
             return True
-        cookies = dict(part.strip().split("=", 1) for part in self.headers.get("Cookie", "").split(";") if "=" in part)
-        return query.get("token") == TOKEN or cookies.get(TOKEN_COOKIE) == TOKEN
+        return host_name(self.headers.get("Host", "")) in LOOPBACK_HOSTS
+
+    def same_origin(self):
+        origin = self.headers.get("Origin") or self.headers.get("Referer")
+        if not origin:
+            return True
+        return urllib.parse.urlparse(origin).netloc == self.headers.get("Host", "")
+
+    def cookies(self):
+        return dict(part.strip().split("=", 1) for part in self.headers.get("Cookie", "").split(";") if "=" in part)
 
     def respond(self, status, body, content_type="text/html; charset=utf-8"):
         data = body.encode()
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        self.send_common_headers()
         self.end_headers()
         self.wfile.write(data)
 
-    def redirect(self, location, cookie=False):
+    def redirect(self, location, cookies=()):
         self.send_response(303)
         self.send_header("Location", location)
-        if cookie:
-            self.send_header("Set-Cookie", f"{TOKEN_COOKIE}={TOKEN}; HttpOnly; SameSite=Strict; Path=/")
+        for cookie in cookies:
+            self.send_header("Set-Cookie", cookie)
+        self.send_common_headers()
         self.end_headers()
+
+    def send_common_headers(self):
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        if getattr(REQUEST, "new_csrf", False):
+            self.send_header("Set-Cookie", f"{CSRF_COOKIE}={REQUEST.csrf}; HttpOnly; SameSite=Strict; Path=/")
+            REQUEST.new_csrf = False
 
     def log_message(self, format, *arguments):
         return
 
 
+def log_failed_login(client):
+    now_seconds = time.time()
+    if now_seconds - FAILED_LOGINS.get(client, 0) < FAILED_LOGIN_LOG_SECONDS:
+        return
+    FAILED_LOGINS[client] = now_seconds
+    log("web.login-failed", f"wrong token from {client}", LEVEL["warning"], client=client)
+
+
+def host_name(host):
+    if host.startswith("["):
+        return host[1:host.find("]")]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def login_page(problem=""):
+    warning = f'<p class="message">{escape(problem)}</p>' if problem else ""
+    return layout("Token needed", f'{warning}<form method="post" action="/login" class="filters"><label class="visually-hidden" for="token">Token</label>'
+                                  '<input type="password" id="token" name="token" placeholder="token" autocomplete="current-password"><button>Open</button></form>'
+                                  '<p class="subtle words">The token is in SUBTITLE_GUARD_UI_TOKEN, or printed when the service starts.</p>', navigation=False)
+
+
+def health_page():
+    return 200, "ok", "text/plain; charset=utf-8"
+
+
+def ready_page():
+    try:
+        jobs.counts()
+    except sqlite3.Error as error:
+        return 503, json.dumps({"ready": False, "database": f"{type(error).__name__}: {error}"}), "application/json"
+    workers = worker_health()
+    ready = all(workers.values())
+    return (200 if ready else 503), json.dumps({"ready": ready, "database": "ok", "workers": workers}), "application/json"
+
+
+def notice(message):
+    key = secrets.token_urlsafe(9)
+    NOTICES[key] = message
+    while len(NOTICES) > MAX_NOTICES:
+        NOTICES.popitem(last=False)
+    return key
+
+
+def cached(name, function):
+    store = getattr(REQUEST, "cache", None)
+    if store is None:
+        return function()
+    if name not in store:
+        store[name] = function()
+    return store[name]
+
+
 def perform(form):
     action, path = form.get("action", ""), form.get("path", "")
     if action == "retry-job":
-        message = "It will run again shortly." if jobs.requeue(int(form.get("job", "0"))) else "Only a finished task can be run again."
-        return "/history?" + urllib.parse.urlencode({"message": message})
+        job = form.get("job", "")
+        message = "It will run again shortly." if job.isdigit() and jobs.requeue(int(job)) else "Only a finished task can be run again."
+        return "/history?" + urllib.parse.urlencode({"notice": notice(message)})
     if not known_subtitle(path):
-        return "/review?" + urllib.parse.urlencode({"message": "Unknown subtitle, nothing was changed."})
+        return "/review?" + urllib.parse.urlencode({"notice": notice("Unknown subtitle, nothing was changed.")})
     video = review.video_for(path)
     if video is None:
         return subtitle_link(path, message="The video for this subtitle was not found, nothing was changed.")
     if action in ("fix-part", "shift"):
-        first, last, shift = seconds(form["first"]), seconds(form["last"]), float(form["offset"])
+        try:
+            first, last, shift = seconds(form.get("first", "")), seconds(form.get("last", "")), float(form.get("offset", "").replace(",", "."))
+        except ValueError:
+            return subtitle_link(path, form.get("minute", "0"), "Nothing was changed: the times must look like 2:03 or 1:02:03.50, and the move like -1.5.")
         review.shift_range(video, path, first - 0.05, last + 0.05, shift)
         message = f"Done. The lines from {short_clock(first)} to {short_clock(last)} now appear {abs(shift):.1f} s {'earlier' if shift < 0 else 'later'}."
     elif action == "fix-all":
@@ -322,7 +509,10 @@ def perform(form):
         asked = review.ask_for_another(video, path)
         message = "Bazarr is looking for another subtitle. It will be checked when it arrives." if asked else "This subtitle did not come from Bazarr."
     elif action == "move":
-        moved = review.move_to_episode(video, path, form.get("episode", ""))
+        try:
+            moved = review.move_to_episode(video, path, form.get("episode", ""))
+        except SubtitleGuardError as error:
+            return subtitle_link(path, message=f"Nothing was changed: {error}")
         if moved is None:
             message = "That episode was not found next to this one, nothing was changed."
         else:
@@ -330,19 +520,21 @@ def perform(form):
     else:
         message = "Nothing was changed."
     if form.get("back") == "review":
-        return "/review?" + urllib.parse.urlencode({"message": f"{os.path.basename(path)}: {message}"})
+        return "/review?" + urllib.parse.urlencode({"notice": notice(f"{os.path.basename(path)}: {message}")})
     return subtitle_link(path, None if action == "move" else form.get("minute", "0"), message)
 
 
 def known_subtitle(path):
-    if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path):
+    if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path) or os.path.islink(path):
         return False
-    return any(row["subtitle"] == path for row in latest_reports()) or bool(jobs.for_subtitle(path, limit=1))
+    if ROOTS and not any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS):
+        return False
+    return has_report(path) or bool(jobs.for_subtitle(path, limit=1))
 
 
 def dashboard_page(query):
-    rows = latest_reports()
-    needing_a_look = {item["subtitle"] for item in review.review_items()}
+    rows = cached("latest", latest_reports)
+    needing_a_look = {item["subtitle"] for item in cached("review", review.review_items)}
     settled = [row for row in rows if row["subtitle"] not in needing_a_look]
     waiting = sum(jobs.counts()["status"].get(status, 0) for status in ("queued", "running"))
     cards = [("need a look", len(needing_a_look), "/review"), ("fixed automatically", count(settled, "fixed"), "/history?result=fixed"),
@@ -350,12 +542,12 @@ def dashboard_page(query):
              ("cannot be checked", count(settled, "unverified", "audio-synced"), "/history?result=not-checked"),
              ("waiting to be checked", waiting, "/history"), ("errors", jobs.counts()["status"].get("failed", 0), "/history")]
     body = '<div class="cards">' + "".join(f'<a class="card" href="{link}"><b>{number}</b><span>{escape(label)}</span></a>' for label, number, link in cards) + "</div>"
-    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history()[:10]) + '<p><a href="/history">See the whole history</a></p>'
+    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history(limit=10)) + '<p><a href="/history">See the whole history</a></p>'
     return 200, layout("Overview", body, refresh=15, page="dashboard"), "text/html; charset=utf-8"
 
 
 def review_page(query):
-    items = review.review_items()
+    items = cached("review", review.review_items)
     if not items:
         return 200, layout("Needs a look", message_box(query) + '<div class="status good"><b>Nothing needs a look.</b><span>Subtitles show up here when the guard is not sure.'
                                                                   "</span></div>", page="review"), "text/html; charset=utf-8"
@@ -429,7 +621,7 @@ def history_row(row):
     words = f"Belongs to {row['note']}" if belongs_elsewhere else DECISION_WORDS.get(row["decision"], row["decision"])
     result = f'<span class="badge {DECISION_TONES.get(row["decision"], "neutral")}">{escape(words)}</span>'
     note = f'<div class="muted">{escape(row["note"])}</div>' if row["note"] and not belongs_elsewhere else ""
-    return (f'<tr><td class="time">{row["time"][11:19]}</td><td>{subtitle_cell(row["subtitle"])}</td>'
+    return (f'<tr><td class="time">{escape(row["time"][11:19])}</td><td>{subtitle_cell(row["subtitle"])}</td>'
             f'<td>{result}{note}<div class="muted">Started by: {escape(started_by(row["provider"]))}</div></td><td>{changes_text(row["changes"], row["decision"])}</td>'
             f'<td>{confidence_badge(row)}{lines_matching(row)}</td></tr>')
 
@@ -511,7 +703,7 @@ def technical_log(events):
 def technical_line(event):
     level = event_level(event)
     metadata = escape(json.dumps(event, ensure_ascii=False, indent=2, default=str))
-    return (f'<details class="line {level}"><summary><span class="when">{escape(event["time"])}</span> <span class="level">{level.upper():<7}</span> '
+    return (f'<details class="line {escape(level)}"><summary><span class="when">{escape(event["time"])}</span> <span class="level">{escape(level.upper()):<7}</span> '
             f'<span class="source">{escape(event.get("source", "-")):<10}</span> <b class="event">{escape(event["event"])}</b> '
             f'<span class="text">{escape(event_message(event))}</span></summary>'
             f'<div class="metadata"><button class="small copy" type="button">Copy</button><pre>{metadata}</pre></div></details>')
@@ -550,9 +742,10 @@ def subtitle_page(query):
     if video is None:
         return 200, layout(os.path.basename(path), '<div class="status neutral"><b>The video for this subtitle was not found.</b></div>', current=path), \
             "text/html; charset=utf-8"
-    latest = next((row for row in latest_reports() if row["subtitle"] == path), None)
-    diagnosis = review.diagnose(video, path)
-    minute = int(query["minute"]) if query.get("minute", "").isdigit() else first_problem_minute(diagnosis)
+    latest = next((row for row in cached("latest", latest_reports) if row["subtitle"] == path), None)
+    with DIAGNOSES:
+        diagnosis = review.diagnose(video, path)
+    minute = int(query["minute"]) if query.get("minute", "").isdigit() and len(query["minute"]) <= MAX_MINUTE_DIGITS else first_problem_minute(diagnosis)
     view = review.side_by_side(video, path, minute * 60, minute * 60 + WINDOW_SECONDS, diagnosis["shifts"] if diagnosis["fixable"] else None)
     fix = review.last_fix(video, path)
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
@@ -574,7 +767,8 @@ def status_box(diagnosis, latest, fix):
                         "Fix everything at once, or one part at a time."),
         "no-match": ("bad", "This subtitle does not match this video.", "It may be made for another version. Try another subtitle, or fix it by hand."),
         "no-reference": ("neutral", "This subtitle cannot be checked.", "The video has no subtitle track to compare with."),
-        "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for forced subtitles."),
+        "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for subtitles that only translate signs."),
+        "wrong-ends": ("bad", "The end times of this subtitle are wrong.", "Many lines stay on screen far too long. Try another subtitle."),
     }
     tone_name, title, detail = messages[diagnosis["state"]]
     if diagnosis["state"] == "in-sync" and fix:
@@ -636,7 +830,7 @@ def timeline(path, view, minute, fix):
 
 def strip(path, minutes, minute):
     length = len(minutes)
-    segments = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{minute_title(number, share)}" href="{subtitle_link(path, number)}"></a>'
+    segments = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{escape(minute_title(number, share))}" href="{subtitle_link(path, number)}"></a>'
                        for number, share, state in minutes)
     step = next((step for step in TICK_MINUTES if length / step <= 10), TICK_MINUTES[-1])
     ticks = "".join(f'<span style="left: {100 * number / length:.2f}%">{duration_label(number)}</span>' for number in range(0, length - step // 2, step))
@@ -646,7 +840,7 @@ def strip(path, minutes, minute):
 def fix_section(path, fix):
     if not fix:
         return ""
-    recorded = next((row for row in report_history() if row["subtitle"] == path and row["changes"]), None)
+    recorded = next((row for row in report_history(path, limit=50) if row["changes"]), None)
     changes = recorded["changes"] if recorded else {"scale": 1.0, "lines": len(fix["shifts"]), "parts": fix["parts"]}
     by = f", started by {started_by(recorded['provider'])}, confidence {recorded['confidence']} / 100" if recorded and recorded["confidence"] else ""
     return (f'<h2>What was changed</h2><p class="subtle words">Compared with the file as it was before, on {escape(fix_time(fix["time"]))}{escape(by)}. '
@@ -715,13 +909,13 @@ def technical(path, video, view, latest):
              ("worst 2 minutes", measured.get("worst_window", "-")), ("confidence now", f"{measured.get('confidence', '-')} {measured.get('confidence_band', '')}"),
              ("video", video)]
     rows = "".join(f'<tr><td class="time">{escape(label)}</td><td>{escape(value)}</td></tr>' for label, value in facts)
-    history = history_table([row for row in report_history() if row["subtitle"] == path][:20])
+    history = history_table(report_history(path, limit=20))
     return f'<details><summary>Technical details</summary><table>{rows}</table><h2>Checks of this subtitle</h2>{history}</details>'
 
 
 def queue_links(path):
     links = ""
-    queue = [item["subtitle"] for item in review.review_items()]
+    queue = [item["subtitle"] for item in cached("review", review.review_items)]
     if path in queue and queue.index(path) > 0:
         links += f'<a id="previous-item" href="{subtitle_link(queue[queue.index(path) - 1])}" hidden></a>'
     if path in queue and queue.index(path) + 1 < len(queue):
@@ -730,11 +924,12 @@ def queue_links(path):
 
 
 def api_status(query):
-    return 200, json.dumps({**jobs.counts(), "to_review": len(review.review_items())}), "application/json"
+    return 200, json.dumps({**jobs.counts(), "to_review": len(cached("review", review.review_items))}), "application/json"
 
 
 def api_jobs(query):
-    return 200, json.dumps(jobs.recent(query.get("status"), limit=int(query.get("limit", "100")))), "application/json"
+    limit = int(query["limit"]) if query.get("limit", "").isdigit() and len(query["limit"]) <= 4 else 100
+    return 200, json.dumps(jobs.recent(query.get("status"), limit=max(1, min(limit, 1000)))), "application/json"
 
 
 def api_log(query):
@@ -742,7 +937,7 @@ def api_log(query):
 
 
 def api_review(query):
-    return 200, json.dumps(review.review_items()), "application/json"
+    return 200, json.dumps(cached("review", review.review_items)), "application/json"
 
 
 def layout(title, body, refresh=None, page="", current=None, navigation=True):
@@ -750,14 +945,17 @@ def layout(title, body, refresh=None, page="", current=None, navigation=True):
     links = "".join(f'<a class="{"active" if page == key else ""}" href="{link}">{label}</a>'
                     for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
                                                     ("log", "/log", "Log")))
-    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{meta}'
-            f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body><div class="shell">'
-            f'<aside><a class="brand" href="/">subtitle-guard</a>{f"<nav>{links}</nav>{sidebar(current)}" if navigation else ""}</aside>'
-            f'<main><h1>{escape(title)}</h1>{body}</main></div><script>{KEYS}</script></body></html>')
+    logout = ('<form method="post" action="/logout" class="logout"><button class="small">Log out</button></form>' if AUTH["token"] and navigation else "")
+    page_html = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{meta}'
+                 f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body><div class="shell">'
+                 f'<aside><a class="brand" href="/">subtitle-guard</a>{f"<nav>{links}</nav>{sidebar(current)}{logout}" if navigation else ""}</aside>'
+                 f'<main><h1>{escape(title)}</h1>{body}</main></div><script>{KEYS}</script></body></html>')
+    csrf = escape(getattr(REQUEST, "csrf", ""))
+    return re.sub(r'(<form\b[^>]*method="post"[^>]*>)', lambda match: match.group(1) + f'<input type="hidden" name="csrf" value="{csrf}">', page_html)
 
 
 def sidebar(current):
-    items = review.review_items()
+    items = cached("review", review.review_items)
     if not items:
         return '<h3>Needs a look</h3><p class="empty">Nothing right now.</p>'
     entries = "".join(f'<a class="item{" current" if item["subtitle"] == current else ""}" title="{escape(item["subtitle"])}" '
@@ -798,7 +996,7 @@ def count(rows, *decisions):
 def subtitle_link(path, minute=None, message=None):
     query = {"path": path} if minute is None else {"path": path, "minute": minute}
     if message:
-        query["message"] = message
+        query["notice"] = notice(message)
     return "/subtitle?" + urllib.parse.urlencode(query)
 
 
@@ -807,7 +1005,8 @@ def keys_help():
 
 
 def message_box(query):
-    return f'<div class="message">{escape(query["message"])}</div>' if query.get("message") else ""
+    message = NOTICES.pop(query.get("notice", ""), "")
+    return f'<div class="message" role="status">{escape(message)}</div>' if message else ""
 
 
 def readable(moment):
@@ -838,3 +1037,7 @@ def seconds(value):
 
 def escape(value):
     return html.escape(str(value), quote=True)
+
+
+PAGES = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/log.jsonl": raw_log,
+         "/subtitle": subtitle_page, "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}

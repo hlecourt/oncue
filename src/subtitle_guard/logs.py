@@ -1,7 +1,9 @@
 """Global log: one JSON event per line in the state directory, each with a level, the process that wrote it and a plain sentence."""
 
+import fcntl
 import json
 import os
+import sys
 from collections import defaultdict
 
 from .outcome import DECISION_WORDS
@@ -36,14 +38,23 @@ LEGACY_EVENTS = {
 def log(event, message, level=LEVEL["info"], **fields):
     line = json.dumps({"time": now(), "level": level, "source": settings["source"], "pid": os.getpid(), "event": event, "message": message,
                        **settings["context"], **fields}, ensure_ascii=False, default=str)
-    path = log_file()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    if os.path.exists(path) and os.path.getsize(path) > MAX_LOG_BYTES:
-        os.replace(path, path + ".1")
-    with open(path, "a") as handle:
-        handle.write(line + "\n")
+    try:
+        append_line(line)
+    except OSError as error:
+        print(f"subtitle-guard: could not write the log: {error}", file=sys.stderr, flush=True)
     if settings["echo"]:
         print(line, flush=True)
+
+
+def append_line(line):
+    path = log_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if os.path.exists(path) and os.path.getsize(path) > MAX_LOG_BYTES:
+            os.replace(path, path + ".1")
+        with open(path, "a") as handle:
+            handle.write(line + "\n")
 
 
 def recent_events():

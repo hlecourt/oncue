@@ -1,0 +1,86 @@
+import os
+
+import numpy
+import pytest
+
+from subtitle_guard import files, storage
+from subtitle_guard.errors import UnsafePathError
+from subtitle_guard.guard import evaluate_and_fix
+from subtitle_guard.subtitles import parse_subtitle, write_subtitle
+
+from subtitle_guard.subtitles import timestamp
+
+LINES = 150
+SRT = "".join(f"{number}\n{timestamp(number * 3.0)} --> {timestamp(number * 3.0 + 1)}\nline {number}\n\n" for number in range(1, LINES + 1))
+
+
+def test_a_planted_symlink_next_to_the_subtitle_is_never_followed(tmp_path):
+    subtitle, target = tmp_path / "movie.fr.srt", tmp_path / "victim.txt"
+    subtitle.write_text(SRT)
+    target.write_text("untouched")
+    (tmp_path / "movie.fr.srt.subtitle-guard.tmp").symlink_to(target)
+    document = parse_subtitle(str(subtitle))
+    write_subtitle(str(subtitle), document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
+    assert target.read_text() == "untouched" and "00:00:04,000" in subtitle.read_text()
+    assert not [name for name in os.listdir(tmp_path) if name.endswith(files.TEMPORARY_SUFFIX)]
+
+
+def test_a_symlinked_subtitle_is_refused(tmp_path):
+    real, link = tmp_path / "real.srt", tmp_path / "movie.fr.srt"
+    real.write_text(SRT)
+    link.symlink_to(real)
+    with pytest.raises(UnsafePathError):
+        parse_subtitle(str(link))
+    with pytest.raises(UnsafePathError):
+        files.replace_file(str(link), b"x")
+    assert evaluate_and_fix("/missing.mkv", str(link), True)["reason"].startswith("refused:")
+
+
+def test_a_rewrite_keeps_the_file_mode(tmp_path):
+    subtitle = tmp_path / "movie.fr.srt"
+    subtitle.write_text(SRT)
+    os.chmod(subtitle, 0o640)
+    files.replace_file(str(subtitle), b"new")
+    assert oct(os.stat(subtitle).st_mode & 0o777) == "0o640" and subtitle.read_bytes() == b"new"
+
+
+def test_same_named_subtitles_never_share_backups_and_backups_never_overwrite(tmp_path):
+    first = tmp_path / "disk1" / "Movies" / "X (2020)" / "X.en.srt"
+    second = tmp_path / "disk2" / "Movies" / "X (2020)" / "X.en.srt"
+    assert storage.backup_root(str(first)) != storage.backup_root(str(second))
+    first.parent.mkdir(parents=True)
+    first.write_text("one")
+    folders = {storage.backup_path(str(first)) for _ in range(5)}
+    assert len(folders) == 5
+    folder = folders.pop()
+    files.save_version(str(first), folder, "original")
+    with pytest.raises(FileExistsError):
+        files.save_version(str(first), folder, "original")
+
+
+def test_revert_uses_the_latest_original(tmp_path):
+    subtitle = tmp_path / "Show" / "Season 1" / "ep.fr.srt"
+    subtitle.parent.mkdir(parents=True)
+    for content in ("first download", "second download"):
+        subtitle.write_text(content)
+        files.save_version(str(subtitle), storage.backup_path(str(subtitle)), "original")
+    subtitle.write_text("fixed")
+    assert open(storage.revert_source(str(subtitle))).read() == "second download"
+
+
+def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):
+    from subtitle_guard import guard
+    subtitle = tmp_path / "movie.fr.srt"
+    subtitle.write_text(SRT)
+    real_judge = guard.judge
+
+    def judge_while_bazarr_replaces_the_file(cues, reference):
+        subtitle.write_text(SRT + "999\n01:00:00,000 --> 01:00:01,000\nnew download\n")
+        return real_judge(cues, reference)
+    monkeypatch.setattr(guard, "judge", judge_while_bazarr_replaces_the_file)
+    monkeypatch.setattr(guard, "load_reference", lambda video, hearing_impaired, count: {
+        "kind": "eng-text", "starts": numpy.array([number * 3.0 + 7 for number in range(1, LINES + 1)]),
+        "ends": numpy.array([number * 3.0 + 8 for number in range(1, LINES + 1)]), "index": 2, "image": False})
+    outcome = evaluate_and_fix("/movie.mkv", str(subtitle), True)
+    assert outcome["decision"] == "unverified" and "changed during the check" in outcome["reason"]
+    assert "new download" in subtitle.read_text()
