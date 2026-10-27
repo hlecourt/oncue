@@ -1,12 +1,28 @@
 """Read subtitle timings and texts from the Matroska Cues index without reading the whole file."""
 
+from functools import wraps
+
+from .errors import MatroskaError
+
 MATROSKA_HEAD_BYTES = 64 * 1024
+MAX_ELEMENT_BYTES = 64 * 1024 * 1024
 MATROSKA_ID = {"segment": 0x18538067, "seek_head": 0x114D9B74, "seek_id": 0x53AB, "seek_position": 0x53AC, "info": 0x1549A966,
                "timestamp_scale": 0x2AD7B1, "tracks": 0x1654AE6B, "track_entry": 0xAE, "track_number": 0xD7, "cues": 0x1C53BB6B,
                "cue_time": 0xB3, "cue_track_positions": 0xB7, "cue_track": 0xF7, "cue_cluster_position": 0xF1,
                "cue_relative_position": 0xF0, "cue_duration": 0xB2, "block_group": 0xA0, "block": 0xA1, "simple_block": 0xA3}
 
 
+def typed_errors(function):
+    @wraps(function)
+    def wrapper(*arguments, **options):
+        try:
+            return function(*arguments, **options)
+        except (IndexError, KeyError, StopIteration, ValueError) as error:
+            raise MatroskaError(f"unreadable Matroska index: {type(error).__name__}: {error}") from error
+    return wrapper
+
+
+@typed_errors
 def matroska_cue_timings(video, stream_count, split_bitmap_streams):
     with open(video, "rb") as handle:
         index = read_index(handle, stream_count)
@@ -21,6 +37,7 @@ def matroska_cue_timings(video, stream_count, split_bitmap_streams):
     return timings
 
 
+@typed_errors
 def matroska_texts(video, stream_count, stream, ass=False):
     with open(video, "rb") as handle:
         index = read_index(handle, stream_count)
@@ -118,6 +135,8 @@ def read_element_with_id(handle, position):
     header = handle.read(16)
     element_id, data_start = read_vint(header, 0, keep_marker=True)
     size, data_start = read_vint(header, data_start)
+    if size > MAX_ELEMENT_BYTES:
+        raise MatroskaError(f"element of {size} bytes is larger than {MAX_ELEMENT_BYTES}")
     handle.seek(position + data_start)
     return element_id, handle.read(size)
 
@@ -135,12 +154,7 @@ def seek_positions(head, segment_start):
 
 
 def read_element(handle, position):
-    handle.seek(position)
-    header = handle.read(16)
-    _, data_start = read_vint(header, 0, keep_marker=True)
-    size, data_start = read_vint(header, data_start)
-    handle.seek(position + data_start)
-    return handle.read(size)
+    return read_element_with_id(handle, position)[1]
 
 
 def ebml_children(data, start, end, clip=True):
@@ -155,7 +169,7 @@ def ebml_children(data, start, end, clip=True):
 def read_vint(data, position, keep_marker=False):
     first = data[position]
     if first == 0:
-        raise ValueError("invalid EBML length")
+        raise MatroskaError("invalid EBML length")
     length = 9 - first.bit_length()
     value = first if keep_marker else first & (0xFF >> length)
     for byte in data[position + 1:position + length]:

@@ -28,7 +28,7 @@ def test_a_failing_job_is_recorded_and_the_worker_goes_on(monkeypatch):
     unknown = jobs.enqueue("teleport", {})
     assert worker.work_once(1) and worker.work_once(1)
     assert jobs.job(first)["status"] == "failed" and jobs.job(first)["error"] == "OSError: video is gone"
-    assert jobs.job(unknown)["error"] == "ValueError: unknown job kind teleport"
+    assert jobs.job(unknown)["error"] == "UnknownJobKindError: unknown job kind teleport"
 
 
 def test_blacklist_job_schedules_a_later_check(monkeypatch):

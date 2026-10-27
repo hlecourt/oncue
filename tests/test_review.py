@@ -3,7 +3,7 @@ import shutil
 
 import pytest
 
-from subtitle_guard import jobs, review, storage
+from subtitle_guard import jobs, reports, review, storage
 from subtitle_guard.guard import evaluate_and_fix
 from media import video_with_reference, write_subtitle_file
 
@@ -39,14 +39,14 @@ def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
     outcome = review.shift_range(str(video), str(subtitle), 123, 183, -3)
     assert outcome["decision"] == "manual" and not outcome["weak_minutes"] and outcome["confidence_band"] == "high"
     assert any(name.startswith("before-manual") for _, _, names in os.walk(storage.backup_root(str(subtitle))) for name in names)
-    assert storage.latest_reports()[0]["decision"] == "manual"
+    assert reports.latest_reports()[0]["decision"] == "manual"
 
 
 @needs_ffmpeg
 def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
+    reports.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
     assert [item["subtitle"] for item in review.review_items()] == [str(subtitle)]
     review.accept(str(subtitle))
     assert review.review_items() == []
@@ -64,7 +64,7 @@ def test_revert_restores_the_provider_file(movie):
     assert subtitle.read_text() != provided
     assert review.revert(str(subtitle))
     assert subtitle.read_text() == provided
-    assert storage.latest_reports()[0]["decision"] == "reverted"
+    assert reports.latest_reports()[0]["decision"] == "reverted"
 
 
 @needs_ffmpeg
