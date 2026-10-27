@@ -7,7 +7,11 @@ import sys
 from . import __version__, storage
 from .audio import FFSUBSYNC_LIBRARIES
 from .bazarr import BAZARR_CONFIG, BAZARR_URL, bazarr_get
+from .errors import ToolError
 from .logs import LEVEL, log, settings
+from .tools import run_tool, stderr_tail
+
+IMPORT_CHECK_SECONDS = 60
 
 
 def report_startup(command, **details):
@@ -22,8 +26,16 @@ def report_startup(command, **details):
 
 
 def health_checks():
-    return {"ffmpeg": tool("ffmpeg"), "ffprobe": tool("ffprobe"), "ffsubsync": {"ok": os.path.isdir(FFSUBSYNC_LIBRARIES), "path": FFSUBSYNC_LIBRARIES},
+    return {"ffmpeg": tool("ffmpeg"), "ffprobe": tool("ffprobe"), "ffsubsync": ffsubsync_status(),
             "state_writable": writable(storage.STATE_DIRECTORY), "backups_writable": writable(storage.BACKUP_DIRECTORY), "bazarr": bazarr_status()}
+
+
+def ffsubsync_status():
+    try:
+        result = run_tool([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import ffsubsync", FFSUBSYNC_LIBRARIES], IMPORT_CHECK_SECONDS)
+    except ToolError as error:
+        return {"ok": False, "path": FFSUBSYNC_LIBRARIES, "error": str(error)}
+    return {"ok": result.returncode == 0, "path": FFSUBSYNC_LIBRARIES} | ({} if result.returncode == 0 else {"error": stderr_tail(result)})
 
 
 def tool(name):

@@ -77,3 +77,37 @@ def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys):
     fixed = numpy.array([start for start, _, _ in parse_subtitle(str(subtitle))["cues"]])
     expected = starts[starts * 23.976 / 25 > 4]
     assert numpy.max(numpy.abs(fixed - expected)) < 0.31
+
+
+def test_the_watcher_queues_once_remembers_after_success_and_retries_failures_later(tmp_path, monkeypatch):
+    from subtitle_guard import jobs, library, worker
+    video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
+    video.write_bytes(b"v")
+    subtitle.write_text("s")
+    assert library.queue_if_changed(str(video), str(subtitle), [], True) == 1
+    assert library.queue_if_changed(str(video), str(subtitle), [], True) == 0
+    monkeypatch.setattr(worker, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {"decision": "kept"})
+    worker.work_once(1)
+    assert jobs.seen(str(subtitle))[0] == library.watch_signature(str(video), str(subtitle), True)
+    assert library.queue_if_changed(str(video), str(subtitle), [], True) == 0
+    assert library.queue_if_changed(str(video), str(subtitle), [], False) == 1
+
+    def broken(video, subtitle, apply, neighbours):
+        raise OSError("disk gone")
+    monkeypatch.setattr(worker, "evaluate_and_fix", broken)
+    worker.work_once(1)
+    assert jobs.seen(str(subtitle))[0].startswith(library.FAILED)
+    assert library.queue_if_changed(str(video), str(subtitle), [], False) == 0
+    monkeypatch.setattr(library, "FAILED_RETRY_SECONDS", -1)
+    assert library.queue_if_changed(str(video), str(subtitle), [], False) == 1
+    subtitle.unlink()
+    assert library.queue_if_changed(str(video), str(subtitle), [], False) == 0
+
+
+def test_wrong_end_times_are_rejected(tmp_path):
+    from subtitle_guard.guard import evaluate_and_fix
+    from subtitle_guard.subtitles import timestamp
+    subtitle = tmp_path / "late-ends.fr.srt"
+    subtitle.write_text("".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 600)}\nline {number}\n\n" for number in range(1, 150)))
+    outcome = evaluate_and_fix("/missing.mkv", str(subtitle), True)
+    assert outcome["decision"] == "rejected" and "end times are wrong" in outcome["reason"]

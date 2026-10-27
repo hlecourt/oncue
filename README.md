@@ -20,7 +20,7 @@ automatic syncs rarely tell you when they got it wrong. subtitle-guard instead:
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
 - only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
 - anything it cannot fix with confidence is left as it is and listed for you in the web UI;
-- changes only the timings, after a backup.
+- changes only the timings, after a backup, and never while the file is being changed by something else.
 
 How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -32,8 +32,9 @@ cd subtitle-guard/examples
 docker compose up -d
 ```
 
-Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch. Then open `http://<host>:8484`
-with the token you set in `SUBTITLE_GUARD_UI_TOKEN`.
+Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, and `SUBTITLE_GUARD_ROOTS` the
+folders whose subtitles the web UI may change. Then open `http://<host>:8484` with the token you set in
+`SUBTITLE_GUARD_UI_TOKEN`.
 
 The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one after
 that. By default it only reports what it would do: add `--apply` to the `serve` command to let it write the fixes it is sure
@@ -69,7 +70,8 @@ for another, a history of every check and the technical log.
 
 - `check`, the scans and the folder watch only report until `--apply` is given; the Bazarr hook writes the fixes it is sure
   about.
-- Every write is atomic, after a backup.
+- The web UI only changes subtitles under `SUBTITLE_GUARD_ROOTS`, and never through a symbolic link.
+- Every write is atomic, after a backup, and refused if the file changed since it was checked.
 - Beyond the machine itself, the web UI asks for a token.
 
 ## Settings
@@ -79,6 +81,7 @@ Settings are environment variables. The ones you are most likely to need:
 | Variable | Default |
 |---|---|
 | `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
+| `SUBTITLE_GUARD_ROOTS` | unset: the folders whose subtitles the web UI may change |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_UI_TOKEN` | unset: required beyond the machine itself |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
@@ -102,12 +105,15 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 - Cumulative offsets beyond +/-1200 s are rejected, not fixed.
 - Lines of a scene missing from the video are placed as well as possible, not removed.
 - Without any embedded subtitle track, timing cannot be verified, and the audio fallback cannot fix a different cut.
+- Subtitles over 20 MB or 8,000 lines are not checked.
 
 ## Troubleshooting
 
 - **A subtitle is never checked**: it must sit next to its video with the video's name (`Movie.mkv`, `Movie.fr.srt`) under a
   folder of `SUBTITLE_GUARD_LIBRARY`. With Bazarr, check that post-processing is on and that the command's paths exist inside
   the Bazarr container.
+- **"Cannot be checked: could not read the video"**: the reason is in the `guard.checked` event on the Log page.
+- **`/ready` answers 503**: a worker stopped; the Log page shows `supervisor.role-restarted` or `job.failed`.
 
 ## Development
 

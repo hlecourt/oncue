@@ -126,7 +126,7 @@ def save(name, cues, subtitle_format):
                        for start, end, text in cues)
         open(path, "w", encoding="utf-8").write(header + body)
         return path
-    subtitles.write_subtitle(path, {"format": "vtt" if subtitle_format == "vtt" else "srt"}, cues)
+    subtitles.create_subtitle(path, cues, "vtt" if subtitle_format == "vtt" else "srt")
     if subtitle_format == "utf16":
         content = open(path, encoding="utf-8").read()
         open(path, "w", encoding="utf-16").write(content)
@@ -137,10 +137,10 @@ def run(video, path, hearing_impaired=False):
     document = subtitles.parse_subtitle(path)
     cues = document["cues"]
     if len(cues) < alignment.MIN_CUES:
-        return "unverified", cues, None, "  0 none", "  0 none"
+        return "unverified", cues, None, "  0 none"
     embedded = reference.load_reference(video, hearing_impaired, len(cues))
     if embedded is None:
-        return "unverified", cues, None
+        return "unverified", cues, None, "  0 none"
     judged = alignment.judge(cues, embedded)
     decision, _, _, attempt = judged
     score, band = confidence(summarize(embedded["kind"], *judged))
@@ -233,4 +233,6 @@ for item in corpus:
 print("\nsummary per case:")
 for label, verdicts in totals.items():
     print(f"  {label[:52]:52s} ok {verdicts.count('ok'):2d}  fail {verdicts.count('FAIL'):2d}  info {verdicts.count('info'):2d}")
-print(f"total failures: {sum(verdicts.count('FAIL') for verdicts in totals.values())}")
+failures = sum(verdicts.count('FAIL') for verdicts in totals.values())
+print(f"total failures: {failures}")
+sys.exit(1 if failures else 0)
