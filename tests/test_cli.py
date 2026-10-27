@@ -4,7 +4,7 @@ from subtitle_guard import cli, jobs
 
 
 def test_options_do_not_swallow_positional_values():
-    assert cli.parse_options(["2", "--apply", "--workers", "3", "--queue"]) == (["2"], {"--apply": True, "--queue": True}, 3)
+    assert cli.parse_options(["2", "--apply", "--workers", "3", "--queue"]) == (["2"], {"--apply": True, "--queue": True, "--problems": False}, 3)
 
 
 def test_hook_queues_a_job_in_queue_mode(monkeypatch, capsys):

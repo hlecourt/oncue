@@ -11,9 +11,10 @@ import subprocess
 import numpy
 
 from . import jobs
-from .alignment import TOLERANCE_SECONDS, nearest_gap, score, weak_minutes
+from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
+from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours
 from .logs import log
 from .matroska import matroska_texts
@@ -23,6 +24,9 @@ from .storage import backup_path, backup_root, file_signature, heavy_disk_read, 
 from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, write_subtitle
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
+MIN_MINUTE_LINES = 3
+BEFORE_FIX_NAMES = ("original", "before-manual")
+DIAGNOSIS_CACHE_VERSION = 2
 
 
 def review_items():
@@ -36,20 +40,130 @@ def video_for(subtitle):
     return os.path.join(folder, max(candidates, key=len)) if candidates else None
 
 
-def side_by_side(video, subtitle, first, last):
+def side_by_side(video, subtitle, first, last, shifts=None):
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
     if reference is None:
-        return {"reference": None, "lines": [(start, "subtitle", clean(text), None) for start, _, text in cues if first <= start < last], "minutes": []}
+        return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
+                "moments": pair_moments(cues, [], [start for start, _, _ in cues], first, last), "minutes": []}
     texts = reference_texts(video, reference) or [(start, start, "") for start in reference["starts"]]
     starts = numpy.array([start for start, _, _ in cues])
     matched = numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS if len(starts) else numpy.array([], dtype=bool)
-    lines = [(start, "reference", clean(text), None) for start, _, text in texts if first <= start < last]
-    lines += [(start, "subtitle", clean(text), bool(hit)) for (start, _, text), hit in zip(cues, matched) if first <= start < last]
-    minutes = [(minute, float(matched[(starts >= minute * 60) & (starts < minute * 60 + 60)].mean()))
-               for minute in range(int(starts.max() // 60) + 1) if ((starts >= minute * 60) & (starts < minute * 60 + 60)).sum() >= 3] if len(starts) else []
-    return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minutes,
-            "measure": measure(cues, reference)}
+    lines = [(start, "reference", clean(text), None, None) for start, _, text in texts if first <= start < last]
+    lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched)) if first <= start < last]
+    shifted = bool(shifts) and len(shifts) == len(cues)
+    targets = starts + numpy.array(shifts) if shifted else starts
+    on_time = numpy.abs(targets - starts) < NOTICEABLE_SHIFT_SECONDS if shifted else matched
+    return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minute_states(starts, on_time, shifted),
+            "moments": pair_moments(cues, texts, targets, first, last), "measure": measure(cues, reference)}
+
+
+def minute_states(starts, on_time, shifted):
+    states = []
+    for minute in range(int(starts.max() // 60) + 1 if len(starts) else 0):
+        inside = (starts >= minute * 60) & (starts < minute * 60 + 60)
+        if inside.sum() < MIN_MINUTE_LINES:
+            states.append((minute, None, "quiet"))
+            continue
+        share = float(on_time[inside].mean())
+        states.append((minute, share, minute_state(share, shifted)))
+    return states
+
+
+def minute_state(share, shifted):
+    good, bad = (1.0, 0.5) if shifted else (0.55, 0.35)
+    if share >= good:
+        return "good"
+    return "bad" if share < bad else "medium"
+
+
+def pair_moments(cues, texts, targets, first, last):
+    reference_starts = numpy.array([start for start, _, _ in texts])
+    moments = {position: {"time": start, "video": clean(text), "subtitle": None, "shown_at": None, "shift": 0.0}
+               for position, (start, _, text) in enumerate(texts) if first <= start < last}
+    for index, ((start, _, text), target) in enumerate(zip(cues, targets)):
+        if not first <= target < last:
+            continue
+        line = {"subtitle": clean(text), "shown_at": start, "shift": float(target - start), "index": index}
+        position = nearest_position(reference_starts, target)
+        if position in moments and moments[position]["subtitle"] is None and abs(reference_starts[position] - target) <= TOLERANCE_SECONDS:
+            moments[position].update(line)
+            continue
+        moments[("subtitle", index)] = {"time": float(target), "video": None, **line}
+    return sorted(moments.values(), key=lambda moment: moment["time"])
+
+
+def nearest_position(starts, value):
+    if not len(starts):
+        return None
+    position = int(numpy.searchsorted(starts, value))
+    candidates = [candidate for candidate in (position - 1, position) if 0 <= candidate < len(starts)]
+    return min(candidates, key=lambda candidate: abs(starts[candidate] - value))
+
+
+def last_fix(video, subtitle):
+    extension = os.path.splitext(subtitle)[1]
+    folders = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*")), reverse=True)
+    candidates = [os.path.join(folder, name + extension) for name in BEFORE_FIX_NAMES for folder in folders]
+    before = next((path for path in candidates if os.path.exists(path)), None)
+    if before is None:
+        return None
+    old, new = parse_subtitle(before)["cues"], parse_subtitle(subtitle)["cues"]
+    shifts = [new_start - old_start for (new_start, _, _), (old_start, _, _) in zip(new, old)]
+    if len(old) != len(new) or max((abs(shift) for shift in shifts), default=0) < NOTICEABLE_SHIFT_SECONDS:
+        return None
+    moved_minutes = sorted({int(start // 60) for (start, _, _), shift in zip(new, shifts) if abs(shift) >= NOTICEABLE_SHIFT_SECONDS})
+    return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "moved_minutes": moved_minutes, "parts": out_of_sync_parts(old, shifts)}
+
+
+def diagnose(video, subtitle):
+    cache_file = diagnosis_file(video, subtitle)
+    if os.path.exists(cache_file):
+        return json.load(open(cache_file))
+    cues = parse_subtitle(subtitle)["cues"]
+    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues)) if len(cues) >= MIN_CUES else None
+    if len(cues) < MIN_CUES:
+        diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
+    elif reference is None:
+        diagnosis = {"state": "no-reference", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
+    else:
+        diagnosis = diagnosis_from(cues, *judge(cues, reference))
+    write_json(cache_file, diagnosis)
+    return diagnosis
+
+
+def known_diagnosis(video, subtitle):
+    cache_file = diagnosis_file(video, subtitle)
+    return json.load(open(cache_file)) if os.path.exists(cache_file) else None
+
+
+def diagnosis_file(video, subtitle):
+    key = hashlib.sha1(f"{DIAGNOSIS_CACHE_VERSION}|{subtitle}|{file_signature(subtitle)}|{video}|{file_signature(video)}".encode()).hexdigest()
+    return state_path("diagnoses", key + ".json")
+
+
+def diagnosis_from(cues, decision, original, weak, attempt):
+    unchanged = {"parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": weak}
+    if attempt is None:
+        return {**unchanged, "state": "in-sync"}
+    if decision == DECISION["kept"]:
+        return {**unchanged, "state": "unclear" if weak else "in-sync"}
+    if not attempt["fixed"]:
+        return {**unchanged, "state": "no-match"}
+    shifts = [new_start - start for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
+    changes = describe_changes(cues, attempt)
+    return {"state": "out-of-sync", "parts": changes["parts"], "scale": changes["scale"], "fixable": True, "shifts": shifts, "weak_minutes": weak}
+
+
+def fix_everything(video, subtitle):
+    log("review.fix-requested", "full fix requested from the UI", subtitle=subtitle)
+    outcome = evaluate_and_fix(video, subtitle, True)
+    report(subtitle, "ui", outcome)
+    return outcome
+
+
+def came_from_bazarr(video, subtitle):
+    return any(attempt.get("media_id") and attempt.get("provider") for attempt in load_state(video, subtitle).get("attempts", []))
 
 
 def reference_texts(video, reference):
@@ -94,9 +208,12 @@ def shift_range(video, subtitle, first, last, offset):
     measured = measure(cues, reference) if reference else None
     outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": measured or {}, "after": measured or {},
                "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
-               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s"}
+               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s",
+               "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
+                                                                         "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]}}
     report(subtitle, "manual", outcome)
-    log("manual-shift", subtitle=subtitle, first=first, last=last, offset=offset, confidence=outcome["confidence"])
+    log("review.shifted", f"manual shift range={first:.2f}-{last:.2f}s offset={offset:+.2f}s", subtitle=subtitle, first=first, last=last,
+        offset=offset, confidence=outcome["confidence"])
     return outcome
 
 
@@ -107,18 +224,19 @@ def revert(subtitle):
     keep_current(subtitle, "before-revert")
     shutil.copy2(originals[0], subtitle)
     report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(originals[0]))}"})
-    log("reverted", subtitle=subtitle, original=originals[0])
+    log("review.reverted", f"original restored from {originals[0]}", subtitle=subtitle, original=originals[0])
     return True
 
 
 def accept(subtitle):
     jobs.accept(subtitle, file_signature(subtitle))
-    log("accepted", subtitle=subtitle)
+    log("review.accepted", "accepted as is, excluded from review until the file changes", subtitle=subtitle)
 
 
 def recheck(video, subtitle):
     folder, name = os.path.split(video)
     videos = sorted(entry for entry in os.listdir(folder) if entry.lower().endswith(VIDEO_EXTENSIONS))
+    log("review.recheck-requested", "recheck requested from the UI", subtitle=subtitle)
     return jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": True, "neighbours": folder_neighbours(folder, name, videos)})
 
 
@@ -134,7 +252,7 @@ def move_to_episode(video, subtitle, label):
         keep_current(target, "before-move")
     keep_current(subtitle, "moved-away")
     os.replace(subtitle, target)
-    log("moved-to-episode", subtitle=subtitle, target=target, episode=label)
+    log("review.moved", f"moved to {label} target={target}", subtitle=subtitle, target=target, episode=label)
     return target, recheck(target_video, target)
 
 
@@ -147,7 +265,7 @@ def ask_for_another(video, subtitle):
                               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
     save_state(video, subtitle, state)
     request_another(video, subtitle)
-    log("another-requested", subtitle=subtitle, provider=last["provider"])
+    log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True
 
 

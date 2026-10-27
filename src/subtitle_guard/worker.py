@@ -2,13 +2,15 @@
 
 import multiprocessing
 import os
+import signal
+import sys
 import time
 import traceback
 
 from . import jobs
 from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
 from .guard import evaluate_and_fix
-from .logs import log, settings
+from .logs import LEVEL, log, settings
 from .outcome import describe
 from .storage import report
 
@@ -26,15 +28,29 @@ def worker_roles(count):
 
 
 def supervise(roles):
-    settings["echo"] = True
-    log("supervisor-started", roles=sorted(roles), recovered=jobs.recover_running())
+    settings["echo"], settings["source"] = True, "supervisor"
+    recovered = jobs.recover_running()
+    log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} recovered_jobs={recovered}", roles=sorted(roles), recovered=recovered)
     processes = {name: start(*role) for name, role in roles.items()}
+    for stop_signal in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(stop_signal, lambda number, frame: shut_down(processes, signal.Signals(number).name))
     while True:
         time.sleep(SUPERVISION_SECONDS)
         for name, process in list(processes.items()):
             if not process.is_alive():
-                log("role-restarted", role=name, exit_code=process.exitcode)
+                log("supervisor.role-restarted", f"role {name} exited code={process.exitcode}, restarted", LEVEL["warning"], role=name,
+                    exit_code=process.exitcode)
                 processes[name] = start(*roles[name])
+
+
+def shut_down(processes, signal_name):
+    log("supervisor.stopping", f"{signal_name} received, stopping {len(processes)} roles", signal=signal_name, roles=sorted(processes))
+    for process in processes.values():
+        process.terminate()
+    for process in processes.values():
+        process.join(timeout=10)
+    log("supervisor.stopped", "all roles stopped")
+    sys.exit(0)
 
 
 def start(target, arguments):
@@ -44,7 +60,8 @@ def start(target, arguments):
 
 
 def work_forever(number):
-    settings["echo"] = True
+    settings["echo"], settings["source"] = True, f"worker-{number}"
+    log("worker.started", f"worker {number} started poll={POLL_SECONDS}s", worker=number)
     while True:
         if not work_once(number):
             time.sleep(POLL_SECONDS)
@@ -55,17 +72,22 @@ def work_once(number):
     if job is None:
         return False
     started = time.time()
-    log("job-started", job=job["id"], kind=job["kind"], worker=number, subtitle=job["arguments"].get("subtitle"))
+    log("job.started", f"job {job['id']} started kind={job['kind']} attempt={job['attempts']}", job=job["id"], kind=job["kind"], worker=number,
+        subtitle=job["arguments"].get("subtitle"))
+    settings["context"] = {"job": job["id"]}
     try:
         outcome = run_job(job)
     except Exception as error:
         jobs.fail(job["id"], f"{type(error).__name__}: {error}")
-        log("job-failed", job=job["id"], kind=job["kind"], worker=number, error=f"{type(error).__name__}: {error}",
-            trace=traceback.format_exc(limit=6))
+        log("job.failed", f"job {job['id']} failed: {type(error).__name__}: {error}", LEVEL["error"], job=job["id"], kind=job["kind"], worker=number,
+            subtitle=job["arguments"].get("subtitle"), error=f"{type(error).__name__}: {error}", trace=traceback.format_exc(limit=6))
         return True
+    finally:
+        settings["context"] = {}
     jobs.finish(job["id"], {**outcome, "summary": outcome.get("summary") or describe(outcome)})
-    log("job-done", job=job["id"], kind=job["kind"], worker=number, decision=outcome.get("decision"), confidence=outcome.get("confidence"),
-        band=outcome.get("confidence_band"), seconds=round(time.time() - started, 2))
+    log("job.succeeded", f"job {job['id']} succeeded in {time.time() - started:.2f}s decision={outcome.get('decision')}", job=job["id"], kind=job["kind"], worker=number,
+        subtitle=job["arguments"].get("subtitle"), decision=outcome.get("decision"), confidence=outcome.get("confidence"), band=outcome.get("confidence_band"),
+        seconds=round(time.time() - started, 2))
     return True
 
 

@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import sys
 
+from .logs import LEVEL, log
 from .outcome import DECISION
 from .storage import backup_path, heavy_disk_read
+from .subtitles import parse_subtitle
 
 
 FFSUBSYNC_LIBRARIES = os.environ.get("SUBTITLE_GUARD_FFSUBSYNC_PATH", "/app/bazarr/bin/libs")
@@ -35,11 +37,17 @@ def sync_to_audio(video, subtitle):
     if not result:
         if os.path.exists(output):
             os.remove(output)
+        log("audio.sync-rejected", "ffsubsync gave no usable result (failed or offset beyond limit), file unchanged", LEVEL["warning"], subtitle=subtitle)
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, audio sync not confident"}
+    starts = [start for start, _, _ in parse_subtitle(subtitle)["cues"]]
     os.replace(output, subtitle)
+    log("audio.synced", f"ffsubsync applied offset={result['offset_seconds']:+.2f}s scale={result['framerate_scale_factor']:.4f}", subtitle=subtitle,
+        backup=backup_folder, **result)
     shutil.copy2(subtitle, os.path.join(backup_folder, "kept" + extension))
+    moved = [{"first": starts[0], "last": starts[-1], "lines": len(starts), "shift": round(result["offset_seconds"], 2)}] if starts else []
     return {"decision": DECISION["audio_synced"], "reason": f"synced to the audio by ffsubsync, offset {result['offset_seconds']:+.2f}s, "
-                                                          f"scale {result['framerate_scale_factor']:.4f}, not verified"}
+                                                          f"scale {result['framerate_scale_factor']:.4f}, not verified",
+            "changes": {"scale": result["framerate_scale_factor"], "lines": len(starts), "parts": moved}}
 
 
 def run_ffsubsync(video, subtitle, output, fix_framerate):

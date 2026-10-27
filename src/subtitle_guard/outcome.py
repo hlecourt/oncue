@@ -3,6 +3,10 @@
 DECISION = {"kept": "kept", "fixed": "fixed", "rejected": "rejected", "unverified": "unverified", "wrong_episode": "wrong-episode",
             "best_effort": "best-effort", "audio_synced": "audio-synced", "manual": "manual", "reverted": "reverted"}
 SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"])
+DECISION_WORDS = {"kept": "In sync", "fixed": "Fixed automatically", "rejected": "Could not be fixed", "wrong-episode": "Belongs to another episode",
+                  "unverified": "Cannot be checked", "audio-synced": "Synced to the audio, not checked", "best-effort": "Best version kept, not fully in sync",
+                  "manual": "Adjusted by hand", "reverted": "Back to the original file"}
+WORRYING_DECISIONS = (DECISION["rejected"], DECISION["wrong_episode"], DECISION["best_effort"])
 
 
 def describe(outcome):

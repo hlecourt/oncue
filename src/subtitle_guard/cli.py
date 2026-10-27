@@ -17,6 +17,7 @@ Commands:
   job ID                                                                    one job in full
   retry ID                                                                  run a finished or failed job again
   needs-human                                                               subtitles whose last check needs a person
+  log [N] [--problems]                                                      the last N events of the global log (default 50), or only warnings and errors
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
@@ -32,10 +33,12 @@ import sys
 from . import jobs
 from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
+from .health import report_startup
 from .library import scan_folder, watch
+from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
 from .storage import print_needs_human, report
-from .web import serve_ui
+from .web import HOST as UI_HOST, PORT as UI_PORT, serve_ui
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
@@ -71,14 +74,18 @@ def main():
     if command == "scan-folder" and len(arguments) == 1:
         return scan_folder(arguments[0], apply, queue)
     if command == "watch" and arguments:
+        report_startup(command, roots=arguments, applied=apply)
         return watch(arguments, apply)
     if command == "worker":
+        report_startup(command, workers=workers)
         return run_workers(workers)
     if command == "ui":
+        report_startup(command, ui_host=UI_HOST, ui_port=UI_PORT)
         return serve_ui()
     if command == "serve":
         roles = {**worker_roles(workers), "web": (serve_ui, ())}
         roots = [root for root in os.environ.get("SUBTITLE_GUARD_LIBRARY", "").split(os.pathsep) if root]
+        report_startup(command, workers=workers, ui_host=UI_HOST, ui_port=UI_PORT, roots=roots, applied=apply, queue=queue_enabled())
         if roots:
             roles["watch"] = (watch, (roots, apply))
         return supervise(roles)
@@ -100,6 +107,8 @@ def main():
         return 0 if requeued else 1
     if command == "needs-human":
         return print_needs_human()
+    if command == "log":
+        return print_log(int(arguments[0]) if arguments else 50, flags["--problems"])
     if command == "try-another" and len(arguments) == 2:
         return try_another_subtitle(*arguments)
     print(__doc__)
@@ -107,7 +116,7 @@ def main():
 
 
 def parse_options(raw):
-    arguments, flags, workers, index = [], {"--apply": False, "--queue": False}, WORKERS, 0
+    arguments, flags, workers, index = [], {"--apply": False, "--queue": False, "--problems": False}, WORKERS, 0
     while index < len(raw):
         if raw[index] in flags:
             flags[raw[index]] = True
@@ -121,10 +130,22 @@ def parse_options(raw):
 
 
 def hook(arguments, queue):
+    settings["source"] = "hook"
+    fields = dict(zip(HOOK_FIELDS, arguments))
+    log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
+        f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
         print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], dict(zip(HOOK_FIELDS, arguments)))}")
         return 0
     print(describe(handle_download(*arguments)))
+    return 0
+
+
+def print_log(count, problems_only):
+    events = [event for event in recent_events() if not problems_only or event_level(event) in (LEVEL["warning"], LEVEL["error"])][:count]
+    for event in reversed(events):
+        subtitle = f"  [{os.path.basename(event['subtitle'])}]" if event.get("subtitle") else ""
+        print(f"{event['time']}  {event_level(event).upper():7s} {event.get('source', ''):10s} {event['event']:28s} {event_message(event)}{subtitle}")
     return 0
 
 
