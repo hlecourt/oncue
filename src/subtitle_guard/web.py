@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import threading
 import time
 import traceback
@@ -19,6 +20,7 @@ from .library import SUBTITLE_EXTENSIONS
 from .errors import SubtitleGuardError
 from .logs import LEVEL, event_level, event_message, log, log_file, recent_events, settings
 from .outcome import DECISION, DECISION_WORDS
+from .worker import worker_health
 from .reports import has_report, latest_reports, report_history
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
@@ -450,9 +452,11 @@ def health_page():
 def ready_page():
     try:
         jobs.counts()
-    except Exception as error:
+    except sqlite3.Error as error:
         return 503, json.dumps({"ready": False, "database": f"{type(error).__name__}: {error}"}), "application/json"
-    return 200, json.dumps({"ready": True, "database": "ok"}), "application/json"
+    workers = worker_health()
+    ready = all(workers.values())
+    return (200 if ready else 503), json.dumps({"ready": ready, "database": "ok", "workers": workers}), "application/json"
 
 
 def notice(message):

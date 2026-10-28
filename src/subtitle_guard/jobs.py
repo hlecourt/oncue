@@ -66,9 +66,14 @@ def requeue(job_id):
         return cursor.rowcount == 1
 
 
-def recover_running():
+def recover_running(max_attempts, worker=None):
+    owner, parameters = ("", ()) if worker is None else (" and worker = ?", (worker,))
     with closing(connect()) as connection:
-        return connection.execute("update jobs set status = ? where status = ?", (STATUS["queued"], STATUS["running"])).rowcount
+        abandoned = connection.execute(f"update jobs set status = ?, finished = ?, error = ? where status = ? and attempts >= ?{owner}",
+                                       (STATUS["failed"], now(), f"gave up after {max_attempts} attempts, the worker stopped during each one",
+                                        STATUS["running"], max_attempts, *parameters)).rowcount
+        requeued = connection.execute(f"update jobs set status = ? where status = ?{owner}", (STATUS["queued"], STATUS["running"], *parameters)).rowcount
+    return requeued, abandoned
 
 
 def job(job_id):

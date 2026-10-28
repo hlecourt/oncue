@@ -35,8 +35,21 @@ def test_finish_fail_and_requeue():
 def test_running_jobs_are_recovered_after_a_crash():
     job_id = jobs.enqueue("check", {})
     jobs.claim(1)
-    assert jobs.recover_running() == 1
+    assert jobs.recover_running(3) == (1, 0)
     assert jobs.job(job_id)["status"] == "queued"
+
+
+def test_only_the_dead_workers_jobs_are_recovered_and_attempts_are_capped():
+    first, second = jobs.enqueue("check", {}), jobs.enqueue("check", {})
+    jobs.claim(1)
+    jobs.claim(2)
+    assert jobs.recover_running(3, worker=1) == (1, 0)
+    assert jobs.job(first)["status"] == "queued" and jobs.job(second)["status"] == "running"
+    jobs.claim(1)
+    assert jobs.recover_running(3, worker=1) == (1, 0)
+    jobs.claim(1)
+    assert jobs.recover_running(3, worker=1) == (0, 1)
+    assert jobs.job(first)["status"] == "failed" and "gave up after 3 attempts" in jobs.job(first)["error"]
 
 
 def test_parallel_workers_never_share_a_job():
