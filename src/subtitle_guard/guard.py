@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Check one subtitle against its video and repair it when the result can be trusted."""
 
 import os

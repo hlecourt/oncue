@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Standalone mode: find videos and their external subtitles in media folders, without Bazarr."""
 
 import os

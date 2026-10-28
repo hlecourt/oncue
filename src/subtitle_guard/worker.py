@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Run queued jobs in a few parallel worker processes; full file reads and audio decoding take turns through a lock."""
 
 import fcntl

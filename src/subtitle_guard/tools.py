@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Run ffprobe, ffmpeg and ffsubsync with a time limit, so a hung tool cannot stall a worker forever."""
 
 import subprocess

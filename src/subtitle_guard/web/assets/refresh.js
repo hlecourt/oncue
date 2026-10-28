@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 const shown = document.body.dataset.status;
 setInterval(async () => {
   if (document.hidden || document.querySelector('details[open]') || (document.activeElement && document.activeElement.closest('form'))) return;

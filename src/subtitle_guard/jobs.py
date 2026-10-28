@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Persistent job queue in SQLite, shared by the Bazarr hook, the workers and the web UI."""
 
 import json

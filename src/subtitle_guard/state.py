@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Per-subtitle state kept between checks: the attempts Bazarr made and the retry waiting to be sent."""
 
 import hashlib

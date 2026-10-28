@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Global log: one JSON event per line in the state directory, each with a level, the process that wrote it and a plain sentence."""
 
 import fcntl

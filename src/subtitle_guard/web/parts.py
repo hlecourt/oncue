@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Building blocks of the pages: layout, tables, badges, timeline, line-by-line view and formatting helpers."""
 
 import html

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Every change to a subtitle file goes through here: one writer at a time, no symlinks, atomic replace, owner and mode kept."""
 
 import fcntl

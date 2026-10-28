@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 let picked = null;
 const clock = value => {
   const seconds = (value % 60).toFixed(2).padStart(5, '0');

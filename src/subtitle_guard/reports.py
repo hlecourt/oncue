@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """History of every check, one row per check in the job database; the old report.tsv is imported once."""
 
 import json
