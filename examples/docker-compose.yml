@@ -1,0 +1,23 @@
+# subtitle-guard as a service next to Bazarr. Both containers must see the media and the state at the same paths.
+services:
+  subtitle-guard:
+    build: ..
+    image: subtitle-guard:latest
+    command: worker --workers 2
+    restart: unless-stopped
+    environment:
+      SUBTITLE_GUARD_STATE: /config/subtitle-guard
+      SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
+      SUBTITLE_GUARD_FFSUBSYNC_PATH: ""
+      BAZARR_URL: http://bazarr:6767
+      BAZARR_API_KEY: ${BAZARR_API_KEY}
+    volumes:
+      - ./bazarr:/config        # same folder Bazarr mounts as /config
+      - /mnt/media:/data        # same folder Bazarr mounts as /data
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    volumes:
+      - ./bazarr:/config
+      - /mnt/media:/data
+      - ../src:/opt/subtitle-guard:ro   # the package, for the post-processing hook
