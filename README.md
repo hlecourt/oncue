@@ -2,7 +2,7 @@
 
 Verify and repair the timing of downloaded subtitles against a subtitle track embedded in the video, the one source of timing that is authored for that exact file.
 
-Status: alpha. It runs on one home server as a [Bazarr](https://www.bazarr.media/) post-processing hook, with a job queue and parallel workers. A standalone mode and a web UI are planned (see Roadmap).
+Status: alpha. It runs on one home server as a [Bazarr](https://www.bazarr.media/) post-processing hook, or on its own over media folders, with a job queue, parallel workers and a web UI for review.
 
 ## Why
 
@@ -24,7 +24,27 @@ subtitle-guard scan-movies [--apply]
 subtitle-guard scan-all [--apply]
 subtitle-guard needs-human
 subtitle-guard hook VIDEO SUBTITLE LANGUAGE PROVIDER SUBTITLE_ID MEDIA_ID [SERIES_ID]
+subtitle-guard scan-folder PATH [--apply] [--queue]
+subtitle-guard watch PATH... [--apply]
+subtitle-guard serve [--workers N] [--apply]
 ```
+
+## Without Bazarr
+
+`scan-folder` checks every video under a folder against its external subtitles (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`...). Samples and hidden folders are skipped, and episode neighbours for the wrong-episode check come from `SxxEyy` or `NxNN` file names. `watch` queues every new or changed subtitle under one or more folders; `serve` does the same for the folders in `SUBTITLE_GUARD_LIBRARY`. Without Bazarr a rejected subtitle stays as it is and shows up for review; nothing is downloaded.
+
+## Web UI
+
+`subtitle-guard ui`, or `serve`, which also runs the workers, opens a web UI on port 8484 (`SUBTITLE_GUARD_UI_PORT`):
+
+- a dashboard of jobs and confidence, refreshed automatically;
+- the review queue: every subtitle whose last decision is not settled, has weak minutes or low confidence, until it is accepted or changes;
+- one page per subtitle with a minute bar coloured by how many lines match, and a side-by-side reading of the embedded reference and the subtitle for the chosen minute;
+- a manual shift: click a subtitle line, then the reference line it belongs to, set where the stretch ends, apply. The file is backed up first and measured again;
+- one-click actions: accept as is, check again, restore the original provider file, ask Bazarr for another subtitle;
+- every job with its error and a retry button, and JSON at `/api/status`, `/api/jobs` and `/api/review`.
+
+The UI listens on 127.0.0.1 unless `SUBTITLE_GUARD_UI_HOST` says otherwise (the Docker image uses 0.0.0.0). It has no user accounts: set `SUBTITLE_GUARD_UI_TOKEN` and open it once with `?token=...` to protect it on a shared network. It only acts on subtitles the guard has already checked.
 
 As a Bazarr post-processing command (Settings > Subtitles > Post-processing), with the package available to Bazarr's Python:
 
@@ -65,6 +85,10 @@ Settings come from the environment:
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
+| `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
+| `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
+| `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` |
+| `SUBTITLE_GUARD_UI_TOKEN` | unset; when set, the UI asks for it |
 | `BAZARR_URL` | `http://localhost:6767` |
 | `BAZARR_API_KEY` | read from `BAZARR_CONFIG` |
 | `BAZARR_CONFIG` | `/config/config/config.yaml` |
@@ -96,10 +120,9 @@ Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up),
 
 ## Roadmap
 
-1. Package, tests, Docker image.
-2. Job queue, parallel workers, structured logs and a confidence score (this release).
-3. Standalone mode that scans media folders without Bazarr.
-4. Web UI: review queue, side-by-side reading, manual adjustment, retry.
+Done: package and tests, job queue with parallel workers, structured logs, confidence score, standalone mode, web UI.
+
+Next: a reference from an OpenSubtitles hash match for videos without any embedded track; a larger search range for long TV recordings; a published image.
 
 ## Development
 
