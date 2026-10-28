@@ -7,3 +7,5 @@ build/
 *.egg-info/
 benchmarks/corpus/
 benchmarks/work/
+.coverage
+.ruff_cache/
