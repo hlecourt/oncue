@@ -6,7 +6,7 @@ import time
 
 from . import jobs
 from .guard import evaluate_and_fix
-from .logs import log
+from .logs import log, settings
 from .outcome import describe
 from .storage import file_signature, report
 
@@ -37,7 +37,8 @@ def scan_folder(root, apply, queue=False):
 
 
 def watch(roots, apply):
-    log("watch-started", roots=roots, applied=apply, interval=WATCH_SECONDS)
+    settings["source"] = "watch"
+    log("watch.started", f"Watching {', '.join(roots)} every {WATCH_SECONDS} s", roots=roots, applied=apply, interval=WATCH_SECONDS)
     while True:
         queued = 0
         for root in roots:
@@ -49,7 +50,7 @@ def watch(roots, apply):
                 jobs.remember(subtitle, signature)
                 queued += 1
         if queued:
-            log("watch-queued", jobs=queued)
+            log("watch.queued", f"Found {queued} new or changed subtitles, queued a check for each", jobs=queued)
         time.sleep(WATCH_SECONDS)
 
 

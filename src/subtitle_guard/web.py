@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
+from .logs import LEVEL, log, recent_events, settings
+from .outcome import DECISION_WORDS
 from .storage import latest_reports
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
@@ -18,9 +20,11 @@ WINDOW_SECONDS = 60
 NOTICEABLE_SECONDS = 0.5
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5fd0'/%3E"
            "%3Crect x='3' y='9' width='10' height='2' fill='white'/%3E%3Crect x='3' y='12' width='6' height='2' fill='white'/%3E%3C/svg%3E")
-DECISION_WORDS = {"kept": "In sync", "fixed": "Fixed automatically", "rejected": "Could not be fixed", "wrong-episode": "Belongs to another episode",
-                  "unverified": "Cannot be checked", "audio-synced": "Synced to the audio, not checked", "best-effort": "Best version kept, not fully in sync",
-                  "manual": "Adjusted by hand", "reverted": "Back to the original file"}
+LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "audio": "Audio sync", "job": "Tasks", "review": "By hand", "watch": "Folder watch",
+             "worker": "Workers", "web": "Web UI"}
+LOG_LEVELS = {"": "Everything", "problems": "Warnings and errors", "errors": "Errors only"}
+LOG_TONES = {"info": "neutral", "warning": "warn", "error": "bad"}
+LOG_LIMIT = 300
 JOB_WORDS = {"queued": "waiting", "running": "working on it", "done": "done", "failed": "error"}
 STYLE = """
 :root { --background: #1a1c1e; --sidebar: #141517; --surface: #222528; --raised: #2a2e32; --text: #e4e5e7; --muted: #8d939a; --line: #33383d;
@@ -69,6 +73,14 @@ h2 { font-size: 16px; margin: 28px 0 10px; }
 .activity li { padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .activity li .when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 140px; }
 .activity li .error { color: var(--bad); }
+.log li { align-items: center; }
+.log li .source { color: var(--muted); font-size: 13px; min-width: 84px; }
+.log li .what { flex: 1 1 320px; }
+details.raw { background: none; border: 0; padding: 0; margin: 0; font-size: 12px; }
+details.raw pre { white-space: pre-wrap; word-break: break-all; color: var(--muted); margin: 6px 0 0; }
+form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; }
+form.filters input[type=text] { width: 220px; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
@@ -138,7 +150,10 @@ document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEven
 
 
 def serve_ui(host=HOST, port=PORT):
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    settings["source"] = "web"
+    server = ThreadingHTTPServer((host, port), Handler)
+    log("web.started", f"Web UI listening on {host}:{server.server_address[1]}", token_required=bool(TOKEN))
+    server.serve_forever()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -148,11 +163,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/health":
             return self.respond(200, "ok", "text/plain")
         if not self.authorised(query):
+            log("web.denied", "Refused a page without the right token", LEVEL["warning"], path=url.path, client=self.client_address[0])
             return self.respond(401, layout("Token needed", '<form><input type="text" name="token" placeholder="token"> <button>Open</button></form>', navigation=False))
         if TOKEN and query.get("token") == TOKEN:
             return self.redirect(url.path, cookie=True)
-        pages = {"/": dashboard_page, "/review": review_page, "/jobs": jobs_page, "/subtitle": subtitle_page,
-                 "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review}
+        pages = {"/": dashboard_page, "/review": review_page, "/jobs": jobs_page, "/log": log_page, "/subtitle": subtitle_page,
+                 "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
         if url.path not in pages:
             return self.respond(404, layout("Not found", "<p>Nothing here.</p>"))
         status, body, content_type = pages[url.path](query)
@@ -160,6 +176,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.authorised({}):
+            log("web.denied", "Refused an action without the right token", LEVEL["warning"], path=self.path, client=self.client_address[0])
             return self.respond(401, layout("Token needed", "<p>Open the UI with its token first.</p>", navigation=False))
         length = int(self.headers.get("Content-Length", 0))
         form = {key: values[0] for key, values in urllib.parse.parse_qs(self.rfile.read(length).decode()).items()}
@@ -280,6 +297,34 @@ def jobs_page(query):
     filters = " ".join(f'<a href="/jobs?status={name}">{JOB_WORDS[name]}</a>' for name in jobs.STATUS)
     body = message_box(query) + f'<p class="subtle">Show <a href="/jobs">everything</a> {filters}</p>' + activity(jobs.recent(query.get("status"), limit=200), retry=True)
     return 200, layout("Activity", body, refresh=15, page="jobs"), "text/html; charset=utf-8"
+
+
+def log_page(query):
+    events = filtered_events(query)[:LOG_LIMIT]
+    levels = "".join(f'<option value="{key}"{" selected" if query.get("level", "") == key else ""}>{label}</option>' for key, label in LOG_LEVELS.items())
+    areas = '<option value="">Every part</option>' + "".join(f'<option value="{key}"{" selected" if query.get("area") == key else ""}>{label}</option>'
+                                                             for key, label in LOG_AREAS.items())
+    filters = (f'<form class="filters"><select name="level">{levels}</select><select name="area">{areas}</select>'
+               f'<input type="text" name="q" placeholder="search" value="{escape(query.get("q", ""))}"><button>Show</button></form>')
+    rows = "".join(log_row(event) for event in events)
+    body = ('<p class="subtle words">Everything subtitle-guard did, newest first: what Bazarr sent, every request to Bazarr, every check, '
+            f'every file it changed and every action taken here.</p>{filters}' + (f'<ul class="activity log">{rows}</ul>' if rows else '<p class="muted">Nothing logged.</p>'))
+    return 200, layout("Log", body, refresh=None if query else 15, page="log"), "text/html; charset=utf-8"
+
+
+def filtered_events(query):
+    levels = {"problems": ("warning", "error"), "errors": ("error",)}.get(query.get("level", ""))
+    area, text = query.get("area"), query.get("q", "").lower()
+    return [event for event in recent_events() if (not levels or event.get("level") in levels) and (not area or event["event"].split(".")[0] == area)
+            and (not text or text in json.dumps(event, ensure_ascii=False).lower())]
+
+
+def log_row(event):
+    subtitle = event.get("subtitle")
+    link = f' <a href="{subtitle_link(subtitle)}">{escape(os.path.basename(subtitle))}</a>' if subtitle else ""
+    return (f'<li><span class="when">{escape(readable(event["time"]))}</span><span class="dot {LOG_TONES.get(event.get("level"), "neutral")}"></span>'
+            f'<span class="source">{escape(event.get("source", ""))}</span><span class="what">{escape(event.get("message") or event["event"])}{link}</span>'
+            f'<details class="raw"><summary>details</summary><pre>{escape(json.dumps(event, ensure_ascii=False, indent=1))}</pre></details></li>')
 
 
 def subtitle_page(query):
@@ -457,6 +502,10 @@ def api_jobs(query):
     return 200, json.dumps(jobs.recent(query.get("status"), limit=int(query.get("limit", "100")))), "application/json"
 
 
+def api_log(query):
+    return 200, json.dumps(filtered_events(query)[:LOG_LIMIT]), "application/json"
+
+
 def api_review(query):
     return 200, json.dumps(review.review_items()), "application/json"
 
@@ -464,7 +513,8 @@ def api_review(query):
 def layout(title, body, refresh=None, page="", current=None, navigation=True):
     meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     links = "".join(f'<a class="{"active" if page == key else ""}" href="{link}">{label}</a>'
-                    for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("jobs", "/jobs", "Activity")))
+                    for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("jobs", "/jobs", "Activity"),
+                                                    ("log", "/log", "Log")))
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{meta}'
             f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body><div class="shell">'
             f'<aside><a class="brand" href="/">subtitle-guard</a>{f"<nav>{links}</nav>{sidebar(current)}" if navigation else ""}</aside>'

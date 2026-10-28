@@ -6,6 +6,7 @@ import sqlite3
 import time
 from contextlib import closing
 
+from .logs import log
 from .storage import now, state_path
 
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
@@ -24,7 +25,9 @@ def enqueue(kind, arguments, delay_seconds=0):
     with closing(connect()) as connection:
         cursor = connection.execute("insert into jobs (kind, arguments, status, run_after, created) values (?, ?, ?, ?, ?)",
                                     (kind, json.dumps(arguments), STATUS["queued"], time.time() + delay_seconds, now()))
-        return cursor.lastrowid
+    log("job.queued", f"Queued task {cursor.lastrowid} ({kind})" + (f", runs in {delay_seconds} s" if delay_seconds else ""), job=cursor.lastrowid, kind=kind,
+        subtitle=arguments.get("subtitle"))
+    return cursor.lastrowid
 
 
 def claim(worker):

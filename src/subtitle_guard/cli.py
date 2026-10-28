@@ -17,6 +17,7 @@ Commands:
   job ID                                                                    one job in full
   retry ID                                                                  run a finished or failed job again
   needs-human                                                               subtitles whose last check needs a person
+  log [N] [--problems]                                                      the last N events of the global log (default 50), or only warnings and errors
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
@@ -33,6 +34,7 @@ from . import jobs
 from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
 from .library import scan_folder, watch
+from .logs import LEVEL, log, recent_events, settings
 from .outcome import describe
 from .storage import print_needs_human, report
 from .web import serve_ui
@@ -100,6 +102,8 @@ def main():
         return 0 if requeued else 1
     if command == "needs-human":
         return print_needs_human()
+    if command == "log":
+        return print_log(int(arguments[0]) if arguments else 50, flags["--problems"])
     if command == "try-another" and len(arguments) == 2:
         return try_another_subtitle(*arguments)
     print(__doc__)
@@ -107,7 +111,7 @@ def main():
 
 
 def parse_options(raw):
-    arguments, flags, workers, index = [], {"--apply": False, "--queue": False}, WORKERS, 0
+    arguments, flags, workers, index = [], {"--apply": False, "--queue": False, "--problems": False}, WORKERS, 0
     while index < len(raw):
         if raw[index] in flags:
             flags[raw[index]] = True
@@ -121,10 +125,22 @@ def parse_options(raw):
 
 
 def hook(arguments, queue):
+    settings["source"] = "hook"
+    fields = dict(zip(HOOK_FIELDS, arguments))
+    log("bazarr.hook", f"Bazarr downloaded a {fields['language']} subtitle from {fields['provider']}" + (", queued for a check" if queue else ", checking it now"),
+        **fields)
     if queue:
         print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], dict(zip(HOOK_FIELDS, arguments)))}")
         return 0
     print(describe(handle_download(*arguments)))
+    return 0
+
+
+def print_log(count, problems_only):
+    events = [event for event in recent_events() if not problems_only or event.get("level") in (LEVEL["warning"], LEVEL["error"])][:count]
+    for event in reversed(events):
+        subtitle = f"  [{os.path.basename(event['subtitle'])}]" if event.get("subtitle") else ""
+        print(f"{event['time']}  {event.get('level', LEVEL['info']):7s} {event.get('source', ''):10s} {event.get('message') or event['event']}{subtitle}")
     return 0
 
 

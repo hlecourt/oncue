@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 
+from .logs import LEVEL, log
 from .outcome import DECISION
 from .storage import backup_path, heavy_disk_read
 
@@ -35,8 +36,10 @@ def sync_to_audio(video, subtitle):
     if not result:
         if os.path.exists(output):
             os.remove(output)
+        log("audio.not-synced", "ffsubsync could not sync this subtitle to the audio with confidence, nothing changed", LEVEL["warning"], subtitle=subtitle)
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, audio sync not confident"}
     os.replace(output, subtitle)
+    log("audio.synced", f"Synced to the audio with ffsubsync, moved by {result['offset_seconds']:+.2f} s", subtitle=subtitle, backup=backup_folder, **result)
     shutil.copy2(subtitle, os.path.join(backup_folder, "kept" + extension))
     return {"decision": DECISION["audio_synced"], "reason": f"synced to the audio by ffsubsync, offset {result['offset_seconds']:+.2f}s, "
                                                           f"scale {result['framerate_scale_factor']:.4f}, not verified"}

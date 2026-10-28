@@ -121,6 +121,19 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     assert "This subtitle is in sync with the video." in page
 
 
+def test_the_log_page_shows_everything_and_filters_it(server):
+    from subtitle_guard import logs
+    logs.log("bazarr.hook", "Bazarr downloaded a fr subtitle from opensubtitles", subtitle="/media/Show/Show.S01E01.fr.srt")
+    logs.log("job.failed", "Task 9 failed: OSError: gone", logs.LEVEL["error"], job=9)
+    status, page, _ = get(server + "/log")
+    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Task 9 failed" in page and "Show.S01E01.fr.srt</a>" in page
+    page = get(server + "/log?level=errors")[1]
+    assert "Task 9 failed" in page and "Bazarr downloaded" not in page
+    page = get(server + "/log?area=bazarr")[1]
+    assert "Bazarr downloaded" in page and "Task 9 failed" not in page
+    assert [event["job"] for event in json.loads(get(server + "/api/log?q=task+9")[1])] == [9]
+
+
 def review_part(video, subtitle):
     from subtitle_guard import review
     return review.diagnose(video, subtitle)["parts"][0]

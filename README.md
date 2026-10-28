@@ -74,7 +74,7 @@ subtitle-guard retry 42            # run a finished or failed job again
 subtitle-guard scan-all --apply --queue   # check the whole library through the workers
 ```
 
-Every decision and every job is logged as one JSON line in `subtitle-guard.log` (rotated at 10 MB) in the state directory, and on stdout for the worker, so `docker logs` shows them. Jobs live in `jobs.sqlite3` next to it.
+Everything goes to one global log, `subtitle-guard.log` in the state directory (rotated at 10 MB), and to stdout for the workers so `docker logs` shows it. Each line is one JSON event with `time`, `level` (`info`, `warning`, `error`), `source` (the process: `hook`, `worker-1`, `web`, `watch`, `supervisor`, `cli`), `event` and a plain `message`, plus the subtitle and details. Events are named by area: `bazarr.hook` (Bazarr sent a subtitle), `bazarr.request` and `bazarr.request-failed` (every call to the Bazarr API, never with the key), `bazarr.blacklisted` and the other retry steps, `guard.checked` and `guard.rewritten`, `audio.synced`, `job.queued`, `job.started`, `job.done`, `job.failed`, `review.*` (every action taken by hand), `watch.*`, `worker.*` and `web.*`. The **Log** page of the UI shows it newest first, filtered by level, area or text, and `subtitle-guard log [N] [--problems]` prints it. Jobs live in `jobs.sqlite3` next to it.
 
 Settings come from the environment:
 

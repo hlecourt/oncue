@@ -12,7 +12,7 @@ import urllib.request
 
 from . import jobs
 from .guard import evaluate_and_fix
-from .logs import log
+from .logs import LEVEL, log
 from .outcome import DECISION, describe
 from .storage import load_state, now, report, save_state, state_path
 
@@ -52,14 +52,14 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
 def request_another(video, subtitle):
     if queue_enabled():
         jobs.enqueue(jobs.KIND["blacklist"], {"video": video, "subtitle": subtitle}, delay_seconds=BLACKLIST_DELAY_SECONDS)
-        log("retry-scheduled", video=video, subtitle=subtitle)
+        log("bazarr.retry-scheduled", "Will ask Bazarr for another subtitle shortly", video=video, subtitle=subtitle)
         return
     log_file = open(state_path("retries.log"), "a")
     package_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (package_parent, os.environ.get("PYTHONPATH"))))}
     subprocess.Popen([sys.executable, "-m", "subtitle_guard", "try-another", video, subtitle], stdin=subprocess.DEVNULL,
                      stdout=log_file, stderr=log_file, start_new_session=True, env=environment)
-    log("retry-started", video=video, subtitle=subtitle)
+    log("bazarr.retry-started", "Asking Bazarr for another subtitle in the background", video=video, subtitle=subtitle)
 
 
 def queue_enabled():
@@ -144,7 +144,8 @@ def blacklist_for_retry(video, subtitle):
         form.update(radarrid=pending["media_id"])
         endpoint = "/api/movies/blacklist"
     bazarr_post(endpoint, form)
-    log("blacklisted", video=video, subtitle=subtitle, provider=pending["provider"], subtitle_id=pending["subtitle_id"])
+    log("bazarr.blacklisted", f"Told Bazarr not to use this {pending['provider']} subtitle again, waiting for another one", video=video, subtitle=subtitle,
+        provider=pending["provider"], subtitle_id=pending["subtitle_id"])
     return {"pending": pending, "attempts_before": len(state["attempts"])}
 
 
@@ -157,7 +158,7 @@ def finish_retry(video, subtitle, pending, attempts_before):
         return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
     restore_best(pending["subtitle"], load_state(video, subtitle))
     rescan(pending)
-    log("retry-gave-up", video=video, subtitle=subtitle)
+    log("bazarr.retry-gave-up", "No other subtitle arrived, kept the best version tried", LEVEL["warning"], video=video, subtitle=subtitle)
     return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
 
@@ -169,7 +170,8 @@ def restore_best(subtitle, state):
     best = max(candidates, key=lambda attempt: attempt["after"]["matched"])
     shutil.copy2(best["best_copy"], subtitle)
     report(subtitle, best.get("provider", ""), {**best, "decision": DECISION["best_effort"]})
-    log("best-effort-restored", subtitle=subtitle, provider=best.get("provider"), matched=best["after"]["matched"])
+    log("bazarr.best-effort-restored", f"Put back the best version tried, from {best.get('provider')}", LEVEL["warning"], subtitle=subtitle,
+        provider=best.get("provider"), matched=best["after"]["matched"])
 
 
 def any_subtitle_for_language(pending):
@@ -188,7 +190,7 @@ def rescan(pending):
 
 
 def bazarr_get(path):
-    return json.load(urllib.request.urlopen(urllib.request.Request(BAZARR_URL + path, headers={"X-API-KEY": api_key()}), timeout=60))
+    return json.load(call_bazarr(urllib.request.Request(BAZARR_URL + path, headers={"X-API-KEY": api_key()}), 60))
 
 
 def bazarr_post(path, form):
@@ -202,7 +204,20 @@ def bazarr_patch(path, form):
 def bazarr_send(path, form, method):
     request = urllib.request.Request(BAZARR_URL + path, data=urllib.parse.urlencode(form).encode(), method=method,
                                      headers={"X-API-KEY": api_key()})
-    return urllib.request.urlopen(request, timeout=900).status
+    return call_bazarr(request, 900).status
+
+
+def call_bazarr(request, timeout):
+    started = time.time()
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout)
+    except OSError as error:
+        log("bazarr.request-failed", f"Bazarr did not answer {request.get_method()} {request.selector}: {error}", LEVEL["error"],
+            method=request.get_method(), path=request.selector, seconds=round(time.time() - started, 2))
+        raise
+    log("bazarr.request", f"Bazarr answered {response.status} to {request.get_method()} {request.selector}", method=request.get_method(),
+        path=request.selector, status=response.status, seconds=round(time.time() - started, 2))
+    return response
 
 
 def api_key():
