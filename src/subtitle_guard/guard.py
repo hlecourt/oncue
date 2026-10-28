@@ -2,10 +2,12 @@
 
 import os
 import shutil
+import time
 
 from .alignment import MIN_CUES, assess, judge
 from .audio import sync_to_audio
 from .confidence import confidence
+from .logs import log
 from .outcome import DECISION
 from .reference import load_reference
 from .storage import backup_path
@@ -13,9 +15,14 @@ from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, write_subtitle
 
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):
+    started = time.time()
     outcome = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
-    return {**outcome, "confidence": score, "confidence_band": band}
+    outcome = {**outcome, "confidence": score, "confidence_band": band}
+    log("decision", video=video, subtitle=subtitle, applied=apply, decision=outcome["decision"], confidence=score, band=band,
+        reference=outcome.get("reference"), reason=outcome.get("reason"), matches=outcome.get("matches"),
+        weak_minutes=outcome.get("weak_minutes"), seconds=round(time.time() - started, 2))
+    return outcome
 
 
 def examine(video, subtitle, apply, neighbours):
