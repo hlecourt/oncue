@@ -6,9 +6,8 @@ import sqlite3
 import time
 from contextlib import closing
 
-from .storage import STATE_DIRECTORY, now
+from .storage import now, state_path
 
-DATABASE = os.path.join(STATE_DIRECTORY, "jobs.sqlite3")
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
 KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check"}
 SCHEMA = (
@@ -88,8 +87,9 @@ def counts():
 
 
 def connect():
-    os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
-    connection = sqlite3.connect(DATABASE, timeout=30, isolation_level=None)
+    database = state_path("jobs.sqlite3")
+    os.makedirs(os.path.dirname(database), exist_ok=True)
+    connection = sqlite3.connect(database, timeout=30, isolation_level=None)
     connection.row_factory = sqlite3.Row
     connection.execute("pragma busy_timeout = 30000")
     connection.execute("pragma journal_mode = wal")

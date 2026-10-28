@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from .outcome import DECISION
-from .storage import backup_path
+from .storage import backup_path, heavy_disk_read
 
 
 FFSUBSYNC_LIBRARIES = os.environ.get("SUBTITLE_GUARD_FFSUBSYNC_PATH", "/app/bazarr/bin/libs")
@@ -49,7 +49,8 @@ def run_ffsubsync(video, subtitle, output, fix_framerate):
                "--quality-max-offset-seconds", str(AUDIO_SYNC_MAX_OFFSET_SECONDS), "--max-framerate-deviation", "0.05", "--output-encoding", "same"]
     if not fix_framerate:
         command.append("--no-fix-framerate")
-    lines = subprocess.run(command, capture_output=True, text=True).stdout.strip().splitlines()
+    with heavy_disk_read():
+        lines = subprocess.run(command, capture_output=True, text=True).stdout.strip().splitlines()
     try:
         result = json.loads(lines[-1]) if lines else {}
     except ValueError:

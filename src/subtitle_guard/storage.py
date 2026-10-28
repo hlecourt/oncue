@@ -1,8 +1,10 @@
 """State, report, backups and atomic writes under the guard's state directory."""
 
+import fcntl
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime
 
 from .outcome import SETTLED_DECISIONS
@@ -10,6 +12,10 @@ from .outcome import SETTLED_DECISIONS
 
 STATE_DIRECTORY = os.environ.get("SUBTITLE_GUARD_STATE", "/config/subtitle-guard")
 BACKUP_DIRECTORY = os.environ.get("SUBTITLE_GUARD_BACKUPS", "/data/backup/subtitle-guard")
+
+
+def state_path(*parts):
+    return os.path.join(STATE_DIRECTORY, *parts)
 
 
 def report(subtitle, provider, outcome):
@@ -72,6 +78,14 @@ def write_json(path, data):
     with open(temporary, "w") as handle:
         json.dump(data, handle)
     os.replace(temporary, path)
+
+
+@contextmanager
+def heavy_disk_read():
+    os.makedirs(STATE_DIRECTORY, exist_ok=True)
+    with open(os.path.join(STATE_DIRECTORY, "heavy-disk-read.lock"), "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
 
 
 def now():
