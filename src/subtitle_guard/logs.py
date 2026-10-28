@@ -9,7 +9,7 @@ from .storage import now, state_path
 
 MAX_LOG_BYTES = 10 * 1024 * 1024
 TAIL_BYTES = 2 * 1024 * 1024
-LEVEL = {"info": "info", "warning": "warning", "error": "error"}
+LEVEL = {"debug": "debug", "info": "info", "warning": "warning", "error": "error"}
 settings = {"echo": False, "source": "cli"}
 LEGACY_EVENTS = {
     "decision": ("guard", "info", "Checked: {decision}"),

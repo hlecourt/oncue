@@ -9,8 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
-from .logs import LEVEL, event_area, event_level, event_message, log, recent_events, settings
-from .outcome import DECISION_WORDS
+from .logs import LEVEL, event_area, event_level, event_message, log, log_file, recent_events, settings
+from .outcome import DECISION, DECISION_WORDS
 from .storage import latest_reports, report_history
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
@@ -21,10 +21,11 @@ WINDOW_SECONDS = 60
 NOTICEABLE_SECONDS = 0.5
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5fd0'/%3E"
            "%3Crect x='3' y='9' width='10' height='2' fill='white'/%3E%3Crect x='3' y='12' width='6' height='2' fill='white'/%3E%3C/svg%3E")
-LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "audio": "Audio sync", "job": "Tasks", "review": "By hand", "watch": "Folder watch",
+LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "reference": "Video tracks", "audio": "Audio sync", "job": "Tasks", "review": "By hand", "watch": "Folder watch",
              "worker": "Workers", "web": "Web UI"}
 LOG_LEVELS = {"problems": ("Only problems", ("warning", "error")), "errors": ("Only errors", ("error",))}
 LOG_LIMIT = 300
+TECHNICAL_HEADER = ("time", "level", "source", "event", "message", "trace")
 HISTORY_LIMIT = 300
 HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")),
                   "not-checked": ("Not checked", ("unverified", "audio-synced")), "by-hand": ("By hand", ("manual", "reverted"))}
@@ -59,7 +60,7 @@ aside .item .why { grid-column: 2; color: var(--muted); font-size: 13px; }
 aside .empty { padding: 4px 18px; color: var(--muted); }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.good { background: var(--good); } .dot.warn { background: var(--medium); } .dot.bad { background: var(--bad); } .dot.neutral { background: var(--muted); }
-main { padding: 24px 30px; max-width: 1100px; }
+main { padding: 24px 32px; width: 100%; max-width: 1480px; margin: 0 auto; }
 h1 { font-size: 20px; margin: 0 0 4px; word-break: break-all; }
 h2 { font-size: 16px; margin: 28px 0 10px; }
 .subtle { color: var(--muted); font-size: 13px; margin: 0 0 16px; word-break: break-all; }
@@ -95,6 +96,14 @@ table.history td.actions { width: 1%; white-space: nowrap; text-align: right; }
 .tab:hover { text-decoration: none; color: var(--text); }
 .tab.active { background: var(--raised); color: var(--text); border-color: var(--accent); }
 .tab .count { margin-left: 6px; font-size: 12px; color: var(--muted); }
+.technical-log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--sidebar); border: 1px solid var(--line);
+                 border-radius: 8px; padding: 8px 12px; overflow-x: auto; }
+.technical-log .line { white-space: pre-wrap; overflow-wrap: anywhere; padding: 3px 0; border-bottom: 1px solid var(--surface); }
+.technical-log .when, .technical-log .fields, .technical-log .source { color: var(--muted); }
+.technical-log .event { color: var(--accent); }
+.technical-log .debug .level { color: var(--muted); } .technical-log .warning .level { color: var(--medium); }
+.technical-log .error .level, .technical-log .trace { color: var(--bad); }
+.technical-log .trace { white-space: pre; overflow-x: auto; margin: 2px 0 0 2ch; }
 details.raw { background: none; border: 0; padding: 0; margin: 4px 0 0; font-size: 12px; }
 details.raw pre { white-space: pre-wrap; word-break: break-all; color: var(--muted); margin: 6px 0 0; }
 form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
@@ -117,6 +126,8 @@ td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { backg
 .minutes .good, .legend .good { background: var(--good); } .minutes .medium, .legend .medium { background: var(--medium); }
 .minutes .bad, .legend .bad { background: var(--bad); } .minutes .quiet, .legend .quiet { background: var(--line); }
 .minutes a.current { box-shadow: inset 0 0 0 2px var(--text); opacity: 1; min-width: 4px; }
+.strip-label { margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+.changes { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--good); border-radius: 8px; padding: 10px 14px; }
 .ticks { position: relative; height: 20px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ticks span { position: absolute; top: 3px; padding-left: 3px; border-left: 1px solid var(--line); white-space: nowrap; }
 .ticks span.end { right: 0; border-left: 0; padding-left: 0; }
@@ -138,10 +149,43 @@ input[type=text] { width: 92px; padding: 6px 8px; border: 1px solid var(--line);
 .muted { color: var(--muted); }
 .keys { color: var(--muted); font-size: 12px; margin-top: 28px; }
 kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+@media (min-width: 1900px) {
+  body { font-size: 16px; }
+  main { max-width: 1680px; padding: 32px 48px; }
+}
+@media (max-width: 1200px) {
+  .shell { grid-template-columns: 240px minmax(0, 1fr); }
+  main { padding: 20px 22px; }
+}
 @media (max-width: 860px) {
-  .shell { grid-template-columns: 1fr; }
-  aside { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .keys { display: none; }
+  aside { position: sticky; top: 0; z-index: 2; height: auto; padding: 8px 6px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  aside .brand { padding: 0 8px 4px; }
+  aside nav { display: flex; flex-wrap: wrap; gap: 2px; }
+  aside nav a { padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
+  aside h3, aside .item, aside .empty { display: none; }
   main { padding: 16px; }
+  h1 { font-size: 18px; }
+  .status { padding: 12px 14px; }
+  .toolbar button { width: 100%; }
+  .toolbar form.inline { flex: 1 1 100%; }
+  .ticks span:nth-child(even):not(.end) { display: none; }
+  table.history, table.parts, table.review, table.history tbody, table.parts tbody, table.review tbody { display: block; width: 100%; border: 0; background: none; }
+  table.history colgroup, table.history tr:first-child, table.review tr:first-child, table.reading tr:first-child { display: none; }
+  table.history tr, table.parts tr, table.review tr { display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin: 0 0 8px; padding: 8px 0; }
+  table.history tr.day { background: none; border: 0; padding: 8px 0 0; margin: 0; }
+  table.history td, table.parts td, table.review td { display: block; border: 0; padding: 3px 12px; width: auto !important; text-align: left !important; }
+  table.parts tr td:first-child { border-left: 0; }
+  table.reading tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--line); }
+  table.reading td { border: 0; width: auto !important; }
+  table.reading td.time { grid-row: 1; grid-column: 1; }
+  table.reading td.state { grid-row: 1; grid-column: 2; text-align: right; }
+  table.reading td.video, table.reading td.yours { grid-column: 1 / 3; padding-top: 2px; padding-bottom: 2px; }
+  table.reading td.video::before { content: "In the video: "; color: var(--muted); font-size: 12px; }
+  table.reading td.yours::before { content: "Your subtitle: "; color: var(--muted); font-size: 12px; }
+  .reading-head .minute-links a { margin: 0 16px 0 0; }
+  form.filters input[type=text] { width: 100%; flex: 1 1 200px; }
 }
 """
 KEYS = """
@@ -193,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(401, layout("Token needed", '<form><input type="text" name="token" placeholder="token"> <button>Open</button></form>', navigation=False))
         if TOKEN and query.get("token") == TOKEN:
             return self.redirect(url.path, cookie=True)
-        pages = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/subtitle": subtitle_page,
+        pages = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/log.jsonl": raw_log, "/subtitle": subtitle_page,
                  "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
         if url.path not in pages:
             return self.respond(404, layout("Not found", "<p>Nothing here.</p>"))
@@ -304,7 +348,7 @@ def review_page(query):
                    f'<td>{escape(reason(item))}</td><td>{quick_fix(item)}</td><td class="time">{escape(readable(item["time"]))}</td></tr>' for item in items)
     body = (message_box(query) + "<p class=\"subtle words\">The guard was not sure about these subtitles. Use the button when there is one, "
             "or open the subtitle to see what is wrong.</p>"
-            + f"<table><tr><th></th><th>Subtitle</th><th>What happened</th><th></th><th>Checked</th></tr>{rows}</table>" + keys_help())
+            + f'<table class="review"><tr><th></th><th>Subtitle</th><th>What happened</th><th></th><th>Checked</th></tr>{rows}</table>' + keys_help())
     return 200, layout("Needs a look", body, page="review"), "text/html; charset=utf-8"
 
 
@@ -431,24 +475,29 @@ def subtitle_cell(path):
 
 
 def log_page(query):
-    events = recent_events()
+    technical = query.get("view") == "technical"
+    events = [event for event in recent_events() if technical or event_level(event) != LEVEL["debug"]]
     level = query.get("level") if query.get("level") in LOG_LEVELS else None
     area = query.get("area") if query.get("area") in LOG_AREAS else None
-    keep = {key: value for key, value in (("level", level), ("area", area), ("q", query.get("q"))) if value}
+    keep = {key: value for key, value in (("view", "technical" if technical else None), ("level", level), ("area", area), ("q", query.get("q"))) if value}
+    views = [(None, "Plain words", None), ("technical", "Technical", None)]
     levels = [(None, "Everything", len(events))] + [(key, label, sum(event_level(event) in LOG_LEVELS[key][1] for event in events)) for key, (label, _) in LOG_LEVELS.items()]
     areas = [(None, "Every part", None)] + [(key, label, sum(event_area(event) == key for event in events)) for key, label in LOG_AREAS.items()]
     hidden = "".join(f'<input type="hidden" name="{key}" value="{escape(value)}">' for key, value in keep.items() if key != "q")
     search = f'<form class="filters">{hidden}<input type="text" name="q" placeholder="Search a file, a word..." value="{escape(query.get("q", ""))}"><button>Search</button></form>'
+    shown = filtered_events(events, query)[:LOG_LIMIT]
     body = ('<p class="subtle words">Everything subtitle-guard did, newest first: what Bazarr sent, every request to Bazarr, every check, '
-            'every file it changed and every action taken here. Problems and errors are marked in colour.</p>'
-            + tab_links("/log", "level", level, levels, keep) + tab_links("/log", "area", area, areas, keep) + search + log_table(filtered_events(query)[:LOG_LIMIT]))
+            'every file it changed and every action taken here. Problems and errors are marked in colour. The technical view adds the internal details '
+            'and every field of each event.</p>' + tab_links("/log", "view", "technical" if technical else None, views, keep)
+            + tab_links("/log", "level", level, levels, keep) + tab_links("/log", "area", area, areas, keep) + search
+            + (technical_log(shown) if technical else log_table(shown)))
     return 200, layout("Log", body, refresh=None if query else 15, page="log"), "text/html; charset=utf-8"
 
 
-def filtered_events(query):
+def filtered_events(events, query):
     levels = LOG_LEVELS[query["level"]][1] if query.get("level") in LOG_LEVELS else None
     area, text = query.get("area"), query.get("q", "").lower()
-    return [event for event in recent_events() if (not levels or event_level(event) in levels) and (not area or event_area(event) == area)
+    return [event for event in events if (not levels or event_level(event) in levels) and (not area or event_area(event) == area)
             and (not text or text in json.dumps(event, ensure_ascii=False).lower())]
 
 
@@ -462,6 +511,27 @@ def log_table(events):
             body += f'<tr class="day"><td colspan="3">{day}</td></tr>'
         body += log_row(event)
     return f'<table class="history">{columns(10, 12, 78)}<tr><th>Time</th><th>Part</th><th>What happened</th></tr>{body}</table>'
+
+
+def technical_log(events):
+    if not events:
+        return '<p class="muted">Nothing logged.</p>'
+    lines = "".join(technical_line(event) for event in events)
+    return f'<p class="subtle words">Newest first. <a href="/log.jsonl">Download the raw log</a> (one JSON event per line).</p><div class="technical-log">{lines}</div>'
+
+
+def technical_line(event):
+    level = event_level(event)
+    fields = " ".join(f"{key}={json.dumps(value, ensure_ascii=False, default=str)}" for key, value in event.items()
+                      if key not in TECHNICAL_HEADER and value not in (None, "", [], {}))
+    trace = f'<div class="trace">{escape(event["trace"])}</div>' if event.get("trace") else ""
+    return (f'<div class="line {level}"><span class="when">{escape(event["time"])}</span> <span class="level">{level.upper():<7}</span> '
+            f'<span class="source">{escape(event.get("source", "-")):<10}</span> <span class="event">{escape(event["event"])}</span> {escape(event_message(event))} '
+            f'<span class="fields">{escape(fields)}</span>{trace}</div>')
+
+
+def raw_log(query):
+    return 200, open(log_file()).read() if os.path.exists(log_file()) else "", "text/plain; charset=utf-8"
 
 
 def log_row(event):
@@ -505,15 +575,16 @@ def subtitle_page(query):
     diagnosis = review.diagnose(video, path)
     minute = int(query["minute"]) if query.get("minute", "").isdigit() else first_problem_minute(diagnosis)
     view = review.side_by_side(video, path, minute * 60, minute * 60 + WINDOW_SECONDS, diagnosis["shifts"] if diagnosis["fixable"] else None)
+    fix = review.last_fix(video, path)
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
-    body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest)
-            + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden)
-            + timeline(path, view, minute) + reading(path, view, diagnosis, minute) + by_hand(hidden, minute)
+    body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest, fix)
+            + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden) + fix_section(path, fix)
+            + timeline(path, view, minute, fix) + reading(path, view, diagnosis, minute, fix) + by_hand(hidden, minute)
             + technical(path, video, view, latest) + queue_links(path) + keys_help() + f"<script>{PICKER}</script>")
     return 200, layout(os.path.basename(path), body, current=path), "text/html; charset=utf-8"
 
 
-def status_box(diagnosis, latest):
+def status_box(diagnosis, latest, fix):
     parts = len(diagnosis["parts"])
     if latest and latest["decision"] == "wrong-episode" and latest["note"]:
         return f'<div class="status bad"><b>This subtitle belongs to {escape(latest["note"])}.</b><span>Its lines match that episode, not this one.</span></div>'
@@ -527,6 +598,8 @@ def status_box(diagnosis, latest):
         "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for forced subtitles."),
     }
     tone_name, title, detail = messages[diagnosis["state"]]
+    if diagnosis["state"] == "in-sync" and fix:
+        detail = f"It was fixed on {fix_time(fix['time'])}. What was changed is shown below."
     if diagnosis["state"] == "out-of-sync" and not parts:
         title, detail = "Some lines are slightly off.", "Fix everything to put them back in place."
     if diagnosis["state"] == "out-of-sync" and speed_changed(diagnosis["scale"]):
@@ -571,18 +644,39 @@ def parts_list(path, diagnosis, hidden):
     return f'<h2>What is wrong ({count} part{"s" if count != 1 else ""})</h2><table class="parts">{rows}</table>'
 
 
-def timeline(path, view, minute):
+def timeline(path, view, minute, fix):
     if not view["minutes"]:
         return ""
-    length = len(view["minutes"])
+    legend = ('<p class="legend"><span><i class="good"></i>all lines on time</span><span><i class="medium"></i>some lines off</span>'
+              '<span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span><span>Click anywhere to read that minute.</span></p>')
+    if not fix or not fix["minutes"]:
+        return f'<h2>The whole video ({duration_label(len(view["minutes"]))})</h2>{legend}{strip(path, view["minutes"], minute)}'
+    return (f'<h2>The whole video ({duration_label(len(view["minutes"]))}), before and after the fix</h2>{legend}'
+            f'<p class="strip-label">Before the fix</p>{strip(path, fix["minutes"], minute)}<p class="strip-label">Now</p>{strip(path, view["minutes"], minute)}')
+
+
+def strip(path, minutes, minute):
+    length = len(minutes)
     segments = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{minute_title(number, share)}" href="{subtitle_link(path, number)}"></a>'
-                       for number, share, state in view["minutes"])
+                       for number, share, state in minutes)
     step = next((step for step in TICK_MINUTES if length / step <= 10), TICK_MINUTES[-1])
     ticks = "".join(f'<span style="left: {100 * number / length:.2f}%">{duration_label(number)}</span>' for number in range(0, length - step // 2, step))
-    return (f'<h2>The whole video ({duration_label(length)})</h2><p class="legend"><span><i class="good"></i>all lines on time</span>'
-            '<span><i class="medium"></i>some lines off</span><span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span>'
-            f'<span>Click anywhere to read that minute.</span></p><div class="minutes">{segments}</div><div class="ticks">{ticks}'
-            f'<span class="end">{duration_label(length)}</span></div>')
+    return f'<div class="minutes">{segments}</div><div class="ticks">{ticks}<span class="end">{duration_label(length)}</span></div>'
+
+
+def fix_section(path, fix):
+    if not fix:
+        return ""
+    recorded = next((row for row in report_history() if row["subtitle"] == path and row["changes"]), None)
+    changes = recorded["changes"] if recorded else {"scale": 1.0, "lines": len(fix["shifts"]), "parts": fix["parts"]}
+    by = f", started by {started_by(recorded['provider'])}, confidence {recorded['confidence']} / 100" if recorded and recorded["confidence"] else ""
+    return (f'<h2>What was changed</h2><p class="subtle words">Compared with the file as it was before, on {escape(fix_time(fix["time"]))}{escape(by)}. '
+            'The original is kept: Restore the original file puts it back.</p>'
+            f'<div class="changes">{changes_text(changes, DECISION["fixed"])}</div>')
+
+
+def fix_time(folder):
+    return f"{folder[:4]}-{folder[4:6]}-{folder[6:8]} at {folder[9:11]}:{folder[11:13]}"
 
 
 def minute_title(number, share):
@@ -590,8 +684,8 @@ def minute_title(number, share):
     return f"{moment}: almost no lines" if share is None else f"{moment}: {share:.0%} of lines on time"
 
 
-def reading(path, view, diagnosis, minute):
-    rows = "".join(moment_row(moment, diagnosis) for moment in view["moments"])
+def reading(path, view, diagnosis, minute, fix):
+    rows = "".join(moment_row(moment, diagnosis, fix) for moment in view["moments"])
     if not rows:
         return ""
     left = "what the subtitles built into the video say" if view["reference"] else "nothing to compare with"
@@ -609,7 +703,7 @@ def minute_links(path, view, minute):
     return f'<span class="minute-links">{links}</span>'
 
 
-def moment_row(moment, diagnosis):
+def moment_row(moment, diagnosis, fix):
     video_cell = escape(moment["video"]) if moment["video"] is not None else '<span class="muted">(no line here)</span>'
     subtitle_cell = escape(moment["subtitle"]) if moment["subtitle"] is not None else '<span class="muted">(no line here)</span>'
     state, label = "", ""
@@ -618,6 +712,9 @@ def moment_row(moment, diagnosis):
         label = f"{abs(moment['shift']):.1f} s {'too late' if moment['shift'] < 0 else 'too early'}<div class=\"muted\">shows at {short_clock(moment['shown_at'])}</div>"
     elif moment["subtitle"] is not None and moment["video"] is not None and diagnosis["state"] in ("in-sync", "unclear", "out-of-sync"):
         state, label = "fine", "on time"
+    moved = fix["shifts"][moment["index"]] if fix and moment.get("index") is not None and moment["index"] < len(fix["shifts"]) else 0.0
+    if abs(moved) >= NOTICEABLE_SECONDS:
+        label += f'<div class="muted">was at {short_clock(moment["shown_at"] - moved)}, moved {abs(moved):.1f} s {"later" if moved > 0 else "earlier"}</div>'
     video_time = f' data-time="{moment["time"]:.3f}"' if moment["video"] is not None else ""
     subtitle_time = f' data-time="{moment["shown_at"]:.3f}"' if moment["subtitle"] is not None else ""
     return (f'<tr class="{state}"><td class="time">{short_clock(moment["time"])}</td><td class="video pickable"{video_time}>{video_cell}</td>'
@@ -662,7 +759,7 @@ def api_jobs(query):
 
 
 def api_log(query):
-    return 200, json.dumps(filtered_events(query)[:LOG_LIMIT]), "application/json"
+    return 200, json.dumps(filtered_events(recent_events(), query)[:LOG_LIMIT]), "application/json"
 
 
 def api_review(query):

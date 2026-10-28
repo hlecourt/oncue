@@ -132,6 +132,11 @@ def test_the_log_page_shows_everything_and_filters_it(server):
     page = get(server + "/log?area=bazarr")[1]
     assert "Bazarr downloaded" in page and "Task 9 failed" not in page
     assert [event["job"] for event in json.loads(get(server + "/api/log?q=task+9")[1])] == [9]
+    logs.log("reference.extracted", "Read 2 usable subtitle tracks from the video in 0.4 s", logs.LEVEL["debug"], tracks=[{"index": 3, "lines": 512}])
+    assert "Read 2 usable subtitle tracks" not in get(server + "/log")[1]
+    page = get(server + "/log?view=technical")[1]
+    assert "Read 2 usable subtitle tracks" in page and "reference.extracted" in page and "tracks=[{&quot;index&quot;: 3, &quot;lines&quot;: 512}]" in page
+    assert "DEBUG" in page and "ERROR" in page and '"event": "reference.extracted"' in get(server + "/log.jsonl")[1]
 
 
 def review_part(video, subtitle):
@@ -173,3 +178,17 @@ def test_the_history_shows_what_each_fix_moved(server, tmp_path):
     assert "Started by: Bazarr, from opensubtitles" in page and "Started by: Library scan" in page
     assert "lines from 2:" in page and "s earlier</div>" in page and "Speed corrected: it was made for a faster version of the video (4.3%)" in page
     assert "/ 100, high" in page
+
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
+def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_path):
+    from subtitle_guard.guard import evaluate_and_fix
+    video, starts, ends = video_with_reference(tmp_path)
+    subtitle = video.with_suffix(".fr.srt")
+    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    storage.report(str(subtitle), "opensubtitles", evaluate_and_fix(str(video), str(subtitle), True))
+    page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))[1]
+    assert "This subtitle is in sync with the video." in page and "What was changed is shown below." in page
+    assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page
+    assert "Before the fix" in page and "Now</p>" in page and ("moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page)

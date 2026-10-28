@@ -24,7 +24,9 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     level = LEVEL["warning"] if outcome["decision"] in WORRYING_DECISIONS else LEVEL["info"]
     log("guard.checked", message, level, video=video, subtitle=subtitle, applied=apply, decision=outcome["decision"], confidence=score, band=band,
         reference=outcome.get("reference"), reason=outcome.get("reason"), matches=outcome.get("matches"),
-        weak_minutes=outcome.get("weak_minutes"), seconds=round(time.time() - started, 2))
+        weak_minutes=outcome.get("weak_minutes"), before=outcome.get("before"), after=outcome.get("after"), objective=outcome.get("objective"),
+        null_objective=outcome.get("null_objective"), segments=outcome.get("segments"), unsupported_share=outcome.get("unsupported_share"),
+        changes=outcome.get("changes"), seconds=round(time.time() - started, 2))
     return outcome
 
 

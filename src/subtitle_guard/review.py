@@ -11,7 +11,7 @@ import subprocess
 import numpy
 
 from . import jobs
-from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, score, weak_minutes
+from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
 from .guard import evaluate_and_fix
@@ -25,6 +25,7 @@ from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, 
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
+BEFORE_FIX_NAMES = ("original", "before-manual")
 DIAGNOSIS_CACHE_VERSION = 2
 
 
@@ -83,7 +84,7 @@ def pair_moments(cues, texts, targets, first, last):
     for index, ((start, _, text), target) in enumerate(zip(cues, targets)):
         if not first <= target < last:
             continue
-        line = {"subtitle": clean(text), "shown_at": start, "shift": float(target - start)}
+        line = {"subtitle": clean(text), "shown_at": start, "shift": float(target - start), "index": index}
         position = nearest_position(reference_starts, target)
         if position in moments and moments[position]["subtitle"] is None and abs(reference_starts[position] - target) <= TOLERANCE_SECONDS:
             moments[position].update(line)
@@ -98,6 +99,23 @@ def nearest_position(starts, value):
     position = int(numpy.searchsorted(starts, value))
     candidates = [candidate for candidate in (position - 1, position) if 0 <= candidate < len(starts)]
     return min(candidates, key=lambda candidate: abs(starts[candidate] - value))
+
+
+def last_fix(video, subtitle):
+    extension = os.path.splitext(subtitle)[1]
+    folders = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*")), reverse=True)
+    candidates = [os.path.join(folder, name + extension) for name in BEFORE_FIX_NAMES for folder in folders]
+    before = next((path for path in candidates if os.path.exists(path)), None)
+    if before is None:
+        return None
+    old, new = parse_subtitle(before)["cues"], parse_subtitle(subtitle)["cues"]
+    shifts = [new_start - old_start for (new_start, _, _), (old_start, _, _) in zip(new, old)]
+    if len(old) != len(new) or max((abs(shift) for shift in shifts), default=0) < NOTICEABLE_SHIFT_SECONDS:
+        return None
+    reference = load_reference(video, is_hearing_impaired(subtitle), len(old))
+    starts = numpy.array([start for start, _, _ in old])
+    minutes = minute_states(starts, numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS, False) if reference is not None else []
+    return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "minutes": minutes, "parts": out_of_sync_parts(old, shifts)}
 
 
 def diagnose(video, subtitle):
