@@ -4,10 +4,10 @@ import subprocess
 
 import numpy
 import pytest
+from synthetic import dialogue
 
 from subtitle_guard import jobs, library
 from subtitle_guard.subtitles import parse_subtitle, timestamp
-from synthetic import dialogue
 
 
 def touch(path, content=""):
@@ -62,7 +62,7 @@ def test_watch_queues_new_and_changed_subtitles_once(tmp_path, monkeypatch):
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys):
     starts, ends = dialogue(6, minutes=6)
-    lines = "\n".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends), 1))
+    lines = "\n".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1))
     (tmp_path / "reference.srt").write_text(lines)
     video = tmp_path / "library" / "Movie (2020)" / "Movie.2020.mkv"
     video.parent.mkdir(parents=True)
@@ -71,7 +71,7 @@ def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys):
                     str(video)], check=True)
     subtitle = video.with_suffix(".fr.srt")
     subtitle.write_text("\n".join(f"{number}\n{timestamp(start * 23.976 / 25 - 4)} --> {timestamp(end * 23.976 / 25 - 4)}\nligne {number}\n"
-                                  for number, (start, end) in enumerate(zip(starts, ends), 1) if start * 23.976 / 25 > 4))
+                                  for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1) if start * 23.976 / 25 > 4))
     library.scan_folder(str(tmp_path / "library"), apply=True)
     assert "fixed" in capsys.readouterr().out
     fixed = numpy.array([start for start, _, _ in parse_subtitle(str(subtitle))["cues"]])

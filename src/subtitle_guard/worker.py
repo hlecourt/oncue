@@ -1,7 +1,6 @@
 """Run queued jobs in a few parallel worker processes; full file reads and audio decoding take turns through a lock."""
 
 import fcntl
-import json
 import multiprocessing
 import os
 import signal
@@ -11,13 +10,20 @@ import time
 import traceback
 
 from . import jobs
-from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
+from .bazarr import (
+    RETRY_WAIT_SECONDS,
+    blacklist_for_retry,
+    finish_retry,
+    handle_download,
+)
 from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
+from .heartbeats import HEARTBEAT_SECONDS
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
 from .outcome import describe
-from .reports import report
+from .reports import needs_review, report
+from .review import diagnose
 from .storage import state_path, write_json
 
 WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
@@ -25,8 +31,6 @@ POLL_SECONDS = 2.0
 SUPERVISION_SECONDS = 5.0
 STOP_SECONDS = 10
 MAX_ATTEMPTS = 3
-HEARTBEAT_SECONDS = 10
-HEARTBEAT_STALE_SECONDS = 60
 
 
 def run_workers(count=WORKERS):
@@ -59,13 +63,13 @@ def supervise(roles):
 
 def single_supervisor_lock():
     os.makedirs(state_path(), exist_ok=True)
-    handle = open(state_path("supervisor.lock"), "w")
+    descriptor = os.open(state_path("supervisor.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        handle.close()
+        os.close(descriptor)
         return None
-    return handle
+    return descriptor
 
 
 def restart(name, process, role):
@@ -130,35 +134,6 @@ def beat(number):
         time.sleep(HEARTBEAT_SECONDS)
 
 
-def worker_health():
-    supervisor = load_json(state_path("supervisor.json"))
-    if not supervisor or not process_alive(supervisor["pid"]):
-        return {}
-    return {name: heartbeat_age(name) is not None and heartbeat_age(name) < HEARTBEAT_STALE_SECONDS for name in supervisor["workers"]}
-
-
-def heartbeat_age(name):
-    path = state_path("heartbeats", name)
-    return time.time() - os.path.getmtime(path) if os.path.exists(path) else None
-
-
-def process_alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def load_json(path):
-    if not os.path.exists(path):
-        return None
-    with open(path) as handle:
-        return json.load(handle)
-
-
 def work_once(number):
     job = jobs.claim(number)
     if job is None:
@@ -191,9 +166,20 @@ def check(arguments):
             jobs.remember(arguments["subtitle"], FAILED + watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
         raise
     report(arguments["subtitle"], "watch" if arguments.get("watched") else "check", outcome, applied=arguments["apply"])
+    prepare_review(arguments["video"], arguments["subtitle"], outcome, arguments["apply"])
     if arguments.get("watched"):
         jobs.remember(arguments["subtitle"], watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
     return outcome
+
+
+def prepare_review(video, subtitle, outcome, applied):
+    row = {"applied": applied, "decision": outcome["decision"], "weak_minutes": outcome.get("weak_minutes"), "band": outcome.get("confidence_band")}
+    if not needs_review(row):
+        return
+    try:
+        diagnose(video, subtitle)
+    except Exception as error:
+        log("worker.review-not-prepared", f"could not prepare the review page: {type(error).__name__}: {error}", LEVEL["warning"], subtitle=subtitle)
 
 
 def run_job(job):

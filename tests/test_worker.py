@@ -3,10 +3,10 @@ import subprocess
 
 import numpy
 import pytest
+from synthetic import dialogue
 
 from subtitle_guard import jobs, worker
 from subtitle_guard.subtitles import parse_subtitle, timestamp
-from synthetic import dialogue
 
 
 def test_check_job_records_the_decision(monkeypatch):
@@ -53,7 +53,7 @@ def test_hook_job_runs_the_bazarr_flow(monkeypatch):
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path):
     starts, ends = dialogue(5, minutes=6)
-    lines = [f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends), 1)]
+    lines = [f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1)]
     (tmp_path / "reference.srt").write_text("\n".join(lines))
     video = tmp_path / "Show" / "Season 1" / "Show.S01E01.mkv"
     video.parent.mkdir(parents=True)
@@ -62,7 +62,7 @@ def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path):
                     str(video)], check=True)
     subtitle = video.with_suffix(".fr.srt")
     subtitle.write_text("\n".join(f"{number}\n{timestamp(start + 7)} --> {timestamp(end + 7)}\nligne {number}\n"
-                                  for number, (start, end) in enumerate(zip(starts, ends), 1)))
+                                  for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1)))
     job_id = jobs.enqueue(jobs.KIND["check"], {"video": str(video), "subtitle": str(subtitle), "apply": True})
     assert worker.work_once(1)
     done = jobs.job(job_id)

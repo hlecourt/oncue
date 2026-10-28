@@ -16,7 +16,7 @@ TRANSLATIONS = (("fr-orig", "mkv"), ("fr-Goofy", "mp4"), ("fr-OMenor", "mkv"), (
 
 folder = os.path.abspath(sys.argv[1])
 os.makedirs(folder, exist_ok=True)
-for name in ["tears_of_steel_720p.mov"] + [f"subtitles/TOS-{language}.srt" for language in {"en", "fr-orig", "fr-Goofy", "fr-OMenor", "JP", "de", "ru"}]:
+for name in ["tears_of_steel_720p.mov"] + [f"subtitles/TOS-{language}.srt" for language in ("en", "fr-orig", "fr-Goofy", "fr-OMenor", "JP", "de", "ru")]:
     target = os.path.join(folder, os.path.basename(name))
     if not os.path.exists(target):
         print("downloading", name, flush=True)
