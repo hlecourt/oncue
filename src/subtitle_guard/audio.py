@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 
@@ -11,6 +10,7 @@ from .logs import LEVEL, log
 from .outcome import DECISION
 from .files import read_regular, replace_file, save_version
 from .storage import backup_path, file_signature, heavy_disk_read
+from .tools import AUDIO_SYNC_SECONDS, run_tool, stderr_tail
 from .subtitles import parse_subtitle
 
 
@@ -69,11 +69,14 @@ def run_ffsubsync(video, subtitle, output, fix_framerate):
     if not fix_framerate:
         command.append("--no-fix-framerate")
     with heavy_disk_read():
-        lines = subprocess.run(command, capture_output=True, text=True).stdout.strip().splitlines()
+        finished = run_tool(command, AUDIO_SYNC_SECONDS)
+    lines = finished.stdout.strip().splitlines()
     try:
         result = json.loads(lines[-1]) if lines else {}
     except ValueError:
-        return None
-    if not result.get("sync_was_successful") or not os.path.exists(output):
+        result = {}
+    if finished.returncode != 0 or not result.get("sync_was_successful") or not os.path.exists(output):
+        log("audio.ffsubsync-failed", f"ffsubsync exit={finished.returncode} successful={result.get('sync_was_successful')}", LEVEL["warning"], subtitle=subtitle,
+            stderr=stderr_tail(finished))
         return None
     return {"offset_seconds": result.get("offset_seconds") or 0.0, "framerate_scale_factor": result.get("framerate_scale_factor") or 1.0}

@@ -17,10 +17,6 @@ class FileChangedError(SubtitleGuardError):
     pass
 
 
-class ProbeError(SubtitleGuardError):
-    pass
-
-
 class MatroskaError(SubtitleGuardError):
     pass
 
@@ -30,4 +26,12 @@ class ConfigError(SubtitleGuardError):
 
 
 class UnknownJobKindError(SubtitleGuardError):
+    pass
+
+
+class ToolError(SubtitleGuardError):
+    pass
+
+
+class ProbeError(ToolError):
     pass

@@ -9,7 +9,7 @@ from .confidence import confidence
 from .logs import LEVEL, log
 from .outcome import DECISION, WORRYING_DECISIONS
 from .reference import load_reference
-from .errors import SubtitleTooLargeError, UnsafePathError
+from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
 from .files import save_version, subtitle_lock
 from .storage import backup_path, file_signature
 from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
@@ -48,7 +48,10 @@ def examine(video, subtitle, apply, neighbours):
     if len(document["cues"]) > MAX_CHECKED_CUES:
         return {"decision": DECISION["unverified"], "reason": f"too many cues to check safely ({len(document['cues'])})"}
     hearing_impaired = is_hearing_impaired(subtitle)
-    reference = load_reference(video, hearing_impaired, len(document["cues"]))
+    try:
+        reference = load_reference(video, hearing_impaired, len(document["cues"]))
+    except ToolError as error:
+        return {"decision": DECISION["unverified"], "reason": f"could not read the video, nothing changed: {error}"}
     if reference is None and not apply:
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, would sync to the audio"}
     if reference is None:

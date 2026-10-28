@@ -6,18 +6,18 @@ import json
 import os
 import re
 import shutil
-import subprocess
 
 import numpy
 
 from . import jobs
-from .errors import UnsafePathError
+from .errors import MatroskaError, ToolError, UnsafePathError
+from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
 from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
 from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours
-from .logs import log
+from .logs import LEVEL, log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
@@ -45,7 +45,7 @@ def video_for(subtitle):
 
 def side_by_side(video, subtitle, first, last, shifts=None):
     cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    reference = readable_reference(video, subtitle, len(cues))
     if reference is None:
         return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
                 "moments": pair_moments(cues, [], [start for start, _, _ in cues], first, last), "minutes": []}
@@ -118,12 +118,20 @@ def last_fix(video, subtitle):
     return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "moved_minutes": moved_minutes, "parts": out_of_sync_parts(old, shifts)}
 
 
+def readable_reference(video, subtitle, cue_count):
+    try:
+        return load_reference(video, is_hearing_impaired(subtitle), cue_count)
+    except ToolError as error:
+        log("review.reference-unreadable", f"video unreadable for the review page: {error}", LEVEL["warning"], video=video, subtitle=subtitle)
+        return None
+
+
 def diagnose(video, subtitle):
     cache_file = diagnosis_file(video, subtitle)
     if os.path.exists(cache_file):
         return json.load(open(cache_file))
     cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues)) if len(cues) >= MIN_CUES else None
+    reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES else None
     if len(cues) < MIN_CUES:
         diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif reference is None:
@@ -175,17 +183,17 @@ def reference_texts(video, reference):
     cache_file = state_path("texts", hashlib.sha1(f"{video}|{status.st_size}|{int(status.st_mtime)}|{reference['index']}".encode()).hexdigest() + ".json")
     if os.path.exists(cache_file):
         return [tuple(line) for line in json.load(open(cache_file))]
-    probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json", video],
-                                      capture_output=True, text=True).stdout or "{}").get("streams", [])
+    probe = json.loads(run_tool(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json",
+                                 video], PROBE_SECONDS).stdout or "{}").get("streams", [])
     codec = next((stream.get("codec_name") for stream in probe if stream["index"] == reference["index"]), "")
     try:
         texts = matroska_texts(video, sum(stream.get("codec_type") != "attachment" for stream in probe), reference["index"], ass=codec in ("ass", "ssa"))
-    except (ValueError, IndexError, KeyError, StopIteration, OSError):
+    except (MatroskaError, OSError):
         texts = None
     if texts is None:
         with heavy_disk_read():
-            extracted = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", video, "-map", f"0:{reference['index']}", "-f", "srt", "-"],
-                                       capture_output=True, text=True, errors="replace").stdout
+            extracted = run_tool(["ffmpeg", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-i", video, "-map", f"0:{reference['index']}",
+                                  "-f", "srt", "-"], EXTRACT_SECONDS).stdout
         texts = parse_timed_text(extracted.replace("\r\n", "\n"))
     write_json(cache_file, texts)
     return texts
