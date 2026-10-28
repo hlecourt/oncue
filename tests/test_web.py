@@ -35,14 +35,21 @@ def get(url, headers=None):
         return error.code, error.read().decode(), error.headers
 
 
-def post(url, form, headers=None):
+def post(url, form, headers=None, csrf="test-csrf"):
     opener = urllib.request.build_opener(NoRedirect)
-    request = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode(), headers=headers or {}, method="POST")
+    cookie = "; ".join(filter(None, [f"{web.CSRF_COOKIE}={csrf}", (headers or {}).get("Cookie")]))
+    data = urllib.parse.urlencode({**form, "csrf": csrf} if csrf else form).encode()
+    request = urllib.request.Request(url, data=data, headers={**(headers or {}), "Cookie": cookie}, method="POST")
     try:
         opener.open(request)
     except urllib.error.HTTPError as error:
         return error.code, error.headers.get("Location", "")
     raise AssertionError("expected a redirect")
+
+
+def notice_text(location):
+    key = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("notice", [""])[0]
+    return web.NOTICES.get(key, "")
 
 
 def test_dashboard_jobs_and_api(server):
@@ -53,7 +60,7 @@ def test_dashboard_jobs_and_api(server):
     assert status == 200 and "Overview" in page and "OSError: gone" in page and "need a look" in page
     assert json.loads(get(server + "/api/status")[1])["status"] == {"failed": 1}
     code, location = post(server + "/", {"action": "retry-job", "job": str(job_id)})
-    assert code == 303 and "run+again" in location and jobs.job(job_id)["status"] == "queued"
+    assert code == 303 and "run again" in notice_text(location) and jobs.job(job_id)["status"] == "queued"
     assert get(server + "/health")[1] == "ok"
     assert get(server + "/nowhere")[0] == 404
 
@@ -62,7 +69,7 @@ def test_unknown_subtitles_are_never_touched(server, tmp_path):
     stranger = tmp_path / "stranger.srt"
     stranger.write_text("1\n00:00:01,000 --> 00:00:02,000\nx\n")
     code, location = post(server + "/", {"action": "revert", "path": str(stranger)})
-    assert "Unknown+subtitle" in location
+    assert "Unknown subtitle" in notice_text(location)
     assert get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(stranger)}))[0] == 404
 
 
@@ -79,26 +86,45 @@ def test_review_page_and_manual_shift(server, tmp_path):
     assert "1 part of this subtitle is out of sync." in page and "What is wrong (1 part)" in page and "s too late</b>" in page and "Fix this part" in page
     assert "Fix everything" in page and "Try another subtitle" not in page
     code, location = post(server + "/", {"action": "shift", "path": str(subtitle), "minute": "2", "first": "2:03", "last": "3:03", "offset": "-3"})
-    assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in urllib.parse.unquote_plus(location)
+    assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in notice_text(location)
     shifted = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 120 <= start < 180]
     expected = [start for start in starts if 120 <= start < 180]
     assert max(abs(a - b) for a, b in zip(shifted, expected)) < 0.01
 
 
 def test_token_protects_the_ui(server, monkeypatch):
-    monkeypatch.setattr(web, "TOKEN", "secret")
+    monkeypatch.setitem(web.AUTH, "token", "secret")
     reports.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
-    assert status == 401 and "Needs a look" not in page and "Private.Name" not in page
+    assert status == 401 and "Needs a look" not in page and "Private.Name" not in page and 'action="/login"' in page
+    assert get(server + "/?token=secret")[0] == 401
     assert get(server + "/health")[0] == 200
-    opener = urllib.request.build_opener(NoRedirect)
-    try:
-        opener.open(server + "/?token=secret")
-    except urllib.error.HTTPError as error:
-        cookie = error.headers.get("Set-Cookie")
-    assert cookie.startswith("subtitle_guard_token=secret") and "HttpOnly" in cookie
-    assert get(server + "/", {"Cookie": "subtitle_guard_token=secret"})[0] == 200
+    assert post(server + "/login", {"token": "wrong"}, csrf=None) == (401, "")
+    code, _ = post(server + "/login", {"token": "secret"}, csrf=None)
+    assert code == 303
+    session = next(iter(web.SESSIONS))
+    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 200
     assert post(server + "/", {"action": "retry-job", "job": "1"})[0] == 401
+    assert post(server + "/logout", {}, {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 303
+    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 401
+
+
+def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
+    job_id = jobs.enqueue(jobs.KIND["check"], {"subtitle": "/media/a.fr.srt"})
+    jobs.claim(1)
+    jobs.fail(job_id, "boom")
+    assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, csrf=None)[0] == 403
+    assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, {"Origin": "http://evil.example"})[0] == 403
+    assert jobs.job(job_id)["status"] == "failed"
+    assert post(server + "/", {"action": "retry-job", "job": "1" * 70000})[0] == 413
+    code, location = post(server + "/", {"action": "retry-job", "job": "not-a-number"})
+    assert code == 303 and notice_text(location) == "Only a finished task can be run again."
+    status, _, headers = get(server + "/")
+    assert headers["X-Frame-Options"] == "DENY" and "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+    assert 'name="csrf"' in get(server + "/history")[1] or "Run again" not in get(server + "/history")[1]
+    assert get(server + "/", {"Host": "rebinding.example:8484"})[0] == 400
+    assert get(server + "/subtitle?path=/x.srt&minute=" + "9" * 5000)[0] == 404
+    assert json.loads(get(server + "/api/jobs?limit=-1")[1])
 
 
 
@@ -111,12 +137,12 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     part = review_part(str(video), str(subtitle))
     code, location = post(server + "/", {"action": "fix-part", "path": str(subtitle), "minute": "2", "first": f"{part['first']:.3f}",
                                          "last": f"{part['last']:.3f}", "offset": f"{part['shift']:.2f}"})
-    assert code == 303 and "Done." in urllib.parse.unquote_plus(location)
+    assert code == 303 and "Done." in notice_text(location)
     moved = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 119 <= start < 181]
     assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180])) < 0.25
     write_subtitle_file(subtitle, starts, ends, lambda value: value * 23.976 / 25 + 6)
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "minute": "0"})
-    assert "The whole subtitle is back in sync." in urllib.parse.unquote_plus(location)
+    assert "The whole subtitle is back in sync." in notice_text(location)
     status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
     assert "This subtitle is in sync with the video." in page
 
@@ -152,7 +178,7 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     status, page, _ = get(server + "/review")
     assert "Fix it</button>" in page
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
-    assert location.startswith("/review?") and "back in sync" in urllib.parse.unquote_plus(location)
+    assert location.startswith("/review?") and "back in sync" in notice_text(location)
     reports.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
     assert "Move it to S01E03</button>" in get(server + "/review")[1]
 
@@ -190,3 +216,17 @@ def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_pa
     assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page
     assert "fixed by the guard, now on time" in page and 'class="fixed' in page
     assert "moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page
+
+
+
+def test_subtitles_outside_the_roots_or_symlinked_are_unknown(tmp_path, monkeypatch):
+    inside, outside = tmp_path / "media" / "a.fr.srt", tmp_path / "elsewhere" / "b.fr.srt"
+    for subtitle in (inside, outside):
+        subtitle.parent.mkdir()
+        subtitle.write_text("x")
+        reports.report(str(subtitle), "scan", {"decision": "kept"})
+    link = tmp_path / "media" / "c.fr.srt"
+    link.symlink_to(outside)
+    reports.report(str(link), "scan", {"decision": "kept"})
+    monkeypatch.setattr(web, "ROOTS", [str((tmp_path / "media").resolve())])
+    assert web.known_subtitle(str(inside)) and not web.known_subtitle(str(outside)) and not web.known_subtitle(str(link))
