@@ -4,11 +4,14 @@
 import os
 import re
 import time
+from contextlib import suppress
 from datetime import datetime
 
 from . import jobs
+from .errors import SubtitleGuardError
+from .files import TEMPORARY_SUFFIX
 from .guard import evaluate_and_fix
-from .logs import log, settings
+from .logs import LEVEL, log, settings
 from .outcome import describe
 from .reports import report
 from .storage import file_signature
@@ -21,6 +24,7 @@ NEIGHBOUR_EPISODES = 2
 PENDING = "pending:"
 FAILED = "failed:"
 FAILED_RETRY_SECONDS = 3600
+LEFTOVER_SECONDS = 3600
 WATCH_SECONDS = int(os.environ.get("SUBTITLE_GUARD_WATCH_SECONDS", "600"))
 
 
@@ -33,7 +37,7 @@ def scan_folder(root, apply, queue=False):
             continue
         try:
             outcome = evaluate_and_fix(video, subtitle, apply, neighbours)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, SubtitleGuardError) as error:
             print(f"{label}: error {error}", flush=True)
             continue
         report(subtitle, "scan", outcome, applied=apply)
@@ -60,7 +64,7 @@ def queue_if_changed(video, subtitle, neighbours, apply):
     except FileNotFoundError:
         return 0
     remembered, updated = jobs.seen(subtitle)
-    if remembered in (signature, PENDING + signature):
+    if remembered == signature or (remembered == PENDING + signature and jobs.has_open_job(subtitle)):
         return 0
     if remembered == FAILED + signature and time.time() - datetime.fromisoformat(updated).timestamp() < FAILED_RETRY_SECONDS:
         return 0
@@ -83,10 +87,21 @@ def library_items(root):
 def media_folders(root):
     for folder, directories, files in os.walk(root):
         directories[:] = sorted(directory for directory in directories if not directory.startswith("."))
-        names = sorted(files)
+        names = sorted(name for name in files if not leftover_temporary(folder, name))
         videos = [name for name in names if name.lower().endswith(VIDEO_EXTENSIONS) and not SAMPLE.search(os.path.splitext(name)[0])]
         if videos:
             yield folder, videos, names
+
+
+def leftover_temporary(folder, name):
+    if not name.endswith(TEMPORARY_SUFFIX):
+        return False
+    path = os.path.join(folder, name)
+    with suppress(FileNotFoundError):
+        if time.time() - os.path.getmtime(path) > LEFTOVER_SECONDS:
+            os.remove(path)
+            log("watch.leftover-removed", f"removed a temporary file left by an interrupted write: {path}", LEVEL["warning"], file=path)
+    return True
 
 
 def external_subtitles(video, names):

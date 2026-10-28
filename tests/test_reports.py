@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
+import subprocess
+import sys
 
 from subtitle_guard import reports, storage
 
@@ -51,3 +53,28 @@ def test_a_corrupt_state_file_is_set_aside_and_logged(tmp_path):
     assert state.load_state("/media/Ep.mkv", "/media/Ep.fr.srt") == {}
     assert Path(path + ".corrupt").read_text() == "{broken"
     assert logs.recent_events()[0]["event"] == "state.corrupt"
+
+
+def test_processes_starting_together_import_the_old_history_exactly_once(tmp_path):
+    os.makedirs(storage.STATE_DIRECTORY, exist_ok=True)
+    row = "2026-10-27T10:00:00\tkept\teng-text\t0.9\t0.9\t0.1\tscan\t/media/Ep{number}.fr.srt\n"
+    with open(storage.state_path("report.tsv"), "w") as handle:
+        handle.write("".join(row.format(number=number) for number in range(3000)))
+    environment = {**os.environ, "SUBTITLE_GUARD_STATE": storage.STATE_DIRECTORY}
+    script = "from subtitle_guard import reports; print(len(reports.report_history()))"
+    children = [subprocess.Popen([sys.executable, "-c", script], env=environment, stdout=subprocess.PIPE, text=True) for _ in range(4)]
+    counts = [int(child.communicate(timeout=60)[0]) for child in children]
+    assert counts == [3000] * 4
+    assert len(reports.report_history()) == 3000
+
+
+def test_imported_rows_with_impossible_values_are_skipped():
+    os.makedirs(storage.STATE_DIRECTORY, exist_ok=True)
+    good = "2026-10-27T10:00:00\tkept\teng-text\t0.9\t0.9\t0.1\tscan\t/media/a.fr.srt"
+    rows = [good, good.replace("0.9\t0.9", "abc\t0.9"), good.replace("2026-10-27T10:00:00", "yesterday"), good.replace("kept", "<b>x</b>")]
+    with open(storage.state_path("report.tsv"), "w") as handle:
+        handle.write("\n".join(rows) + "\n")
+    assert [row["decision"] for row in reports.report_history()] == ["kept"]
+    with open(storage.state_path("report.tsv"), "w") as handle:
+        handle.write(good + "\n")
+    assert len(reports.report_history()) == 1

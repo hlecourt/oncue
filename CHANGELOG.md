@@ -5,8 +5,6 @@ and the project uses [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
-
 First public version.
 
 ### Added
@@ -27,5 +25,7 @@ First public version.
 
 ### Security
 
-- Web UI token required beyond loopback (generated when unset), sessions, CSRF tokens, origin and host checks, strict security
-  headers, request limits, and actions limited to known subtitles inside the configured roots and never through symlinks.
+- Web UI login with a user name and a password (scrypt hash, generated on first start beyond loopback, `set-password` to change
+  it), expiring server-side sessions, a lockout after failed logins, CSRF tokens bound to the session, origin and host checks,
+  a script-hash CSP and strict security headers, request size and time limits.
+- Every subtitle read and write is confined to `SUBTITLE_GUARD_ROOTS`, never follows a symlink and only touches regular files.

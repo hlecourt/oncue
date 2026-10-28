@@ -129,13 +129,21 @@ def save(name, cues, subtitle_format):
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(header + body)
         return path
-    subtitles.create_subtitle(path, cues, "vtt" if subtitle_format == "vtt" else "srt")
+    create_subtitle(path, cues, "vtt" if subtitle_format == "vtt" else "srt")
     if subtitle_format == "utf16":
         with open(path, encoding="utf-8") as handle:
             content = handle.read()
         with open(path, "w", encoding="utf-16") as handle:
             handle.write(content)
     return path
+
+
+def create_subtitle(path, cues, subtitle_format):
+    separator = "." if subtitle_format == "vtt" else ","
+    blocks = [f"{number}\n{subtitles.timestamp(start, separator)} --> {subtitles.timestamp(end, separator)}\n{text}\n"
+              for number, (start, end, text) in enumerate(sorted(cues), 1)]
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(("WEBVTT\n\n" if subtitle_format == "vtt" else "") + "\n".join(blocks))
 
 
 def run(video, path, hearing_impaired=False):

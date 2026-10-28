@@ -1,29 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """State shared by one request: authentication, the CSRF token, one-shot notices and a per-request cache."""
 
-import os
 import secrets
 import threading
 from collections import OrderedDict
 
-TOKEN = os.environ.get("SUBTITLE_GUARD_UI_TOKEN", "")
-
-
 MAX_NOTICES = 200
-
-
-AUTH = {"token": TOKEN}
-
-
-SESSIONS = set()
-
-
+AUTH = {"required": False}
 NOTICES = OrderedDict()
-
-
 REQUEST = threading.local()
-
-
 DIAGNOSES = threading.BoundedSemaphore(2)
 
 

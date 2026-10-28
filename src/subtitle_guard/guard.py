@@ -11,6 +11,7 @@ from .alignment import (
     assess,
     describe_changes,
     judge,
+    oversized_reason,
     wrong_end_share,
 )
 from .audio import sync_to_audio
@@ -18,19 +19,15 @@ from .confidence import confidence
 from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
 from .files import save_version, subtitle_lock
 from .logs import LEVEL, log
-from .outcome import DECISION, WORRYING_DECISIONS
+from .outcome import CHANGED_REASON, DECISION, WORRYING_DECISIONS
 from .reference import load_reference
 from .storage import backup_path, file_signature
 from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
 
-MAX_CHECKED_CUES = 20000
-CHANGED_REASON = "the subtitle changed during the check, it was left as it is and will be checked again"
-
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     started = time.time()
-    with subtitle_lock(subtitle):
-        outcome = examine(video, subtitle, apply, neighbours)
+    outcome = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
     outcome = {**outcome, "confidence": score, "confidence_band": band}
     message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {time.time() - started:.2f}s"
@@ -54,8 +51,9 @@ def examine(video, subtitle, apply, neighbours):
         return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}
     if len(document["cues"]) < MIN_CUES:
         return {"decision": DECISION["unverified"], "reason": f"too few cues ({len(document['cues'])})"}
-    if len(document["cues"]) > MAX_CHECKED_CUES:
-        return {"decision": DECISION["unverified"], "reason": f"too many cues to check safely ({len(document['cues'])})"}
+    oversized = oversized_reason(document["cues"])
+    if oversized:
+        return {"decision": DECISION["unverified"], "reason": oversized}
     wrong_ends = wrong_end_share(document["cues"])
     if wrong_ends > MAX_WRONG_END_SHARE:
         return {"decision": DECISION["rejected"], "reason": f"the end times are wrong: {wrong_ends:.0%} of lines end before they start or last over "
@@ -81,15 +79,16 @@ def examine(video, subtitle, apply, neighbours):
             outcome = {**outcome, "decision": DECISION["wrong_episode"], "matches": better}
     if not apply:
         return outcome
-    if file_signature(subtitle) != signature:
-        log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)
-        return {"decision": DECISION["unverified"], "reason": CHANGED_REASON}
-    backup_folder = backup_path(subtitle)
-    save_version(subtitle, backup_folder, "original")
-    if attempt["fixed"]:
-        write_subtitle(subtitle, document, attempt["timings"])
-        log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
-    return {**outcome, "best_copy": save_version(subtitle, backup_folder, "kept")}
+    with subtitle_lock(subtitle):
+        if file_signature(subtitle) != signature:
+            log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)
+            return {"decision": DECISION["unverified"], "reason": CHANGED_REASON}
+        backup_folder = backup_path(subtitle)
+        save_version(subtitle, backup_folder, "original")
+        if attempt["fixed"]:
+            write_subtitle(subtitle, document, attempt["timings"])
+            log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
+        return {**outcome, "best_copy": save_version(subtitle, backup_folder, "kept")}
 
 
 def summarize(reference_kind, decision, original, weak, attempt):
@@ -104,7 +103,11 @@ def summarize(reference_kind, decision, original, weak, attempt):
 
 def find_better_episode(cues, hearing_impaired, neighbours):
     for label, video in neighbours:
-        reference = load_reference(video, hearing_impaired, len(cues))
+        try:
+            reference = load_reference(video, hearing_impaired, len(cues))
+        except (ToolError, OSError) as error:
+            log("guard.neighbour-skipped", f"neighbour {label} unreadable, skipped: {error}", LEVEL["warning"], video=video)
+            continue
         if reference and assess(cues, reference, wide_retry=False)["fixed"]:
             return label
     return None

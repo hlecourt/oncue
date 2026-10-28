@@ -7,12 +7,13 @@ SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"])
 DECISION_WORDS = {"kept": "In sync", "fixed": "Fixed automatically", "rejected": "Could not be fixed", "wrong-episode": "Belongs to another episode",
                   "unverified": "Cannot be checked", "audio-synced": "Synced to the audio, not checked", "best-effort": "Best version kept, not fully in sync",
                   "manual": "Adjusted by hand", "reverted": "Back to the original file"}
+CHANGED_REASON = "the subtitle changed during the check, it was left as it is and will be checked again"
 WORRYING_DECISIONS = (DECISION["rejected"], DECISION["wrong_episode"], DECISION["best_effort"])
 
 
 def describe(outcome):
-    if outcome["decision"] in (DECISION["unverified"], DECISION["reverted"]):
-        return f"subtitle-guard: {outcome['decision']} ({outcome['reason']})"
+    if outcome["decision"] in (DECISION["unverified"], DECISION["reverted"]) or not outcome.get("before"):
+        return f"subtitle-guard: {outcome['decision']} ({outcome.get('reason') or outcome.get('summary') or 'no detail'})"
     if outcome["decision"] == DECISION["audio_synced"]:
         return f"subtitle-guard: {outcome['decision']} ({outcome['reason']}) | confidence {outcome.get('confidence', 0)} ({outcome.get('confidence_band', 'low')})"
     before, after = outcome["before"], outcome["after"]

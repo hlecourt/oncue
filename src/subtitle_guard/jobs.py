@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Persistent job queue in SQLite, shared by the Bazarr hook, the workers and the web UI."""
 
+import fcntl
 import json
 import os
 import sqlite3
 import time
 from contextlib import closing
 
-from .logs import log
+from .logs import LEVEL, log
 from .storage import now, state_path
 
+PREPARED = set()
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
 KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check"}
 SCHEMA = (
@@ -22,6 +24,8 @@ SCHEMA = (
     ("create table if not exists reports (id integer primary key, time text not null, subtitle text not null, provider text not null, decision text not null, "
      "reference text, matched_before text, matched text, weak_minutes text, note text, confidence text, band text, changes text, applied integer not null default 1)"),
     "create index if not exists reports_subtitle on reports (subtitle, id)",
+    "create index if not exists reports_decision on reports (decision, id)",
+    "create table if not exists migrations (name text primary key, applied text not null)",
 )
 
 
@@ -48,21 +52,35 @@ def claim(worker):
         return {**as_job(row), "status": STATUS["running"], "attempts": row["attempts"] + 1}
 
 
-def finish(job_id, outcome):
+def finish(job_id, worker, outcome):
     with closing(connect()) as connection:
-        connection.execute("update jobs set status = ?, finished = ?, decision = ?, confidence = ?, confidence_band = ?, summary = ?, error = null "
-                           "where id = ?", (STATUS["done"], now(), outcome.get("decision"), outcome.get("confidence"),
-                                            outcome.get("confidence_band"), outcome.get("summary"), job_id))
+        updated = connection.execute("update jobs set status = ?, finished = ?, decision = ?, confidence = ?, confidence_band = ?, summary = ?, error = null "
+                                     "where id = ? and status = ? and worker = ?", (STATUS["done"], now(), outcome.get("decision"), outcome.get("confidence"),
+                                                                                  outcome.get("confidence_band"), outcome.get("summary"), job_id, STATUS["running"], worker))
+    if not updated.rowcount:
+        log("job.ownership-lost", f"job {job_id} was taken back while worker {worker} ran it, result not recorded", LEVEL["warning"], job=job_id, worker=worker)
 
 
-def fail(job_id, error):
+def fail(job_id, worker, error):
     with closing(connect()) as connection:
-        connection.execute("update jobs set status = ?, finished = ?, error = ? where id = ?", (STATUS["failed"], now(), error, job_id))
+        connection.execute("update jobs set status = ?, finished = ?, error = ? where id = ? and status = ? and worker = ?",
+                           (STATUS["failed"], now(), error, job_id, STATUS["running"], worker))
+
+
+def has_open_job(subtitle):
+    with closing(connect()) as connection:
+        return connection.execute("select 1 from jobs where json_extract(arguments, '$.subtitle') = ? and status in (?, ?) limit 1",
+                                  (subtitle, STATUS["queued"], STATUS["running"])).fetchone() is not None
+
+
+def forget(path):
+    with closing(connect()) as connection:
+        connection.execute("delete from seen where path = ?", (path,))
 
 
 def requeue(job_id):
     with closing(connect()) as connection:
-        cursor = connection.execute("update jobs set status = ?, run_after = ?, error = null where id = ? and status in (?, ?)",
+        cursor = connection.execute("update jobs set status = ?, run_after = ?, error = null, attempts = 0 where id = ? and status in (?, ?)",
                                     (STATUS["queued"], time.time(), job_id, STATUS["done"], STATUS["failed"]))
         return cursor.rowcount == 1
 
@@ -124,7 +142,9 @@ def accepted():
 
 
 def for_subtitle(path, limit=20):
-    return [item for item in recent(limit=1000) if item["arguments"].get("subtitle") == path][:limit]
+    with closing(connect()) as connection:
+        rows = connection.execute("select * from jobs where json_extract(arguments, '$.subtitle') = ? order by id desc limit ?", (path, limit)).fetchall()
+        return [as_job(row) for row in rows]
 
 
 def connect():
@@ -133,9 +153,14 @@ def connect():
     connection = sqlite3.connect(database, timeout=30, isolation_level=None)
     connection.row_factory = sqlite3.Row
     connection.execute("pragma busy_timeout = 30000")
-    connection.execute("pragma journal_mode = wal")
-    for statement in SCHEMA:
-        connection.execute(statement)
+    if database not in PREPARED:
+        # switching to WAL fails at once instead of waiting when another process does it at the same time
+        with open(database + ".prepare.lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            connection.execute("pragma journal_mode = wal")
+            for statement in SCHEMA:
+                connection.execute(statement)
+        PREPARED.add(database)
     return connection
 
 

@@ -32,11 +32,12 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 ```
 curl -O https://raw.githubusercontent.com/hlecourt/subtitle-guard/main/examples/docker-compose.yml
 docker compose up -d
-docker compose logs subtitle-guard | grep token
+docker compose logs subtitle-guard | grep password
 ```
 
-Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, and `SUBTITLE_GUARD_ROOTS` the
-folders whose subtitles the web UI may change. Then open `http://<host>:8484` with the token printed in the logs.
+Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, `SUBTITLE_GUARD_ROOTS` the
+folders whose subtitles the web UI may change, and `user:` must own your media. Then open `http://<host>:8484` and log in as
+`admin` with the password printed in the logs.
 
 The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one after
 that. By default it only reports what it would do: add `--apply` to the `serve` command to let it write the fixes it is sure
@@ -53,7 +54,7 @@ fix is blacklisted so that Bazarr fetches another one. Use
 Post-processing, turn post-processing on with this command:
 
 ```
-/usr/bin/env PYTHONPATH=/opt/subtitle-guard /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
+/usr/bin/env PYTHONPATH=/config/subtitle-guard/hook /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
 ```
 
 And turn off two Bazarr options, or the guard never sees the downloads as they arrive:
@@ -81,8 +82,8 @@ for another, a history of every check and the technical log.
   about.
 - The web UI only changes subtitles under `SUBTITLE_GUARD_ROOTS`, and never through a symbolic link.
 - Every write is atomic, after a backup, and refused if the file changed since it was checked.
-- Beyond the machine itself, the web UI asks for a token. Details: [docs/security.md](docs/security.md); to report a
-  vulnerability, [SECURITY.md](SECURITY.md).
+- A login is required beyond the machine itself. Details: [docs/security.md](docs/security.md); to report a vulnerability,
+  [SECURITY.md](SECURITY.md).
 
 ## Settings
 
@@ -93,7 +94,7 @@ Settings are environment variables. The ones you are most likely to need:
 | `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
 | `SUBTITLE_GUARD_ROOTS` | unset: the folders whose subtitles the web UI may change |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
-| `SUBTITLE_GUARD_UI_TOKEN` | generated on first start |
+| `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / generated on first start |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
 All of them, the CLI and the log format: [docs/configuration.md](docs/configuration.md).
