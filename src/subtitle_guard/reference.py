@@ -8,12 +8,11 @@ import time
 import numpy
 
 from .alignment import MIN_CUES
-from .logs import LEVEL, log
 from .errors import MatroskaError, ProbeError
+from .logs import LEVEL, log
 from .matroska import matroska_cue_timings
+from .storage import heavy_disk_read, read_json, state_path, write_json
 from .tools import PROBE_SECONDS, run_tool, stderr_tail
-from .storage import heavy_disk_read, state_path, write_json
-
 
 REFERENCE_CACHE_VERSION = 4
 TEXT_CODECS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")
@@ -34,7 +33,7 @@ def load_tracks(video):
     cache_file = state_path("references", f"{cache_key}.json")
     if os.path.exists(cache_file):
         try:
-            return json.load(open(cache_file))
+            return read_json(cache_file)
         except ValueError as error:
             log("reference.cache-corrupt", f"track cache unreadable, re-extracting: {error}", LEVEL["warning"], video=video, cache=cache_file)
     started = time.time()

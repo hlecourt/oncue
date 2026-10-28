@@ -1,8 +1,8 @@
 import numpy
 import pytest
+from synthetic import dialogue, translation
 
 from subtitle_guard.alignment import judge
-from synthetic import dialogue, translation
 
 PAL = 23.976 / 25
 

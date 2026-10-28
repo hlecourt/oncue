@@ -1,6 +1,11 @@
 """Turn a decision and its measurements into a 0-100 confidence score and a band."""
 
-from .alignment import MAX_UNSUPPORTED_SHARE, OBJECTIVE_MARGIN, PASS_MARGIN, WINDOW_PASS_MARGIN
+from .alignment import (
+    MAX_UNSUPPORTED_SHARE,
+    OBJECTIVE_MARGIN,
+    PASS_MARGIN,
+    WINDOW_PASS_MARGIN,
+)
 from .outcome import DECISION
 
 FULL_CONFIDENCE_MARGIN = 0.25
@@ -28,7 +33,7 @@ def confidence_score(outcome):
         components = (share(outcome["objective"] - outcome["null_objective"] - OBJECTIVE_MARGIN, FULL_CONFIDENCE_OBJECTIVE_MARGIN), window,
                       1 - share(outcome.get("unsupported_share", 0), MAX_UNSUPPORTED_SHARE / 2))
     score = 50 + 50 * min(components) - WEAK_MINUTE_PENALTY * len(outcome.get("weak_minutes", []))
-    return int(round(min(100, max(1, score))))
+    return round(min(100, max(1, score)))
 
 
 def share(value, full):

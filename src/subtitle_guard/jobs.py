@@ -12,14 +12,14 @@ from .storage import now, state_path
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
 KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check"}
 SCHEMA = (
-    "create table if not exists jobs (id integer primary key, kind text not null, arguments text not null, status text not null, "
-    "run_after real not null, created text not null, started text, finished text, attempts integer not null default 0, worker integer, "
-    "decision text, confidence integer, confidence_band text, summary text, error text)",
+    ("create table if not exists jobs (id integer primary key, kind text not null, arguments text not null, status text not null, "
+     "run_after real not null, created text not null, started text, finished text, attempts integer not null default 0, worker integer, "
+     "decision text, confidence integer, confidence_band text, summary text, error text)"),
     "create index if not exists jobs_waiting on jobs (status, run_after)",
     "create table if not exists seen (path text primary key, signature text not null, updated text not null)",
     "create table if not exists reviews (path text primary key, signature text not null, accepted text not null)",
-    "create table if not exists reports (id integer primary key, time text not null, subtitle text not null, provider text not null, decision text not null, "
-    "reference text, matched_before text, matched text, weak_minutes text, note text, confidence text, band text, changes text, applied integer not null default 1)",
+    ("create table if not exists reports (id integer primary key, time text not null, subtitle text not null, provider text not null, decision text not null, "
+     "reference text, matched_before text, matched text, weak_minutes text, note text, confidence text, band text, changes text, applied integer not null default 1)"),
     "create index if not exists reports_subtitle on reports (subtitle, id)",
 )
 

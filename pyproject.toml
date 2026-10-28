@@ -29,3 +29,16 @@ packages = ["src/subtitle_guard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 250
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "SIM", "UP", "RUF", "PLW", "BLE", "ISC"]
+ignore = ["E501", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/subtitle_guard/web/server.py" = ["BLE001"]
+"src/subtitle_guard/worker.py" = ["BLE001"]
+"tests/test_subtitles.py" = ["RUF001"]
