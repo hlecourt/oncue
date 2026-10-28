@@ -13,14 +13,16 @@ def test_the_old_report_file_is_imported_once_and_bad_rows_are_skipped(tmp_path)
         ["2026-10-27T11:00:00", "kept", "eng-text", "0.9", "0.9", "0.1", "", "", "", "", "broken", "", "scan", str(subtitle)],
         ["2026-10-27T12:00:00", "kept", "eng-text", "0.9", "0.9", "0.1", "", "", "", "", "88/high", "{not json", "scan", str(subtitle)],
         ["2026-10-26T09:00:00", "audio-synced", "", "", "", "", "", "", "", "synced to the audio", "check", str(subtitle)],
+        ["2026-10-25T21:26:02", "rejected", "en-text", "0.12", "0.14", "0.09", "opensubtitlescom", str(subtitle)],
         ["truncated"],
     ]
     with open(storage.state_path("report.tsv"), "w") as handle:
         handle.write("".join("\t".join(row) + "\n" for row in rows))
     history = reports.report_history()
-    assert [row["decision"] for row in history] == ["audio-synced", "fixed"] and history[1]["confidence"] == "92" and history[1]["band"] == "high"
+    assert [row["decision"] for row in history] == ["rejected", "audio-synced", "fixed"] and history[2]["confidence"] == "92" and history[2]["band"] == "high"
+    assert history[0]["provider"] == "opensubtitlescom" and history[0]["matched_before"] == "0.12" and history[0]["matched"] == "0.14"
     assert not os.path.exists(storage.state_path("report.tsv")) and os.path.exists(storage.state_path("report.tsv.imported"))
-    assert len(reports.report_history()) == 2
+    assert len(reports.report_history()) == 3
 
 
 def test_a_tab_or_newline_in_a_file_name_cannot_break_the_history(tmp_path):
