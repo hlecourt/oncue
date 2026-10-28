@@ -122,3 +122,15 @@ def test_a_subtitle_of_another_film_is_not_reported_as_shifted_parts(movie, tmp_
     write_subtitle_file(subtitle, other_starts, other_ends, lambda value: value)
     diagnosis = review.diagnose(str(video), str(subtitle))
     assert diagnosis["state"] == "no-match" and diagnosis["parts"] == []
+
+
+@needs_ffmpeg
+def test_each_moment_pairs_the_video_line_with_the_subtitle_line_that_belongs_to_it(movie):
+    video, subtitle, starts, ends = movie
+    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    diagnosis = review.diagnose(str(video), str(subtitle))
+    moments = review.side_by_side(str(video), str(subtitle), 120, 180, diagnosis["shifts"])["moments"]
+    paired = [moment for moment in moments if moment["video"] and moment["subtitle"]]
+    assert len(paired) >= 0.9 * len([moment for moment in moments if moment["video"]])
+    assert all(moment["video"].split()[-1] == moment["subtitle"].split()[-1] for moment in paired)
+    assert sum(moment["shift"] < -2.5 for moment in paired) >= 0.8 * len(paired)

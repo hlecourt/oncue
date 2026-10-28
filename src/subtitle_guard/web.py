@@ -47,6 +47,7 @@ main { padding: 24px 30px; max-width: 1100px; }
 h1 { font-size: 20px; margin: 0 0 4px; word-break: break-all; }
 h2 { font-size: 16px; margin: 28px 0 10px; }
 .subtle { color: var(--muted); font-size: 13px; margin: 0 0 16px; word-break: break-all; }
+.subtle.words { word-break: normal; }
 .status { border-radius: 10px; padding: 14px 18px; margin: 0 0 16px; border: 1px solid; }
 .status b { display: block; font-size: 17px; }
 .status span { color: var(--muted); }
@@ -75,10 +76,10 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; background: var(--r
 td.time { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); width: 1%; }
 td.state { white-space: nowrap; font-size: 13px; width: 1%; }
 td.state.late { color: var(--bad); } td.state.fine { color: var(--good); }
-table.reading td:nth-child(2), table.reading td:nth-child(3) { width: 45%; }
-table.reading tr.reference td { background: var(--reference); }
-table.reading tr.subtitle.late td:nth-child(3) { color: #f3b4af; }
-tr.pickable { cursor: pointer; } tr.pickable:hover td { background: var(--raised); }
+table.reading td.video, table.reading td.yours { width: 40%; }
+table.reading td.video { background: var(--reference); }
+table.reading tr.late td.yours { color: #f3b4af; }
+td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { background: var(--raised); }
 .minutes { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 6px; }
 .minutes a { width: 14px; height: 26px; border-radius: 7px; display: block; opacity: 0.85; }
 .minutes a:hover { opacity: 1; }
@@ -119,13 +120,13 @@ document.addEventListener('keydown', event => {
 PICKER = """
 let picked = null;
 const clock = value => `${Math.floor(value / 60)}:${(value % 60).toFixed(2).padStart(5, '0')}`;
-document.querySelectorAll('tr.pickable').forEach(row => row.addEventListener('click', () => {
-  const time = parseFloat(row.dataset.time);
+document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEventListener('click', () => {
+  const time = parseFloat(cell.dataset.time);
   document.getElementById('by-hand').open = true;
-  if (row.classList.contains('subtitle')) {
+  if (cell.classList.contains('yours')) {
     picked = time;
     document.getElementById('first').value = clock(Math.max(0, time - 0.05));
-    document.getElementById('hint').textContent = 'Now click the line in the video it should match.';
+    document.getElementById('hint').textContent = 'Now click the moment in the video it should match, on the left.';
     return;
   }
   if (picked === null) return;
@@ -276,7 +277,7 @@ def subtitle_page(query):
     latest = next((row for row in latest_reports() if row["subtitle"] == path), None)
     diagnosis = review.diagnose(video, path)
     minute = int(query["minute"]) if query.get("minute", "").isdigit() else first_problem_minute(diagnosis)
-    view = review.side_by_side(video, path, minute * 60, minute * 60 + WINDOW_SECONDS)
+    view = review.side_by_side(video, path, minute * 60, minute * 60 + WINDOW_SECONDS, diagnosis["shifts"] if diagnosis["fixable"] else None)
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
     body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest)
             + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden)
@@ -350,22 +351,28 @@ def timeline(path, view, minute):
 
 
 def reading(view, diagnosis, minute):
-    rows = ""
-    for start, side, text, matched, index in view["lines"]:
-        state, label = "", ""
-        if side == "subtitle":
-            shift = diagnosis["shifts"][index] if diagnosis["fixable"] and index < len(diagnosis["shifts"]) else 0.0
-            if abs(shift) >= NOTICEABLE_SECONDS:
-                state, label = "late", f"{abs(shift):.1f} s {'too late' if shift < 0 else 'too early'}"
-            elif matched and diagnosis["state"] in ("in-sync", "unclear", "out-of-sync"):
-                state, label = "fine", "in sync"
-        rows += (f'<tr class="{side} pickable {state}" data-time="{start:.3f}"><td class="time">{clock(start)}</td>'
-                 f'<td>{escape(text) if side == "reference" else ""}</td><td>{escape(text) if side == "subtitle" else ""}</td>'
-                 f'<td class="state {state}">{escape(label)}</td></tr>')
+    rows = "".join(moment_row(moment, diagnosis) for moment in view["moments"])
     if not rows:
         return ""
-    return (f"<h2>Minute {minute}: what is said in the video, and your subtitle</h2>"
-            f'<table class="reading"><tr><th>Time</th><th>In the video</th><th>In your subtitle</th><th></th></tr>{rows}</table>')
+    left = "what the subtitles built into the video say" if view["reference"] else "nothing to compare with"
+    return (f"<h2>Minute {minute}, line by line</h2><p class=\"subtle words\">Each row is one moment of the video. On the left, {left}. "
+            "On the right, the line of your subtitle that goes with it, and whether it shows on time.</p>"
+            f'<table class="reading"><tr><th>Time</th><th>In the video</th><th>Your subtitle</th><th>On time?</th></tr>{rows}</table>')
+
+
+def moment_row(moment, diagnosis):
+    video_cell = escape(moment["video"]) if moment["video"] is not None else '<span class="muted">(no line here)</span>'
+    subtitle_cell = escape(moment["subtitle"]) if moment["subtitle"] is not None else '<span class="muted">(no line here)</span>'
+    state, label = "", ""
+    if moment["subtitle"] is not None and abs(moment["shift"]) >= NOTICEABLE_SECONDS:
+        state = "late"
+        label = f"{abs(moment['shift']):.1f} s {'too late' if moment['shift'] < 0 else 'too early'}<div class=\"muted\">shows at {short_clock(moment['shown_at'])}</div>"
+    elif moment["subtitle"] is not None and moment["video"] is not None and diagnosis["state"] in ("in-sync", "unclear", "out-of-sync"):
+        state, label = "fine", "on time"
+    video_time = f' data-time="{moment["time"]:.3f}"' if moment["video"] is not None else ""
+    subtitle_time = f' data-time="{moment["shown_at"]:.3f}"' if moment["subtitle"] is not None else ""
+    return (f'<tr class="{state}"><td class="time">{short_clock(moment["time"])}</td><td class="video pickable"{video_time}>{video_cell}</td>'
+            f'<td class="yours pickable"{subtitle_time}>{subtitle_cell}</td><td class="state {state}">{label}</td></tr>')
 
 
 def by_hand(hidden, minute):
@@ -373,7 +380,7 @@ def by_hand(hidden, minute):
             f'<label>From <input type="text" id="first" name="first" value="{clock(minute * 60)}"></label>'
             f'<label>To <input type="text" id="last" name="last" value="{clock(minute * 60 + WINDOW_SECONDS)}"></label>'
             f'<label>Move by (s) <input type="text" id="offset" name="offset" value="0"></label><button class="primary">Move</button></form>'
-            '<p class="hint" id="hint">Click a line of your subtitle, then the line in the video it should match. The move is filled in for you.</p></details>')
+            '<p class="hint" id="hint">Click a line of your subtitle on the right, then the moment in the video it should match on the left. The move is filled in for you.</p></details>')
 
 
 def technical(path, video, view, latest):

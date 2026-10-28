@@ -41,12 +41,12 @@ def video_for(subtitle):
     return os.path.join(folder, max(candidates, key=len)) if candidates else None
 
 
-def side_by_side(video, subtitle, first, last):
+def side_by_side(video, subtitle, first, last, shifts=None):
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
     if reference is None:
         return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
-                "minutes": []}
+                "moments": pair_moments(cues, [], [start for start, _, _ in cues], first, last), "minutes": []}
     texts = reference_texts(video, reference) or [(start, start, "") for start in reference["starts"]]
     starts = numpy.array([start for start, _, _ in cues])
     matched = numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS if len(starts) else numpy.array([], dtype=bool)
@@ -54,8 +54,33 @@ def side_by_side(video, subtitle, first, last):
     lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched)) if first <= start < last]
     minutes = [(minute, float(matched[(starts >= minute * 60) & (starts < minute * 60 + 60)].mean()))
                for minute in range(int(starts.max() // 60) + 1) if ((starts >= minute * 60) & (starts < minute * 60 + 60)).sum() >= 3] if len(starts) else []
+    targets = starts + numpy.array(shifts) if shifts and len(shifts) == len(cues) else starts
     return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minutes,
-            "measure": measure(cues, reference)}
+            "moments": pair_moments(cues, texts, targets, first, last), "measure": measure(cues, reference)}
+
+
+def pair_moments(cues, texts, targets, first, last):
+    reference_starts = numpy.array([start for start, _, _ in texts])
+    moments = {position: {"time": start, "video": clean(text), "subtitle": None, "shown_at": None, "shift": 0.0}
+               for position, (start, _, text) in enumerate(texts) if first <= start < last}
+    for index, ((start, _, text), target) in enumerate(zip(cues, targets)):
+        if not first <= target < last:
+            continue
+        line = {"subtitle": clean(text), "shown_at": start, "shift": float(target - start)}
+        position = nearest_position(reference_starts, target)
+        if position in moments and moments[position]["subtitle"] is None and abs(reference_starts[position] - target) <= TOLERANCE_SECONDS:
+            moments[position].update(line)
+            continue
+        moments[("subtitle", index)] = {"time": float(target), "video": None, **line}
+    return sorted(moments.values(), key=lambda moment: moment["time"])
+
+
+def nearest_position(starts, value):
+    if not len(starts):
+        return None
+    position = int(numpy.searchsorted(starts, value))
+    candidates = [candidate for candidate in (position - 1, position) if 0 <= candidate < len(starts)]
+    return min(candidates, key=lambda candidate: abs(starts[candidate] - value))
 
 
 def diagnose(video, subtitle):
