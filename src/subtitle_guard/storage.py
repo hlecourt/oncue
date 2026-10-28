@@ -1,6 +1,7 @@
 """State, report, backups and atomic writes under the guard's state directory."""
 
 import fcntl
+import glob
 import hashlib
 import json
 import os
@@ -74,14 +75,30 @@ def file_signature(path):
 
 
 def backup_path(subtitle):
-    folder = os.path.join(backup_root(subtitle), datetime.now().strftime("%Y%m%d-%H%M%S"))
-    os.makedirs(folder, exist_ok=True)
+    folder = os.path.join(backup_root(subtitle), datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+    os.makedirs(folder)
     return folder
 
 
 def backup_root(subtitle):
     subtitle = os.path.abspath(subtitle)
-    return os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), os.path.basename(subtitle))
+    identity = hashlib.sha1(subtitle.encode()).hexdigest()[:12]
+    return os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), f"{os.path.basename(subtitle)}.{identity}")
+
+
+def backup_folders(subtitle):
+    subtitle = os.path.abspath(subtitle)
+    legacy_root = os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), os.path.basename(subtitle))
+    return sorted(folder for root in (backup_root(subtitle), legacy_root) for folder in glob.glob(os.path.join(glob.escape(root), "*"))
+                  if os.path.isdir(folder))
+
+
+def revert_source(subtitle):
+    extension = os.path.splitext(subtitle)[1]
+    folders = backup_folders(subtitle)
+    originals = [os.path.join(folder, "original" + extension) for folder in reversed(folders)]
+    manual = [os.path.join(folder, "before-manual" + extension) for folder in folders]
+    return next((path for path in originals + manual if os.path.exists(path)), None)
 
 
 def load_state(video, subtitle):

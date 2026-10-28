@@ -1,7 +1,6 @@
 """Check one subtitle against its video and repair it when the result can be trusted."""
 
 import os
-import shutil
 import time
 
 from .alignment import MIN_CUES, assess, describe_changes, judge
@@ -10,13 +9,19 @@ from .confidence import confidence
 from .logs import LEVEL, log
 from .outcome import DECISION, WORRYING_DECISIONS
 from .reference import load_reference
-from .storage import backup_path
-from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, write_subtitle
+from .errors import SubtitleTooLargeError, UnsafePathError
+from .files import save_version, subtitle_lock
+from .storage import backup_path, file_signature
+from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
+
+MAX_CHECKED_CUES = 20000
+CHANGED_REASON = "the subtitle changed during the check, it was left as it is and will be checked again"
 
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     started = time.time()
-    outcome = examine(video, subtitle, apply, neighbours)
+    with subtitle_lock(subtitle):
+        outcome = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
     outcome = {**outcome, "confidence": score, "confidence_band": band}
     message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {time.time() - started:.2f}s"
@@ -33,15 +38,21 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
 def examine(video, subtitle, apply, neighbours):
     if ".forced." in os.path.basename(subtitle).lower():
         return {"decision": DECISION["unverified"], "reason": "forced subtitle, too few lines to check"}
-    document = parse_subtitle(subtitle)
+    signature = file_signature(subtitle)
+    try:
+        document = parse_subtitle(subtitle)
+    except (UnsafePathError, SubtitleTooLargeError) as error:
+        return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}
     if len(document["cues"]) < MIN_CUES:
         return {"decision": DECISION["unverified"], "reason": f"too few cues ({len(document['cues'])})"}
-    hearing_impaired = any(tag in os.path.basename(subtitle).lower() for tag in HEARING_IMPAIRED_TAGS)
+    if len(document["cues"]) > MAX_CHECKED_CUES:
+        return {"decision": DECISION["unverified"], "reason": f"too many cues to check safely ({len(document['cues'])})"}
+    hearing_impaired = is_hearing_impaired(subtitle)
     reference = load_reference(video, hearing_impaired, len(document["cues"]))
     if reference is None and not apply:
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, would sync to the audio"}
     if reference is None:
-        return sync_to_audio(video, subtitle)
+        return sync_to_audio(video, subtitle, signature)
     outcome = summarize(reference["kind"], *judge(document["cues"], reference))
     if outcome["decision"] == DECISION["kept"]:
         return outcome
@@ -54,15 +65,15 @@ def examine(video, subtitle, apply, neighbours):
             outcome = {**outcome, "decision": DECISION["wrong_episode"], "matches": better}
     if not apply:
         return outcome
+    if file_signature(subtitle) != signature:
+        log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)
+        return {"decision": DECISION["unverified"], "reason": CHANGED_REASON}
     backup_folder = backup_path(subtitle)
-    extension = os.path.splitext(subtitle)[1]
-    shutil.copy2(subtitle, os.path.join(backup_folder, "original" + extension))
+    save_version(subtitle, backup_folder, "original")
     if attempt["fixed"]:
         write_subtitle(subtitle, document, attempt["timings"])
         log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
-    best_copy = os.path.join(backup_folder, "kept" + extension)
-    shutil.copy2(subtitle, best_copy)
-    return {**outcome, "best_copy": best_copy}
+    return {**outcome, "best_copy": save_version(subtitle, backup_folder, "kept")}
 
 
 def summarize(reference_kind, decision, original, weak, attempt):

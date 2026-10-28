@@ -14,7 +14,8 @@ from . import jobs
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
-from .storage import load_state, now, report, save_state, state_path
+from .files import restore_version, save_version, subtitle_lock
+from .storage import backup_path, load_state, now, report, save_state, state_path
 
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
@@ -168,7 +169,9 @@ def restore_best(subtitle, state):
     if not candidates:
         return
     best = max(candidates, key=lambda attempt: attempt["after"]["matched"])
-    shutil.copy2(best["best_copy"], subtitle)
+    with subtitle_lock(subtitle):
+        save_version(subtitle, backup_path(subtitle), "before-restore")
+        restore_version(subtitle, best["best_copy"])
     report(subtitle, best.get("provider", ""), {**best, "decision": DECISION["best_effort"]})
     log("bazarr.best-attempt-restored", f"best attempt restored provider={best.get('provider')} matched={best['after']['matched']:.2f}", LEVEL["warning"],
         subtitle=subtitle, provider=best.get("provider"), matched=best["after"]["matched"])

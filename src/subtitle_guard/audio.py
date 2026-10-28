@@ -5,10 +5,12 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from .logs import LEVEL, log
 from .outcome import DECISION
-from .storage import backup_path, heavy_disk_read
+from .files import read_regular, replace_file, save_version
+from .storage import backup_path, file_signature, heavy_disk_read
 from .subtitles import parse_subtitle
 
 
@@ -22,28 +24,37 @@ AUDIO_SYNC_SCRIPT = ("import json, sys\nsys.path.insert(0, sys.argv.pop(1))\nfro
                      "print(json.dumps({key: result.get(key) for key in ('offset_seconds', 'framerate_scale_factor', 'sync_was_successful')}))")
 
 
-def sync_to_audio(video, subtitle):
+def sync_to_audio(video, subtitle, signature):
     extension = os.path.splitext(subtitle)[1].lower()
     if extension not in AUDIO_SYNC_FORMATS:
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, format not supported by ffsubsync"}
-    backup_folder = backup_path(subtitle)
-    shutil.copy2(subtitle, os.path.join(backup_folder, "original" + extension))
-    output = subtitle + ".subtitle-guard-audio" + extension
+    descriptor, output = tempfile.mkstemp(prefix=".subtitle-guard-audio-", suffix=extension, dir=os.path.dirname(os.path.abspath(subtitle)))
+    os.close(descriptor)
+    try:
+        return synced_outcome(video, subtitle, signature, output)
+    finally:
+        if os.path.exists(output):
+            os.remove(output)
+
+
+def synced_outcome(video, subtitle, signature, output):
     result = run_ffsubsync(video, subtitle, output, fix_framerate=True)
     if result and abs(result["offset_seconds"]) >= AUDIO_SYNC_EDGE_SHARE * AUDIO_SYNC_MAX_OFFSET_SECONDS:
         result = run_ffsubsync(video, subtitle, output, fix_framerate=False)
         if result and abs(result["offset_seconds"]) > AUDIO_SYNC_PLAIN_MAX_OFFSET_SECONDS:
             result = None
     if not result:
-        if os.path.exists(output):
-            os.remove(output)
         log("audio.sync-rejected", "ffsubsync gave no usable result (failed or offset beyond limit), file unchanged", LEVEL["warning"], subtitle=subtitle)
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, audio sync not confident"}
+    if file_signature(subtitle) != signature:
+        return {"decision": DECISION["unverified"], "reason": "the subtitle changed during the check, it was left as it is and will be checked again"}
     starts = [start for start, _, _ in parse_subtitle(subtitle)["cues"]]
-    os.replace(output, subtitle)
+    backup_folder = backup_path(subtitle)
+    save_version(subtitle, backup_folder, "original")
+    replace_file(subtitle, read_regular(output))
     log("audio.synced", f"ffsubsync applied offset={result['offset_seconds']:+.2f}s scale={result['framerate_scale_factor']:.4f}", subtitle=subtitle,
         backup=backup_folder, **result)
-    shutil.copy2(subtitle, os.path.join(backup_folder, "kept" + extension))
+    save_version(subtitle, backup_folder, "kept")
     moved = [{"first": starts[0], "last": starts[-1], "lines": len(starts), "shift": round(result["offset_seconds"], 2)}] if starts else []
     return {"decision": DECISION["audio_synced"], "reason": f"synced to the audio by ffsubsync, offset {result['offset_seconds']:+.2f}s, "
                                                           f"scale {result['framerate_scale_factor']:.4f}, not verified",

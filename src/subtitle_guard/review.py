@@ -11,6 +11,7 @@ import subprocess
 import numpy
 
 from . import jobs
+from .errors import UnsafePathError
 from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
@@ -20,8 +21,9 @@ from .logs import log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
-from .storage import backup_path, backup_root, file_signature, heavy_disk_read, latest_reports, load_state, needs_review, report, save_state, state_path, write_json
-from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, write_subtitle
+from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, latest_reports, load_state, needs_review, report, revert_source, save_state, state_path, write_json
+from .files import restore_version, save_version, subtitle_lock
+from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, write_subtitle
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
@@ -103,8 +105,7 @@ def nearest_position(starts, value):
 
 def last_fix(video, subtitle):
     extension = os.path.splitext(subtitle)[1]
-    folders = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*")), reverse=True)
-    candidates = [os.path.join(folder, name + extension) for name in BEFORE_FIX_NAMES for folder in folders]
+    candidates = [os.path.join(folder, name + extension) for folder in reversed(backup_folders(subtitle)) for name in BEFORE_FIX_NAMES]
     before = next((path for path in candidates if os.path.exists(path)), None)
     if before is None:
         return None
@@ -199,14 +200,16 @@ def measure(cues, reference):
 
 
 def shift_range(video, subtitle, first, last, offset):
-    keep_current(subtitle, "before-manual")
-    document = parse_subtitle(subtitle)
-    timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
-    write_subtitle(subtitle, document, timings)
+    with subtitle_lock(subtitle):
+        document = parse_subtitle(subtitle)
+        save_version(subtitle, backup_path(subtitle), "before-manual")
+        timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
+        write_subtitle(subtitle, document, timings)
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    previous = measure(document["cues"], reference) if reference else None
     measured = measure(cues, reference) if reference else None
-    outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": measured or {}, "after": measured or {},
+    outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": previous or {}, "after": measured or {},
                "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
                "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s",
                "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
@@ -218,14 +221,19 @@ def shift_range(video, subtitle, first, last, offset):
 
 
 def revert(subtitle):
-    originals = sorted(glob.glob(os.path.join(glob.escape(backup_root(subtitle)), "*", "original.*")))
-    if not originals:
+    original = revert_source(subtitle)
+    if original is None:
         return False
-    keep_current(subtitle, "before-revert")
-    shutil.copy2(originals[0], subtitle)
-    report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(originals[0]))}"})
-    log("review.reverted", f"original restored from {originals[0]}", subtitle=subtitle, original=originals[0])
+    with subtitle_lock(subtitle):
+        save_version(subtitle, backup_path(subtitle), "before-revert")
+        restore_version(subtitle, original)
+    report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(original))}"})
+    log("review.reverted", f"original restored from {original}", subtitle=subtitle, original=original)
     return True
+
+
+def has_backup(subtitle):
+    return revert_source(subtitle) is not None
 
 
 def accept(subtitle):
@@ -248,10 +256,13 @@ def move_to_episode(video, subtitle, label):
         return None
     suffix = os.path.basename(subtitle)[len(os.path.splitext(name)[0]):]
     target = os.path.splitext(target_video)[0] + suffix
-    if os.path.exists(target):
-        keep_current(target, "before-move")
-    keep_current(subtitle, "moved-away")
-    os.replace(subtitle, target)
+    if os.path.islink(subtitle) or os.path.islink(target):
+        raise UnsafePathError(f"refusing to move a symlinked subtitle: {subtitle}")
+    with subtitle_lock(subtitle), subtitle_lock(target):
+        if os.path.exists(target):
+            save_version(target, backup_path(target), "before-move")
+        save_version(subtitle, backup_path(subtitle), "moved-away")
+        os.replace(subtitle, target)
     log("review.moved", f"moved to {label} target={target}", subtitle=subtitle, target=target, episode=label)
     return target, recheck(target_video, target)
 
@@ -267,15 +278,6 @@ def ask_for_another(video, subtitle):
     request_another(video, subtitle)
     log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True
-
-
-def keep_current(subtitle, label):
-    folder = backup_path(subtitle)
-    shutil.copy2(subtitle, os.path.join(folder, label + os.path.splitext(subtitle)[1]))
-
-
-def is_hearing_impaired(subtitle):
-    return any(tag in os.path.basename(subtitle).lower() for tag in HEARING_IMPAIRED_TAGS)
 
 
 def clean(text):
