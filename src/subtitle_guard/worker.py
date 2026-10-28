@@ -14,6 +14,7 @@ from . import jobs
 from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
 from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
+from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
 from .outcome import describe
 from .reports import report
@@ -182,14 +183,25 @@ def work_once(number):
     return True
 
 
+def check(arguments):
+    try:
+        outcome = evaluate_and_fix(arguments["video"], arguments["subtitle"], arguments["apply"], [tuple(pair) for pair in arguments.get("neighbours", [])])
+    except Exception:
+        if arguments.get("watched"):
+            jobs.remember(arguments["subtitle"], FAILED + watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
+        raise
+    report(arguments["subtitle"], "watch" if arguments.get("watched") else "check", outcome, applied=arguments["apply"])
+    if arguments.get("watched"):
+        jobs.remember(arguments["subtitle"], watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
+    return outcome
+
+
 def run_job(job):
     arguments = job["arguments"]
     if job["kind"] == jobs.KIND["hook"]:
         return handle_download(**arguments, queued=True)
     if job["kind"] == jobs.KIND["check"]:
-        outcome = evaluate_and_fix(arguments["video"], arguments["subtitle"], arguments["apply"], [tuple(pair) for pair in arguments.get("neighbours", [])])
-        report(arguments["subtitle"], "check", outcome, applied=arguments["apply"])
-        return outcome
+        return check(arguments)
     if job["kind"] == jobs.KIND["blacklist"]:
         retry = blacklist_for_retry(arguments["video"], arguments["subtitle"])
         if retry is None:

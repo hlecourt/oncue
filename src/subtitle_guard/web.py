@@ -58,7 +58,7 @@ HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept"
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
                   "unverified": "neutral", "audio-synced": "warn", "reverted": "neutral"}
 BAND_TONES = {"high": "good", "medium": "warn", "low": "bad", "none": "neutral"}
-STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
+STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
 KIND_WORDS = {"hook": "Check a subtitle from Bazarr", "check": "Check", "blacklist": "Ask Bazarr for another subtitle", "retry-check": "Wait for the other subtitle"}
 CHANGES_SHOWN = 3
 UNCHANGED_DECISIONS = ("kept", "rejected", "wrong-episode", "unverified")
@@ -767,7 +767,8 @@ def status_box(diagnosis, latest, fix):
                         "Fix everything at once, or one part at a time."),
         "no-match": ("bad", "This subtitle does not match this video.", "It may be made for another version. Try another subtitle, or fix it by hand."),
         "no-reference": ("neutral", "This subtitle cannot be checked.", "The video has no subtitle track to compare with."),
-        "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for forced subtitles."),
+        "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for subtitles that only translate signs."),
+        "wrong-ends": ("bad", "The end times of this subtitle are wrong.", "Many lines stay on screen far too long. Try another subtitle."),
     }
     tone_name, title, detail = messages[diagnosis["state"]]
     if diagnosis["state"] == "in-sync" and fix:

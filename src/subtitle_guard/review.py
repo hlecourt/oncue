@@ -12,7 +12,7 @@ import numpy
 from . import jobs
 from .errors import MatroskaError, ToolError, UnsafePathError
 from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
-from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
+from .alignment import MAX_WRONG_END_SHARE, MIN_CUES, wrong_end_share, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
 from .worker import worker_health
 from .confidence import confidence
@@ -30,7 +30,7 @@ from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, wr
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
 BEFORE_FIX_NAMES = ("original", "before-manual")
-DIAGNOSIS_CACHE_VERSION = 2
+DIAGNOSIS_CACHE_VERSION = 3
 
 
 def review_items():
@@ -135,6 +135,8 @@ def diagnose(video, subtitle):
     reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES else None
     if len(cues) < MIN_CUES:
         diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
+    elif wrong_end_share(cues) > MAX_WRONG_END_SHARE:
+        diagnosis = {"state": "wrong-ends", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif reference is None:
         diagnosis = {"state": "no-reference", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     else:

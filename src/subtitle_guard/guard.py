@@ -3,7 +3,7 @@
 import os
 import time
 
-from .alignment import MIN_CUES, assess, describe_changes, judge
+from .alignment import MAX_CUE_SECONDS, MAX_WRONG_END_SHARE, MIN_CUES, assess, describe_changes, judge, wrong_end_share
 from .audio import sync_to_audio
 from .confidence import confidence
 from .logs import LEVEL, log
@@ -47,6 +47,10 @@ def examine(video, subtitle, apply, neighbours):
         return {"decision": DECISION["unverified"], "reason": f"too few cues ({len(document['cues'])})"}
     if len(document["cues"]) > MAX_CHECKED_CUES:
         return {"decision": DECISION["unverified"], "reason": f"too many cues to check safely ({len(document['cues'])})"}
+    wrong_ends = wrong_end_share(document["cues"])
+    if wrong_ends > MAX_WRONG_END_SHARE:
+        return {"decision": DECISION["rejected"], "reason": f"the end times are wrong: {wrong_ends:.0%} of lines end before they start or last over "
+                                                            f"{MAX_CUE_SECONDS} s"}
     hearing_impaired = is_hearing_impaired(subtitle)
     try:
         reference = load_reference(video, hearing_impaired, len(document["cues"]))

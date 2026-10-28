@@ -110,6 +110,13 @@ def write_subtitle(path, document, timings):
     replace_file(path, document["newline"].join(lines).encode(document["encoding"]))
 
 
+def create_subtitle(path, cues, subtitle_format="srt"):
+    separator = "." if subtitle_format == "vtt" else ","
+    blocks = [f"{number}\n{timestamp(start, separator)} --> {timestamp(end, separator)}\n{text}\n" for number, (start, end, text) in enumerate(sorted(cues), 1)]
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(("WEBVTT\n\n" if subtitle_format == "vtt" else "") + "\n".join(blocks))
+
+
 def timed_lines(document, timings):
     lines = list(document["lines"])
     for line_index, (start, end, _) in zip(document["timing_lines"], timings):

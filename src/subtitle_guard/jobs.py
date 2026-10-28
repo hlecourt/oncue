@@ -101,8 +101,8 @@ def counts():
 
 def seen(path):
     with closing(connect()) as connection:
-        row = connection.execute("select signature from seen where path = ?", (path,)).fetchone()
-        return row["signature"] if row else None
+        row = connection.execute("select signature, updated from seen where path = ?", (path,)).fetchone()
+        return (row["signature"], row["updated"]) if row else (None, None)
 
 
 def remember(path, signature):

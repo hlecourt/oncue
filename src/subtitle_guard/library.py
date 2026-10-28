@@ -3,6 +3,7 @@
 import os
 import re
 import time
+from datetime import datetime
 
 from . import jobs
 from .guard import evaluate_and_fix
@@ -16,6 +17,9 @@ SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa", ".vtt")
 EPISODE = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})|(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)")
 SAMPLE = re.compile(r"(^|[ ._-])sample([ ._-]|$)", re.I)
 NEIGHBOUR_EPISODES = 2
+PENDING = "pending:"
+FAILED = "failed:"
+FAILED_RETRY_SECONDS = 3600
 WATCH_SECONDS = int(os.environ.get("SUBTITLE_GUARD_WATCH_SECONDS", "600"))
 
 
@@ -43,15 +47,29 @@ def watch(roots, apply):
         queued = 0
         for root in roots:
             for video, subtitle, neighbours in library_items(root):
-                signature = file_signature(subtitle)
-                if jobs.seen(subtitle) == signature:
-                    continue
-                jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": apply, "neighbours": neighbours})
-                jobs.remember(subtitle, signature)
-                queued += 1
+                queued += queue_if_changed(video, subtitle, neighbours, apply)
         if queued:
             log("watch.changes-queued", f"{queued} new or changed subtitles queued", jobs=queued)
         time.sleep(WATCH_SECONDS)
+
+
+def queue_if_changed(video, subtitle, neighbours, apply):
+    try:
+        signature = watch_signature(video, subtitle, apply)
+    except FileNotFoundError:
+        return 0
+    remembered, updated = jobs.seen(subtitle)
+    if remembered in (signature, PENDING + signature):
+        return 0
+    if remembered == FAILED + signature and time.time() - datetime.fromisoformat(updated).timestamp() < FAILED_RETRY_SECONDS:
+        return 0
+    jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": apply, "neighbours": neighbours, "watched": True})
+    jobs.remember(subtitle, PENDING + signature)
+    return 1
+
+
+def watch_signature(video, subtitle, apply):
+    return f"{file_signature(subtitle)}|{file_signature(video)}|{int(apply)}"
 
 
 def library_items(root):
