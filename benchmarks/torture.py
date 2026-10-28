@@ -11,6 +11,8 @@ import time
 import numpy
 
 from subtitle_guard import alignment, reference, subtitles
+from subtitle_guard.confidence import confidence
+from subtitle_guard.guard import summarize
 
 work, corpus = sys.argv[1], json.load(open(sys.argv[2]))
 only = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -135,14 +137,16 @@ def run(video, path, hearing_impaired=False):
     document = subtitles.parse_subtitle(path)
     cues = document["cues"]
     if len(cues) < alignment.MIN_CUES:
-        return "unverified", cues, None
+        return "unverified", cues, None, "  0 none", "  0 none"
     embedded = reference.load_reference(video, hearing_impaired, len(cues))
     if embedded is None:
         return "unverified", cues, None
-    decision, _, _, attempt = alignment.judge(cues, embedded)
+    judged = alignment.judge(cues, embedded)
+    decision, _, _, attempt = judged
+    score, band = confidence(summarize(embedded["kind"], *judged))
     if decision == "kept":
-        return decision, cues, attempt
-    return decision, attempt["timings"], attempt
+        return decision, cues, attempt, f"{score:3d} {band}"
+    return decision, attempt["timings"], attempt, f"{score:3d} {band}"
 
 
 def cases(truth_cues, other_cues, rng):
@@ -207,7 +211,7 @@ for item in corpus:
             continue
         started = time.time()
         path = save(f"{item['name']}-case", cues, subtitle_format)
-        decision, timings, attempt = run(item["video"], path)
+        decision, timings, attempt, trust = run(item["video"], path)
         real = [(timing[0], truth) for timing, truth in zip(timings, truths) if truth is not None] if decision != "unverified" else []
         errors = numpy.abs(numpy.array([start - truth for start, truth in real])) if real else numpy.array([])
         within_fine = float(numpy.mean(errors <= 0.3)) if len(errors) else 0.0
@@ -223,7 +227,7 @@ for item in corpus:
             verdict_text = "ok" if verdict else "FAIL"
         totals.setdefault(label, []).append(verdict_text)
         segments = f"{attempt['segments']:3d} seg short {attempt['short_segment_share']:4.0%} unsupported {attempt['unsupported_share']:4.0%}" if attempt else "   -              "
-        print(f"{verdict_text:4s} {item['name']:14s} {label[:44]:44s} {decision:10s} lines<=0.3s {within_fine:4.0%} <=1s {within_second:4.0%} dense<=1s {dense_second:4.0%} "
+        print(f"{verdict_text:4s} {item['name']:14s} {label[:44]:44s} {decision:10s} confidence {trust:11s} lines<=0.3s {within_fine:4.0%} <=1s {within_second:4.0%} dense<=1s {dense_second:4.0%} "
               f"median {numpy.median(errors) if len(errors) else float('nan'):6.2f}s {segments} {time.time() - started:4.1f}s", flush=True)
 print("\nsummary per case:")
 for label, verdicts in totals.items():

@@ -16,7 +16,7 @@ def report(subtitle, provider, outcome):
     before, after = outcome.get("before") or {}, outcome.get("after") or {}
     row = (now(), outcome["decision"], outcome.get("reference", ""), before.get("matched", ""), after.get("matched", ""), before.get("noise", ""),
            outcome.get("null_objective", ""), outcome.get("segments", ""), ",".join(str(minute) for minute in outcome.get("weak_minutes", [])),
-           outcome.get("matches", "") or outcome.get("reason", ""), provider, subtitle)
+           outcome.get("matches", "") or outcome.get("reason", ""), f"{outcome.get('confidence', '')}/{outcome.get('confidence_band', '')}", provider, subtitle)
     os.makedirs(STATE_DIRECTORY, exist_ok=True)
     with open(os.path.join(STATE_DIRECTORY, "report.tsv"), "a") as handle:
         handle.write("\t".join(str(value) for value in row) + "\n")
@@ -31,9 +31,10 @@ def print_needs_human():
         if not os.path.exists(subtitle):
             continue
         weak, note = (fields[8], fields[9]) if len(fields) >= 12 else ("", "")
-        if fields[1] in SETTLED_DECISIONS and not weak:
+        score, band = fields[10].split("/") if len(fields) >= 13 else ("", "")
+        if fields[1] in SETTLED_DECISIONS and not weak and band != "low":
             continue
-        print(f"{fields[1]:13s} {fields[0]}  weak minutes {weak or '-'}  {note}  {subtitle}")
+        print(f"{fields[1]:13s} {fields[0]}  confidence {score or '-'} {band}  weak minutes {weak or '-'}  {note}  {subtitle}")
     return 0
 
 
