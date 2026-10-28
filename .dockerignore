@@ -1,0 +1,5 @@
+.venv
+.pytest_cache
+benchmarks/corpus
+benchmarks/work
+**/__pycache__
