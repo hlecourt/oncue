@@ -10,7 +10,7 @@ document.querySelectorAll('button.pick').forEach(button => button.addEventListen
   document.getElementById('by-hand').open = true;
   if (button.closest('td').classList.contains('yours')) {
     picked = time;
-    document.getElementById('first').value = clock(Math.max(0, time - 0.05));
+    document.getElementById('first').value = clock(time);
     document.getElementById('hint').textContent = 'Now choose the moment "In the video" it should match.';
     return;
   }

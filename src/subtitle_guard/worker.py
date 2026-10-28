@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import traceback
+from contextlib import suppress
 
 from . import jobs
 from .bazarr import (
@@ -19,19 +20,21 @@ from .bazarr import (
 )
 from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
-from .heartbeats import HEARTBEAT_SECONDS
+from .heartbeats import HEARTBEAT_SECONDS, SUPERVISED_VARIABLE
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
-from .outcome import describe
+from .outcome import CHANGED_REASON, describe
 from .reports import needs_review, report
 from .review import diagnose
 from .storage import state_path, write_json
+from .tools import kill_active_groups, kill_recorded_groups
 
 WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
 POLL_SECONDS = 2.0
 SUPERVISION_SECONDS = 5.0
 STOP_SECONDS = 10
 MAX_ATTEMPTS = 3
+SUPERVISOR_LOCK = {}
 
 
 def run_workers(count=WORKERS):
@@ -52,6 +55,7 @@ def supervise(roles):
     log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} requeued_jobs={requeued} abandoned_jobs={abandoned}", roles=sorted(roles),
         requeued=requeued, abandoned=abandoned)
     write_json(state_path("supervisor.json"), {"pid": os.getpid(), "workers": sorted(name for name in roles if name.startswith("worker-"))})
+    os.environ[SUPERVISED_VARIABLE] = "1"
     processes = {name: start(*role) for name, role in roles.items()}
     for stop_signal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(stop_signal, lambda number, frame: shut_down(processes, signal.Signals(number).name))
@@ -70,10 +74,12 @@ def single_supervisor_lock():
     except BlockingIOError:
         os.close(descriptor)
         return None
+    SUPERVISOR_LOCK["descriptor"] = descriptor
     return descriptor
 
 
 def restart(name, process, role):
+    kill_recorded_groups(name)
     recovered = jobs.recover_running(MAX_ATTEMPTS, int(name.split("-")[1])) if name.startswith("worker-") else (0, 0)
     log("supervisor.role-restarted", f"role {name} exited code={process.exitcode}, restarted requeued_jobs={recovered[0]} abandoned_jobs={recovered[1]}",
         LEVEL["warning"], role=name, exit_code=process.exitcode, requeued=recovered[0], abandoned=recovered[1])
@@ -91,6 +97,8 @@ def shut_down(processes, signal_name):
     for process in survivors:
         signal_group(process, signal.SIGKILL)
         process.join(timeout=STOP_SECONDS)
+    for name in processes:
+        kill_recorded_groups(name)
     if os.path.exists(state_path("supervisor.json")):
         os.remove(state_path("supervisor.json"))
     log("supervisor.stopped", f"all roles stopped killed={len(survivors)}", killed=len(survivors))
@@ -105,16 +113,25 @@ def signal_group(process, number):
 
 
 def start(target, arguments):
-    process = multiprocessing.Process(target=run_role, args=(target, arguments), daemon=True)
+    process = multiprocessing.Process(target=run_role, args=(target, arguments, SUPERVISOR_LOCK.get("descriptor")), daemon=True)
     process.start()
+    with suppress(PermissionError, ProcessLookupError):
+        os.setpgid(process.pid, process.pid)
     return process
 
 
-def run_role(target, arguments):
+def run_role(target, arguments, supervisor_lock):
+    if supervisor_lock is not None and multiprocessing.get_start_method() == "fork":
+        os.close(supervisor_lock)
     os.setpgid(0, 0)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, stop_role)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     target(*arguments)
+
+
+def stop_role(number, frame):
+    kill_active_groups()
+    raise SystemExit(0)
 
 
 def work_forever(number):
@@ -145,9 +162,9 @@ def work_once(number):
     settings["context"] = {"job": job["id"]}
     try:
         outcome = run_job(job)
-        jobs.finish(job["id"], {**outcome, "summary": outcome.get("summary") or describe(outcome)})
+        jobs.finish(job["id"], number, {**outcome, "summary": outcome.get("summary") or describe(outcome)})
     except Exception as error:
-        jobs.fail(job["id"], f"{type(error).__name__}: {error}")
+        jobs.fail(job["id"], number, f"{type(error).__name__}: {error}")
         log("job.failed", f"job {job['id']} failed: {type(error).__name__}: {error}", LEVEL["error"], job=job["id"], kind=job["kind"], worker=number,
             subtitle=job["arguments"].get("subtitle"), error=f"{type(error).__name__}: {error}", trace=traceback.format_exc(limit=6))
         return True
@@ -168,7 +185,9 @@ def check(arguments):
         raise
     report(arguments["subtitle"], "watch" if arguments.get("watched") else "check", outcome, applied=arguments["apply"])
     prepare_review(arguments["video"], arguments["subtitle"], outcome, arguments["apply"])
-    if arguments.get("watched"):
+    if arguments.get("watched") and outcome.get("reason") == CHANGED_REASON:
+        jobs.forget(arguments["subtitle"])
+    elif arguments.get("watched"):
         jobs.remember(arguments["subtitle"], watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
     return outcome
 

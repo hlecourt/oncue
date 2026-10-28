@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from . import __version__, storage
-from .audio import FFSUBSYNC_LIBRARIES
+from .audio import ARGUMENTS_CHECK_SCRIPT, FFSUBSYNC_LIBRARIES, ffsubsync_arguments
 from .bazarr import BAZARR_CONFIG, BAZARR_URL, bazarr_get
 from .errors import ToolError
 from .logs import LEVEL, log, settings
@@ -32,8 +32,9 @@ def health_checks():
 
 
 def ffsubsync_status():
+    sample = ffsubsync_arguments("video.mkv", "in.srt", "out.srt", fix_framerate=False)
     try:
-        result = run_tool([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import ffsubsync", FFSUBSYNC_LIBRARIES], IMPORT_CHECK_SECONDS)
+        result = run_tool([sys.executable, "-c", ARGUMENTS_CHECK_SCRIPT, FFSUBSYNC_LIBRARIES, *sample], IMPORT_CHECK_SECONDS)
     except ToolError as error:
         return {"ok": False, "path": FFSUBSYNC_LIBRARIES, "error": str(error)}
     return {"ok": result.returncode == 0, "path": FFSUBSYNC_LIBRARIES} | ({} if result.returncode == 0 else {"error": stderr_tail(result)})

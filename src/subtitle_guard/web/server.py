@@ -5,23 +5,23 @@ import hmac
 import json
 import os
 import secrets
+import socket
 import sqlite3
 import threading
-import time
 import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import jobs
-from ..heartbeats import worker_health
+from ..heartbeats import SUPERVISED_VARIABLE, worker_health
 from ..logs import (
     LEVEL,
     log,
     settings,
 )
-from ..storage import state_path
 from .actions import perform
-from .context import AUTH, REQUEST, SESSIONS, TOKEN, notice
+from .auth import DEFAULT_USER, LOCKOUT_SECONDS, LOOPBACK_HOSTS, SESSION_SECONDS, SESSIONS, configure, locked_out, open_session, record_failure, session_for, verify
+from .context import AUTH, REQUEST, notice
 from .pages import (
     api_jobs,
     api_log,
@@ -34,70 +34,30 @@ from .pages import (
     review_page,
     subtitle_page,
 )
-from .parts import escape, layout
+from .parts import SCRIPT_HASHES, escape, layout
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
-
-
 PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
-
-
 SESSION_COOKIE = "subtitle_guard_session"
-
-
 CSRF_COOKIE = "subtitle_guard_csrf"
-
-
-SESSION_SECONDS = 30 * 24 * 3600
-
-
-LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
-
-
 MAX_BODY_BYTES = 64 * 1024
-
-
 MAX_FIELDS = 50
-
-
 MAX_CONNECTIONS = 32
-
-
 REQUEST_TIMEOUT_SECONDS = 30
-
-
-FAILED_LOGIN_LOG_SECONDS = 60
-
-
-SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
-                    "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; "
-                                               "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
-
-
-FAILED_LOGINS = {}
+REQUEST_DEADLINE_SECONDS = 60
+PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP")
+SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+                    "Content-Security-Policy": f"default-src 'none'; script-src {' '.join(SCRIPT_HASHES)}; style-src 'unsafe-inline'; img-src data:; "
+                                               "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
 
 
 def serve_ui(host=HOST, port=PORT):
     settings["source"] = "web"
-    AUTH["token"] = TOKEN or ("" if host in LOOPBACK_HOSTS else generated_token(host))
+    AUTH["required"] = configure(host)
     server = Server((host, port), Handler)
-    log("web.listening", f"HTTP listening on {host}:{server.server_address[1]} auth={'token' if AUTH['token'] else 'none'}", host=host,
-        port=server.server_address[1], token_required=bool(AUTH["token"]))
+    log("web.listening", f"HTTP listening on {host}:{server.server_address[1]} auth={'password' if AUTH['required'] else 'none (loopback only)'}", host=host,
+        port=server.server_address[1], login_required=AUTH["required"])
     server.serve_forever()
-
-
-def generated_token(host):
-    path = state_path("ui-token")
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w") as handle:
-            handle.write(secrets.token_urlsafe(24))
-        log("web.token-generated", f"SUBTITLE_GUARD_UI_TOKEN unset while listening on {host}, token generated in {path}", LEVEL["warning"], path=path)
-    with open(path) as handle:
-        token = handle.read().strip()
-    print(f"subtitle-guard: open the UI with the token {token} (stored in {path})", flush=True)
-    return token
 
 
 class Server(ThreadingHTTPServer):
@@ -120,9 +80,27 @@ class Server(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_SECONDS
 
+    def handle(self):
+        deadline = threading.Timer(REQUEST_DEADLINE_SECONDS, self.close_connection_now)
+        deadline.daemon = True
+        deadline.start()
+        try:
+            super().handle()
+        finally:
+            deadline.cancel()
+
+    def close_connection_now(self):
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            return
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
-        query = {key: values[0] for key, values in urllib.parse.parse_qs(url.query, max_num_fields=MAX_FIELDS).items()}
+        try:
+            query = {key: values[0] for key, values in urllib.parse.parse_qs(url.query, max_num_fields=MAX_FIELDS).items()}
+        except ValueError:
+            return self.respond(400, "malformed query", "text/plain; charset=utf-8")
         if url.path in ("/health", "/ready"):
             return self.respond(*(health_page() if url.path == "/health" else ready_page()))
         if not self.trusted_host():
@@ -154,10 +132,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorised():
             log("web.auth-denied", f"401 POST {self.path} from {self.client_address[0]}", LEVEL["warning"], method="POST", path=self.path, client=self.client_address[0])
             return self.respond(401, login_page())
-        if not form.get("csrf") or not hmac.compare_digest(form["csrf"], self.cookies().get(CSRF_COOKIE, "")):
+        if not form.get("csrf") or not hmac.compare_digest(form["csrf"], REQUEST.csrf):
             return self.respond(403, layout("Form expired", '<p>This form expired. <a href="/">Reload the page</a> and try again.</p>'))
         if self.path == "/logout":
-            SESSIONS.discard(self.cookies().get(SESSION_COOKIE, ""))
+            SESSIONS.pop(self.cookies().get(SESSION_COOKIE, ""), None)
             return self.redirect("/", [f"{SESSION_COOKIE}=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/"])
         try:
             location = perform(form)
@@ -169,35 +147,45 @@ class Handler(BaseHTTPRequestHandler):
 
     def start_request(self):
         REQUEST.cache = {}
+        REQUEST.session = session_for(self.cookies().get(SESSION_COOKIE, "")) if AUTH["required"] else None
+        if REQUEST.session:
+            REQUEST.csrf, REQUEST.new_csrf = REQUEST.session["csrf"], False
+            return
         REQUEST.csrf = self.cookies().get(CSRF_COOKIE) or secrets.token_urlsafe(24)
         REQUEST.new_csrf = CSRF_COOKIE not in self.cookies()
 
     def read_form(self):
         length = self.headers.get("Content-Length", "0")
-        if not length.isdigit() or int(length) > MAX_BODY_BYTES:
+        if not (length.isascii() and length.isdigit()) or int(length) > MAX_BODY_BYTES:
             return None
         body = self.rfile.read(int(length)).decode(errors="replace")
-        return {key: values[0] for key, values in urllib.parse.parse_qs(body, max_num_fields=MAX_FIELDS).items()}
+        try:
+            return {key: values[0] for key, values in urllib.parse.parse_qs(body, max_num_fields=MAX_FIELDS).items()}
+        except ValueError:
+            return None
 
     def login(self, form):
-        if not AUTH["token"]:
+        if not AUTH["required"]:
             return self.redirect("/")
-        if not hmac.compare_digest(form.get("token", ""), AUTH["token"]):
-            log_failed_login(self.client_address[0])
-            return self.respond(401, login_page("That token is not right."))
-        session = secrets.token_urlsafe(32)
-        SESSIONS.add(session)
+        client = self.client_address[0]
+        if locked_out(client):
+            return self.respond(429, login_page(f"Too many wrong attempts. Wait {LOCKOUT_SECONDS // 60} minutes and try again."))
+        user = form.get("user", "")
+        if not verify(user, form.get("password", "")):
+            record_failure(client)
+            return self.respond(401, login_page("That user name or password is not right.", user))
+        session = open_session(user)
         secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-        log("web.login", f"session opened from {self.client_address[0]}", client=self.client_address[0])
+        log("web.login", f"user {user} logged in from {client}", user=user, client=client)
         self.redirect("/", [f"{SESSION_COOKIE}={session}; Max-Age={SESSION_SECONDS}; HttpOnly; SameSite=Strict; Path=/{secure}"])
 
     def authorised(self):
-        return not AUTH["token"] or self.cookies().get(SESSION_COOKIE, "") in SESSIONS
+        return not AUTH["required"] or REQUEST.session is not None
 
     def trusted_host(self):
-        if AUTH["token"]:
+        if AUTH["required"]:
             return True
-        return host_name(self.headers.get("Host", "")) in LOOPBACK_HOSTS
+        return host_name(self.headers.get("Host", "")) in LOOPBACK_HOSTS and not any(self.headers.get(name) for name in PROXY_HEADERS)
 
     def same_origin(self):
         origin = self.headers.get("Origin") or self.headers.get("Referer")
@@ -236,25 +224,21 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def log_failed_login(client):
-    now_seconds = time.time()
-    if now_seconds - FAILED_LOGINS.get(client, 0) < FAILED_LOGIN_LOG_SECONDS:
-        return
-    FAILED_LOGINS[client] = now_seconds
-    log("web.login-failed", f"wrong token from {client}", LEVEL["warning"], client=client)
-
-
 def host_name(host):
     if host.startswith("["):
         return host[1:host.find("]")]
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 
 
-def login_page(problem=""):
-    warning = f'<p class="message">{escape(problem)}</p>' if problem else ""
-    return layout("Token needed", f'{warning}<form method="post" action="/login" class="filters"><label class="visually-hidden" for="token">Token</label>'
-                                  '<input type="password" id="token" name="token" placeholder="token" autocomplete="current-password"><button>Open</button></form>'
-                                  '<p class="subtle words">The token is in SUBTITLE_GUARD_UI_TOKEN, or printed when the service starts.</p>', navigation=False)
+def login_page(problem="", user=""):
+    warning = f'<p class="message" role="alert" id="login-problem">{escape(problem)}</p>' if problem else ""
+    described = ' aria-invalid="true" aria-describedby="login-problem"' if problem else ""
+    return layout("Log in", f'{warning}<form method="post" action="/login" class="login">'
+                            f'<label for="user">User name</label><input type="text" id="user" name="user" value="{escape(user or DEFAULT_USER)}" autocomplete="username"{described}>'
+                            f'<label for="password">Password</label><input type="password" id="password" name="password" autocomplete="current-password"{described}>'
+                            '<button class="primary">Log in</button></form>'
+                            '<p class="subtle words">Set the account with SUBTITLE_GUARD_UI_USER and SUBTITLE_GUARD_UI_PASSWORD, or with subtitle-guard set-password. '
+                            'On first start without one, a password for admin is printed in the service logs.</p>', navigation=False)
 
 
 def health_page():
@@ -265,9 +249,11 @@ def ready_page():
     try:
         jobs.counts()
     except sqlite3.Error as error:
-        return 503, json.dumps({"ready": False, "database": f"{type(error).__name__}: {error}"}), "application/json"
+        log("web.not-ready", f"database unavailable: {type(error).__name__}: {error}", LEVEL["error"])
+        return 503, json.dumps({"ready": False, "database": "unavailable"}), "application/json"
     workers = worker_health()
-    ready = all(workers.values())
+    supervised = os.environ.get(SUPERVISED_VARIABLE) == "1"
+    ready = all(workers.values()) and (bool(workers) or not supervised)
     return (200 if ready else 503), json.dumps({"ready": ready, "database": "ok", "workers": workers}), "application/json"
 
 

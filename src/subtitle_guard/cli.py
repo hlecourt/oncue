@@ -18,19 +18,22 @@ Commands:
   job ID                                                                    one job in full
   retry ID                                                                  run a finished or failed job again
   needs-human                                                               subtitles whose last check needs a person
+  set-password [USER]                                                       set the UI account (default user admin); reads the password from stdin when piped
   log [N] [--problems]                                                      the last N events of the global log (default 50), or only warnings and errors
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
 SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, SUBTITLE_GUARD_LIBRARY,
-SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_TOKEN, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
+SUBTITLE_GUARD_ROOTS, SUBTITLE_GUARD_HOOK_DIR (serve copies the package there for Bazarr's hook), SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_USER, SUBTITLE_GUARD_UI_PASSWORD, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
 """
 
+import getpass
 import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from . import jobs
 from .bazarr import (
@@ -42,6 +45,7 @@ from .bazarr import (
     scan_series,
     try_another_subtitle,
 )
+from .errors import ConfigError, SubtitleGuardError
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
@@ -51,6 +55,7 @@ from .reports import print_needs_human, report
 from .web import HOST as UI_HOST
 from .web import PORT as UI_PORT
 from .web import serve_ui
+from .web.auth import DEFAULT_USER, save_credentials
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
@@ -96,6 +101,8 @@ def main():
     if command == "serve":
         roles = {**worker_roles(workers), "web": (serve_ui, ())}
         roots = [root for root in os.environ.get("SUBTITLE_GUARD_LIBRARY", "").split(os.pathsep) if root]
+        if os.environ.get("SUBTITLE_GUARD_HOOK_DIR"):
+            install_hook_package(os.environ["SUBTITLE_GUARD_HOOK_DIR"])
         report_startup(command, workers=workers, ui_host=UI_HOST, ui_port=UI_PORT, roots=roots, applied=apply, queue=queue_enabled())
         if roots:
             roles["watch"] = (watch, (roots, apply))
@@ -118,6 +125,8 @@ def main():
         return 0 if requeued else 1
     if command == "needs-human":
         return print_needs_human()
+    if command == "set-password":
+        return set_password(arguments[0] if arguments else DEFAULT_USER)
     if command == "log":
         return print_log(int(arguments[0]) if arguments else 50, flags["--problems"])
     if command == "try-another" and len(arguments) == 2:
@@ -146,9 +155,24 @@ def hook(arguments, queue):
     log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
         f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
-        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': file_hash(fields['subtitle']) if os.path.isfile(fields['subtitle']) else None})}")
+        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': received_hash(fields['subtitle'])})}")
         return 0
     print(describe(handle_download(*arguments)))
+    return 0
+
+
+def set_password(user):
+    interactive = sys.stdin.isatty()
+    password = getpass.getpass(f"New UI password for {user}: ") if interactive else sys.stdin.readline().rstrip("\n")
+    if interactive and getpass.getpass("The same password again: ") != password:
+        print("The two passwords differ, nothing was changed.")
+        return 1
+    try:
+        save_credentials(user, password)
+    except ConfigError as error:
+        print(f"subtitle-guard: {error}")
+        return 1
+    print(f"Password saved for {user}. A running UI uses it at once and signs everyone out.")
     return 0
 
 
@@ -160,6 +184,25 @@ def print_log(count, problems_only):
     return 0
 
 
+def received_hash(subtitle):
+    try:
+        return file_hash(subtitle)
+    except (OSError, SubtitleGuardError):
+        return None
+
+
 def lower_io_priority():
     if shutil.which("ionice"):
         subprocess.run(["ionice", "-c2", "-n7", "-p", str(os.getpid())], capture_output=True, check=False)
+
+
+def install_hook_package(folder):
+    target = os.path.join(folder, "subtitle_guard")
+    os.makedirs(folder, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".subtitle_guard.", dir=folder)
+    shutil.copytree(os.path.dirname(os.path.abspath(__file__)), os.path.join(staging, "subtitle_guard"), ignore=shutil.ignore_patterns("__pycache__"))
+    if os.path.exists(target):
+        os.rename(target, os.path.join(staging, "previous"))
+    os.rename(os.path.join(staging, "subtitle_guard"), target)
+    shutil.rmtree(staging)
+    log("service.hook-installed", f"package copied for the Bazarr hook into {folder}", folder=folder)

@@ -36,7 +36,7 @@ Changelog = "https://github.com/hlecourt/subtitle-guard/blob/main/CHANGELOG.md"
 Security = "https://github.com/hlecourt/subtitle-guard/security/policy"
 
 [project.optional-dependencies]
-audio = ["ffsubsync>=0.4.25,<0.5"]
+audio = ["ffsubsync>=0.5.1,<0.6"]
 test = ["pytest>=8", "pytest-cov>=5"]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff==0.17.3"]
 

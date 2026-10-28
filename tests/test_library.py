@@ -112,3 +112,18 @@ def test_wrong_end_times_are_rejected(tmp_path):
     subtitle.write_text("".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 600)}\nline {number}\n\n" for number in range(1, 150)))
     outcome = evaluate_and_fix("/missing.mkv", str(subtitle), True)
     assert outcome["decision"] == "rejected" and "end times are wrong" in outcome["reason"]
+
+
+
+def test_temporary_files_left_by_an_interrupted_write_are_swept(tmp_path):
+    import time
+
+    from subtitle_guard import files, library
+    (tmp_path / "Movie.mkv").write_bytes(b"v")
+    leftover = tmp_path / f".Movie.fr.srt.abc{files.TEMPORARY_SUFFIX}"
+    leftover.write_text("partial")
+    os.utime(leftover, (time.time() - 7200, time.time() - 7200))
+    fresh = tmp_path / f".Movie.en.srt.def{files.TEMPORARY_SUFFIX}"
+    fresh.write_text("in progress")
+    assert [names for _, _, names in library.media_folders(str(tmp_path))] == [["Movie.mkv"]]
+    assert not leftover.exists() and fresh.exists()
