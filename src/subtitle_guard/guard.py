@@ -3,14 +3,22 @@
 import os
 import time
 
-from .alignment import MAX_CUE_SECONDS, MAX_WRONG_END_SHARE, MIN_CUES, assess, describe_changes, judge, wrong_end_share
+from .alignment import (
+    MAX_CUE_SECONDS,
+    MAX_WRONG_END_SHARE,
+    MIN_CUES,
+    assess,
+    describe_changes,
+    judge,
+    wrong_end_share,
+)
 from .audio import sync_to_audio
 from .confidence import confidence
+from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
+from .files import save_version, subtitle_lock
 from .logs import LEVEL, log
 from .outcome import DECISION, WORRYING_DECISIONS
 from .reference import load_reference
-from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
-from .files import save_version, subtitle_lock
 from .storage import backup_path, file_signature
 from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
 

@@ -1,11 +1,11 @@
 """Score a subtitle against a reference, realign it piecewise and decide whether the result can be trusted."""
 
+import itertools
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy
 
 from .outcome import DECISION
-
 
 TOLERANCE_SECONDS = 0.3
 WINDOW_SECONDS = 120
@@ -39,6 +39,10 @@ MAX_CUE_SECONDS = 30
 MAX_WRONG_END_SHARE = 0.05
 
 
+def cue_starts(cues):
+    return numpy.array([start for start, _, _ in cues])
+
+
 def wrong_end_share(cues):
     if not cues:
         return 0.0
@@ -46,7 +50,7 @@ def wrong_end_share(cues):
 
 
 def judge(cues, reference):
-    original = score(numpy.array([start for start, _, _ in cues]), reference["starts"])
+    original = score(cue_starts(cues), reference["starts"])
     weak = weak_minutes(cues, reference)
     if original["passed"] and not weak:
         return DECISION["kept"], original, weak, None
@@ -59,7 +63,7 @@ def judge(cues, reference):
 
 def describe_changes(cues, attempt):
     scale = attempt.get("scale", 1.0)
-    offsets = [new_start - start * scale for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
+    offsets = [new_start - start * scale for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues, strict=False)]
     return {"scale": float(scale), "parts": out_of_sync_parts(cues, offsets), "lines": len(cues)}
 
 
@@ -78,8 +82,7 @@ def out_of_sync_parts(cues, shifts):
 def close_part(parts, members, cues, shifts):
     if len(members) < MIN_PART_LINES:
         return parts
-    return parts + [{"first": cues[members[0]][0], "last": cues[members[-1]][0], "lines": len(members),
-                     "shift": round(float(numpy.median([shifts[member] for member in members])), 1)}]
+    return [*parts, {"first": cues[members[0]][0], "last": cues[members[-1]][0], "lines": len(members), "shift": round(float(numpy.median([shifts[member] for member in members])), 1)}]
 
 
 def assess(cues, reference, wide_retry=True):
@@ -95,13 +98,13 @@ def assess_on_grid(cues, reference, grid):
         null_alignment = pool.submit(align, cues, mirrored, grid)
         aligned = align(cues, reference, grid)
         null = null_alignment.result()
-    aligned_score = score(numpy.array([start for start, _, _ in aligned["timings"]]), reference["starts"])
-    null_score = score(numpy.array([start for start, _, _ in null["timings"]]), mirrored["starts"])
+    aligned_score = score(cue_starts(aligned["timings"]), reference["starts"])
+    null_score = score(cue_starts(null["timings"]), mirrored["starts"])
     fixed = (aligned_score is not None and aligned_score["passed"] and aligned["objective"] >= null["objective"] + OBJECTIVE_MARGIN
              and aligned["unsupported_share"] <= MAX_UNSUPPORTED_SHARE)
     return {"timings": aligned["timings"], "score": aligned_score, "null": null_score, "fixed": bool(fixed), "scale": aligned["scale"],
             "objective": aligned["objective"], "null_objective": null["objective"], "segments": aligned["segments"],
-            "null_segments": null["segments"], "short_segment_share": aligned["short_segment_share"],
+"short_segment_share": aligned["short_segment_share"],
             "unsupported_share": aligned["unsupported_share"],
             "weak_minutes": weak_minutes(aligned["timings"], reference)}
 
@@ -126,7 +129,7 @@ def score(starts, reference):
 
 
 def weak_minutes(cues, reference):
-    starts = numpy.sort(numpy.array([start for start, _, _ in cues]))
+    starts = numpy.sort(cue_starts(cues))
     weak = set()
     for window_start in numpy.arange(0, starts[-1] + 1, WEAK_WINDOW_STEP_SECONDS):
         inside = starts[(starts >= window_start) & (starts < window_start + WEAK_WINDOW_SECONDS)]
@@ -149,10 +152,6 @@ def nearest_gap(moved, reference):
     return numpy.where(numpy.abs(after) < numpy.abs(before), after, before)
 
 
-def align_piecewise(cues, reference):
-    return align(cues, reference)["timings"]
-
-
 def align(cues, reference, grid=None):
     grid = offset_grid() if grid is None else grid
     order = numpy.argsort([start for start, _, _ in cues], kind="stable")
@@ -167,7 +166,7 @@ def align(cues, reference, grid=None):
     if len(reference["ends"]) >= MIN_CUES:
         hits |= numpy.abs(nearest_gap(ends * scale + offsets, reference["ends"])) <= TOLERANCE_SECONDS
     support = [segment.mean() for segment in numpy.split(hits, numpy.cumsum(lengths)[:-1])]
-    unsupported = sum(length for length, matched in zip(lengths, support) if matched < SUPPORTED_SEGMENT_MATCHED)
+    unsupported = sum(length for length, matched in zip(lengths, support, strict=False) if matched < SUPPORTED_SEGMENT_MATCHED)
     return {"timings": timings, "objective": objective / len(cues), "segments": len(lengths), "scale": float(scale),
             "short_segment_share": float(lengths[lengths < SHORT_SEGMENT_CUES].sum() / len(cues)),
             "unsupported_share": float(unsupported / len(cues))}
@@ -219,7 +218,7 @@ def offset_grid(max_offset=MAX_OFFSET_SECONDS, step=GRID_STEP_SECONDS):
 
 def offset_hits(start, reference, grid):
     step = float(grid[1] - grid[0])
-    tolerance_bins = int(round(TOLERANCE_SECONDS / step))
+    tolerance_bins = round(TOLERANCE_SECONDS / step)
     first, last = numpy.searchsorted(reference, [start + grid[0] - TOLERANCE_SECONDS, start + grid[-1] + TOLERANCE_SECONDS])
     centres = numpy.rint((reference[first:last] - start - grid[0]) / step).astype(int)
     marks = numpy.zeros(len(grid) + 1, dtype=numpy.int16)
@@ -241,7 +240,7 @@ def center_segments(starts, reference, offsets):
                       - totals[:, numpy.maximum(positions - CENTRING_NEIGHBOURS, 0)])
         plateau = neighbours == neighbours.max(axis=0)
         centred[segment] += shifts[numpy.rint((plateau * numpy.arange(len(shifts))[:, None]).sum(axis=0) / plateau.sum(axis=0)).astype(int)]
-    for previous, current in zip(cues[:-1], cues[1:]):
+    for previous, current in itertools.pairwise(cues):
         centred_breaks_order = starts[current] + centred[current] < starts[previous] + centred[previous] - ORDER_SLACK_SECONDS
         if centred_breaks_order and starts[current] + offsets[current] >= starts[previous] + offsets[previous] - ORDER_SLACK_SECONDS:
             centred[[previous, current]] = offsets[[previous, current]]

@@ -15,7 +15,7 @@ from .storage import file_signature
 VIDEO_EXTENSIONS = (".mkv", ".mp4", ".m4v", ".avi", ".mov", ".ts", ".webm")
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa", ".vtt")
 EPISODE = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})|(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)")
-SAMPLE = re.compile(r"(^|[ ._-])sample([ ._-]|$)", re.I)
+SAMPLE = re.compile(r"(^|[ ._-])sample([ ._-]|$)", re.IGNORECASE)
 NEIGHBOUR_EPISODES = 2
 PENDING = "pending:"
 FAILED = "failed:"
@@ -98,9 +98,11 @@ def folder_neighbours(folder, video, videos):
     names = [name for _, name in episodes]
     if video not in names:
         return []
-    position = names.index(video)
-    nearby = names[max(0, position - NEIGHBOUR_EPISODES):position] + names[position + 1:position + NEIGHBOUR_EPISODES + 1]
-    return [[label(name), os.path.join(folder, name)] for name in nearby]
+    return [[label(name), os.path.join(folder, name)] for name in nearby(names, names.index(video))]
+
+
+def nearby(items, position):
+    return items[max(0, position - NEIGHBOUR_EPISODES):position] + items[position + 1:position + NEIGHBOUR_EPISODES + 1]
 
 
 def episode_key(name):

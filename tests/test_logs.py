@@ -1,6 +1,7 @@
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -25,8 +26,8 @@ def test_log_rotates_past_its_size_limit(monkeypatch):
     monkeypatch.setattr(logs, "MAX_LOG_BYTES", 300)
     for number in range(20):
         logs.log("guard.checked", "Checked", number=number)
-    assert len(open(logs.log_file() + ".1").read()) > 0
-    assert len(open(logs.log_file()).read()) <= 600
+    assert len(Path(logs.log_file() + ".1").read_text()) > 0
+    assert len(Path(logs.log_file()).read_text()) <= 600
 
 
 def test_recent_events_are_newest_first_and_skip_a_cut_line(monkeypatch):
@@ -75,7 +76,7 @@ def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
         bazarr.bazarr_post("/api/episodes/blacklist", {"provider": "opensubtitles"})
     event = events()[-1]
     assert event["event"] == "bazarr.api-error" and event["level"] == "error" and event["method"] == "POST" and "connection refused" in event["error"]
-    assert "secret-key" not in open(logs.log_file()).read()
+    assert "secret-key" not in Path(logs.log_file()).read_text()
 
 
 def test_a_download_from_bazarr_is_logged_as_it_arrives(monkeypatch, tmp_path):

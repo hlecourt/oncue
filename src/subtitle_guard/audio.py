@@ -6,13 +6,12 @@ import shutil
 import sys
 import tempfile
 
+from .files import read_regular, replace_file, save_version
 from .logs import LEVEL, log
 from .outcome import DECISION
-from .files import read_regular, replace_file, save_version
 from .storage import backup_path, file_signature, heavy_disk_read
-from .tools import AUDIO_SYNC_SECONDS, run_tool, stderr_tail
 from .subtitles import parse_subtitle
-
+from .tools import AUDIO_SYNC_SECONDS, run_tool, stderr_tail
 
 FFSUBSYNC_LIBRARIES = os.environ.get("SUBTITLE_GUARD_FFSUBSYNC_PATH", "/app/bazarr/bin/libs")
 AUDIO_SYNC_MAX_OFFSET_SECONDS = 120

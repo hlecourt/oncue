@@ -14,7 +14,8 @@ from subtitle_guard import alignment, reference, subtitles
 from subtitle_guard.confidence import confidence
 from subtitle_guard.guard import summarize
 
-work, corpus = sys.argv[1], json.load(open(sys.argv[2]))
+with open(sys.argv[2]) as corpus_file:
+    work, corpus = sys.argv[1], json.load(corpus_file)
 only = sys.argv[3] if len(sys.argv) > 3 else ""
 os.makedirs(work, exist_ok=True)
 PAL = 23.976 / 25
@@ -124,12 +125,15 @@ def save(name, cues, subtitle_format):
                   "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
         body = "".join(f"Dialogue: 0,{subtitles.ass_timestamp(start)},{subtitles.ass_timestamp(end)},Default,,0,0,0,,{text.replace(chr(10), chr(92) + 'N')}\n"
                        for start, end, text in cues)
-        open(path, "w", encoding="utf-8").write(header + body)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(header + body)
         return path
     subtitles.create_subtitle(path, cues, "vtt" if subtitle_format == "vtt" else "srt")
     if subtitle_format == "utf16":
-        content = open(path, encoding="utf-8").read()
-        open(path, "w", encoding="utf-16").write(content)
+        with open(path, encoding="utf-8") as handle:
+            content = handle.read()
+        with open(path, "w", encoding="utf-16") as handle:
+            handle.write(content)
     return path
 
 
@@ -151,7 +155,10 @@ def run(video, path, hearing_impaired=False):
 
 def cases(truth_cues, other_cues, rng):
     duration = truth_cues[-1][0]
-    point = lambda share: duration * share
+
+    def point(share):
+        return duration * share
+
     yield "identity", "fix", misaligned(truth_cues), "srt"
     yield "offset +2.5s", "fix", misaligned(truth_cues, offset=2.5), "srt"
     yield "offset -45s", "fix", misaligned(truth_cues, offset=-45), "srt"
@@ -213,7 +220,7 @@ for item in corpus:
         started = time.time()
         path = save(f"{item['name']}-case", cues, subtitle_format)
         decision, timings, attempt, trust = run(item["video"], path)
-        real = [(timing[0], truth) for timing, truth in zip(timings, truths) if truth is not None] if decision != "unverified" else []
+        real = [(timing[0], truth) for timing, truth in zip(timings, truths, strict=False) if truth is not None] if decision != "unverified" else []
         errors = numpy.abs(numpy.array([start - truth for start, truth in real])) if real else numpy.array([])
         within_fine = float(numpy.mean(errors <= 0.3)) if len(errors) else 0.0
         within_second = float(numpy.mean(errors <= 1.0)) if len(errors) else 0.0

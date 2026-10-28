@@ -1,31 +1,57 @@
 """Review tools behind the web UI: side-by-side reading, manual shifts, revert, accept, recheck and asking for another subtitle."""
 
-import glob
 import hashlib
 import json
 import os
 import re
-import shutil
 
 import numpy
 
 from . import jobs
-from .errors import MatroskaError, ToolError, UnsafePathError
-from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
-from .alignment import MAX_WRONG_END_SHARE, MIN_CUES, wrong_end_share, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
+from .alignment import (
+    MAX_WRONG_END_SHARE,
+    MIN_CUES,
+    NOTICEABLE_SHIFT_SECONDS,
+    TOLERANCE_SECONDS,
+    cue_starts,
+    describe_changes,
+    judge,
+    nearest_gap,
+    out_of_sync_parts,
+    score,
+    weak_minutes,
+    wrong_end_share,
+)
 from .bazarr import request_another
-from .worker import worker_health
 from .confidence import confidence
+from .errors import MatroskaError, ToolError, UnsafePathError
+from .files import restore_version, save_version, subtitle_lock
 from .guard import evaluate_and_fix
+from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
 from .logs import LEVEL, log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
 from .reports import latest_reports, needs_review, report
-from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, load_state, revert_source, save_state, state_path, write_json
-from .files import restore_version, save_version, subtitle_lock
-from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, write_subtitle
+from .state import load_state, save_state
+from .storage import (
+    backup_folders,
+    backup_path,
+    file_signature,
+    heavy_disk_read,
+    read_json,
+    revert_source,
+    state_path,
+    write_json,
+)
+from .subtitles import (
+    is_hearing_impaired,
+    parse_subtitle,
+    parse_timed_text,
+    write_subtitle,
+)
+from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
@@ -51,10 +77,10 @@ def side_by_side(video, subtitle, first, last, shifts=None):
         return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
                 "moments": pair_moments(cues, [], [start for start, _, _ in cues], first, last), "minutes": []}
     texts = reference_texts(video, reference) or [(start, start, "") for start in reference["starts"]]
-    starts = numpy.array([start for start, _, _ in cues])
+    starts = cue_starts(cues)
     matched = numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS if len(starts) else numpy.array([], dtype=bool)
     lines = [(start, "reference", clean(text), None, None) for start, _, text in texts if first <= start < last]
-    lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched)) if first <= start < last]
+    lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched, strict=False)) if first <= start < last]
     shifted = bool(shifts) and len(shifts) == len(cues)
     targets = starts + numpy.array(shifts) if shifted else starts
     on_time = numpy.abs(targets - starts) < NOTICEABLE_SHIFT_SECONDS if shifted else matched
@@ -82,10 +108,10 @@ def minute_state(share, shifted):
 
 
 def pair_moments(cues, texts, targets, first, last):
-    reference_starts = numpy.array([start for start, _, _ in texts])
+    reference_starts = cue_starts(texts)
     moments = {position: {"time": start, "video": clean(text), "subtitle": None, "shown_at": None, "shift": 0.0}
                for position, (start, _, text) in enumerate(texts) if first <= start < last}
-    for index, ((start, _, text), target) in enumerate(zip(cues, targets)):
+    for index, ((start, _, text), target) in enumerate(zip(cues, targets, strict=False)):
         if not first <= target < last:
             continue
         line = {"subtitle": clean(text), "shown_at": start, "shift": float(target - start), "index": index}
@@ -112,10 +138,10 @@ def last_fix(video, subtitle):
     if before is None:
         return None
     old, new = parse_subtitle(before)["cues"], parse_subtitle(subtitle)["cues"]
-    shifts = [new_start - old_start for (new_start, _, _), (old_start, _, _) in zip(new, old)]
+    shifts = [new_start - old_start for (new_start, _, _), (old_start, _, _) in zip(new, old, strict=False)]
     if len(old) != len(new) or max((abs(shift) for shift in shifts), default=0) < NOTICEABLE_SHIFT_SECONDS:
         return None
-    moved_minutes = sorted({int(start // 60) for (start, _, _), shift in zip(new, shifts) if abs(shift) >= NOTICEABLE_SHIFT_SECONDS})
+    moved_minutes = sorted({int(start // 60) for (start, _, _), shift in zip(new, shifts, strict=False) if abs(shift) >= NOTICEABLE_SHIFT_SECONDS})
     return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "moved_minutes": moved_minutes, "parts": out_of_sync_parts(old, shifts)}
 
 
@@ -130,7 +156,7 @@ def readable_reference(video, subtitle, cue_count):
 def diagnose(video, subtitle):
     cache_file = diagnosis_file(video, subtitle)
     if os.path.exists(cache_file):
-        return json.load(open(cache_file))
+        return read_json(cache_file)
     cues = parse_subtitle(subtitle)["cues"]
     reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES else None
     if len(cues) < MIN_CUES:
@@ -147,7 +173,7 @@ def diagnose(video, subtitle):
 
 def known_diagnosis(video, subtitle):
     cache_file = diagnosis_file(video, subtitle)
-    return json.load(open(cache_file)) if os.path.exists(cache_file) else None
+    return read_json(cache_file) if os.path.exists(cache_file) else None
 
 
 def diagnosis_file(video, subtitle):
@@ -163,7 +189,7 @@ def diagnosis_from(cues, decision, original, weak, attempt):
         return {**unchanged, "state": "unclear" if weak else "in-sync"}
     if not attempt["fixed"]:
         return {**unchanged, "state": "no-match"}
-    shifts = [new_start - start for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
+    shifts = [new_start - start for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues, strict=False)]
     changes = describe_changes(cues, attempt)
     return {"state": "out-of-sync", "parts": changes["parts"], "scale": changes["scale"], "fixable": True, "shifts": shifts, "weak_minutes": weak}
 
@@ -185,7 +211,7 @@ def reference_texts(video, reference):
     status = os.stat(video)
     cache_file = state_path("texts", hashlib.sha1(f"{video}|{status.st_size}|{int(status.st_mtime)}|{reference['index']}".encode()).hexdigest() + ".json")
     if os.path.exists(cache_file):
-        return [tuple(line) for line in json.load(open(cache_file))]
+        return [tuple(line) for line in read_json(cache_file)]
     probe = json.loads(run_tool(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json",
                                  video], PROBE_SECONDS).stdout or "{}").get("streams", [])
     codec = next((stream.get("codec_name") for stream in probe if stream["index"] == reference["index"]), "")
@@ -203,7 +229,7 @@ def reference_texts(video, reference):
 
 
 def measure(cues, reference):
-    original = score(numpy.array([start for start, _, _ in cues]), reference["starts"])
+    original = score(cue_starts(cues), reference["starts"])
     if original is None:
         return None
     outcome = {"decision": DECISION["kept"], "after": original, "weak_minutes": weak_minutes(cues, reference)}

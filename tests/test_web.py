@@ -7,10 +7,12 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
-
-from subtitle_guard import jobs, reports, storage, web
-from subtitle_guard.subtitles import parse_subtitle
 from media import video_with_reference, write_subtitle_file
+
+from subtitle_guard import jobs, reports
+from subtitle_guard.subtitles import parse_subtitle
+from subtitle_guard.web import actions, context
+from subtitle_guard.web import server as web_server
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -20,7 +22,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 @pytest.fixture
 def server():
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), web_server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -37,7 +39,7 @@ def get(url, headers=None):
 
 def post(url, form, headers=None, csrf="test-csrf"):
     opener = urllib.request.build_opener(NoRedirect)
-    cookie = "; ".join(filter(None, [f"{web.CSRF_COOKIE}={csrf}", (headers or {}).get("Cookie")]))
+    cookie = "; ".join(filter(None, [f"{web_server.CSRF_COOKIE}={csrf}", (headers or {}).get("Cookie")]))
     data = urllib.parse.urlencode({**form, "csrf": csrf} if csrf else form).encode()
     request = urllib.request.Request(url, data=data, headers={**(headers or {}), "Cookie": cookie}, method="POST")
     try:
@@ -49,7 +51,7 @@ def post(url, form, headers=None, csrf="test-csrf"):
 
 def notice_text(location):
     key = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("notice", [""])[0]
-    return web.NOTICES.get(key, "")
+    return context.NOTICES.get(key, "")
 
 
 def test_dashboard_jobs_and_api(server):
@@ -68,7 +70,7 @@ def test_dashboard_jobs_and_api(server):
 def test_unknown_subtitles_are_never_touched(server, tmp_path):
     stranger = tmp_path / "stranger.srt"
     stranger.write_text("1\n00:00:01,000 --> 00:00:02,000\nx\n")
-    code, location = post(server + "/", {"action": "revert", "path": str(stranger)})
+    _code, location = post(server + "/", {"action": "revert", "path": str(stranger)})
     assert "Unknown subtitle" in notice_text(location)
     assert get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(stranger)}))[0] == 404
 
@@ -89,11 +91,11 @@ def test_review_page_and_manual_shift(server, tmp_path):
     assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in notice_text(location)
     shifted = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 120 <= start < 180]
     expected = [start for start in starts if 120 <= start < 180]
-    assert max(abs(a - b) for a, b in zip(shifted, expected)) < 0.01
+    assert max(abs(a - b) for a, b in zip(shifted, expected, strict=False)) < 0.01
 
 
 def test_token_protects_the_ui(server, monkeypatch):
-    monkeypatch.setitem(web.AUTH, "token", "secret")
+    monkeypatch.setitem(context.AUTH, "token", "secret")
     reports.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
     assert status == 401 and "Needs a look" not in page and "Private.Name" not in page and 'action="/login"' in page
@@ -102,11 +104,11 @@ def test_token_protects_the_ui(server, monkeypatch):
     assert post(server + "/login", {"token": "wrong"}, csrf=None) == (401, "")
     code, _ = post(server + "/login", {"token": "secret"}, csrf=None)
     assert code == 303
-    session = next(iter(web.SESSIONS))
-    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 200
+    session = next(iter(context.SESSIONS))
+    assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 200
     assert post(server + "/", {"action": "retry-job", "job": "1"})[0] == 401
-    assert post(server + "/logout", {}, {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 303
-    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 401
+    assert post(server + "/logout", {}, {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 303
+    assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 401
 
 
 def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
@@ -119,7 +121,7 @@ def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
     assert post(server + "/", {"action": "retry-job", "job": "1" * 70000})[0] == 413
     code, location = post(server + "/", {"action": "retry-job", "job": "not-a-number"})
     assert code == 303 and notice_text(location) == "Only a finished task can be run again."
-    status, _, headers = get(server + "/")
+    _status, _, headers = get(server + "/")
     assert headers["X-Frame-Options"] == "DENY" and "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert 'name="csrf"' in get(server + "/history")[1] or "Run again" not in get(server + "/history")[1]
     assert get(server + "/", {"Host": "rebinding.example:8484"})[0] == 400
@@ -139,11 +141,11 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
                                          "last": f"{part['last']:.3f}", "offset": f"{part['shift']:.2f}"})
     assert code == 303 and "Done." in notice_text(location)
     moved = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 119 <= start < 181]
-    assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180])) < 0.25
+    assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180], strict=False)) < 0.25
     write_subtitle_file(subtitle, starts, ends, lambda value: value * 23.976 / 25 + 6)
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "minute": "0"})
     assert "The whole subtitle is back in sync." in notice_text(location)
-    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
+    _status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
     assert "This subtitle is in sync with the video." in page
 
 
@@ -175,9 +177,9 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
     reports.report(str(subtitle), "manual", {"decision": "manual", "weak_minutes": [2], "confidence": 55, "confidence_band": "low"})
     get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
-    status, page, _ = get(server + "/review")
+    _status, page, _ = get(server + "/review")
     assert "Fix it</button>" in page
-    code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
+    _code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
     assert location.startswith("/review?") and "back in sync" in notice_text(location)
     reports.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
     assert "Move it to S01E03</button>" in get(server + "/review")[1]
@@ -194,13 +196,13 @@ def test_the_history_shows_what_each_fix_moved(server, tmp_path):
     speed = video.with_suffix(".en.srt")
     write_subtitle_file(speed, starts, ends, lambda value: value * 23.976 / 25)
     reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), False))
-    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
+    _status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
     assert "This subtitle runs at the wrong speed." in page and "Fix this part" not in page
     reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
     page = get(server + "/history")[1]
-    assert "Started by: Bazarr, from opensubtitles" in page and "Started by: Library scan" in page
+    assert "Started by: Bazarr (downloaded from opensubtitles)" in page and "Started by: Library scan" in page
     assert "lines from 2:" in page and "s earlier</div>" in page and "Speed corrected: it was made for a faster version of the video (4.3%)" in page
-    assert "/ 100, high" in page
+    assert "High confidence" in page
 
 
 
@@ -213,7 +215,7 @@ def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_pa
     reports.report(str(subtitle), "opensubtitles", evaluate_and_fix(str(video), str(subtitle), True))
     page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))[1]
     assert "This subtitle is in sync with the video." in page and "What was changed is shown below." in page
-    assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page
+    assert "What was changed" in page and "started by Bazarr (downloaded from opensubtitles), confidence" in page and "s earlier</div>" in page
     assert "fixed by the guard, now on time" in page and 'class="fixed' in page
     assert "moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page
 
@@ -228,5 +230,27 @@ def test_subtitles_outside_the_roots_or_symlinked_are_unknown(tmp_path, monkeypa
     link = tmp_path / "media" / "c.fr.srt"
     link.symlink_to(outside)
     reports.report(str(link), "scan", {"decision": "kept"})
-    monkeypatch.setattr(web, "ROOTS", [str((tmp_path / "media").resolve())])
-    assert web.known_subtitle(str(inside)) and not web.known_subtitle(str(outside)) and not web.known_subtitle(str(link))
+    monkeypatch.setattr(actions, "ROOTS", [str((tmp_path / "media").resolve())])
+    assert actions.known_subtitle(str(inside)) and not actions.known_subtitle(str(outside)) and not actions.known_subtitle(str(link))
+
+
+def test_every_page_escapes_a_hostile_file_name(server, tmp_path):
+    from subtitle_guard import logs
+    hostile = tmp_path / "Show" / "Season 1" / "<x\"'&>.fr.srt"
+    hostile.parent.mkdir(parents=True)
+    hostile.write_text("x")
+    reports.report(str(hostile), "<b>provider</b>", {"decision": "rejected", "reason": "<script>alert(1)</script>", "confidence": 10, "confidence_band": "low"})
+    logs.log("guard.checked", "<x>", subtitle=str(hostile))
+    pages = ["/", "/review", "/history", "/history?latest=1", "/log", "/subtitle?" + urllib.parse.urlencode({"path": str(hostile)})]
+    for page in pages:
+        status, body, _ = get(server + page)
+        assert status in (200, 404) and "<x" not in body and "<script>alert" not in body and "<b>provider" not in body, page
+
+
+def test_restore_is_offered_only_when_a_backup_exists(server, tmp_path):
+    video, starts, ends = video_with_reference(tmp_path)
+    subtitle = video.with_suffix(".fr.srt")
+    write_subtitle_file(subtitle, starts, ends, lambda value: value)
+    reports.report(str(subtitle), "scan", {"decision": "kept"})
+    page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))[1]
+    assert "Restore the original file" not in page and "Every minute is on time." in page
