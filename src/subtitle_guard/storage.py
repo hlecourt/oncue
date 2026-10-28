@@ -60,7 +60,7 @@ def needs_review(row):
 
 def file_signature(path):
     status = os.stat(path)
-    return f"{status.st_size}:{int(status.st_mtime)}"
+    return f"{status.st_size}:{status.st_mtime_ns}"
 
 
 def backup_path(subtitle):

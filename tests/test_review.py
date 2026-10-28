@@ -26,9 +26,9 @@ def test_side_by_side_shows_reference_text_and_matches(movie):
     reference_lines = [line for line in view["lines"] if line[1] == "reference"]
     subtitle_lines = [line for line in view["lines"] if line[1] == "subtitle"]
     assert reference_lines and reference_lines[0][2].startswith("line ")
-    shifted = [matched for start, _, _, matched in subtitle_lines if 123 <= start < 183]
+    shifted = [matched for start, _, _, matched, _ in subtitle_lines if 123 <= start < 183]
     assert shifted and sum(shifted) / len(shifted) <= 0.35
-    assert all(matched for start, _, _, matched in subtitle_lines if start < 120 or start >= 185)
+    assert all(matched for start, _, _, matched, _ in subtitle_lines if start < 120 or start >= 185)
     assert 2 in view["measure"]["weak_minutes"]
 
 
@@ -95,3 +95,30 @@ def test_a_wrong_episode_subtitle_moves_to_the_episode_it_matches(tmp_path):
     saved = [name for _, _, names in os.walk(storage.backup_root(str(existing))) for name in names]
     assert saved == ["before-move.srt"]
     assert review.move_to_episode(str(season / "Show.S01E02.mkv"), str(existing), "S01E09") is None
+
+
+
+@needs_ffmpeg
+def test_diagnosis_lists_the_out_of_sync_parts_in_plain_terms(movie):
+    video, subtitle, starts, ends = movie
+    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    diagnosis = review.diagnose(str(video), str(subtitle))
+    assert diagnosis["state"] == "out-of-sync" and diagnosis["fixable"]
+    assert len(diagnosis["parts"]) == 1
+    part = diagnosis["parts"][0]
+    moved = [start + 3 for start in starts if 120 <= start < 180]
+    assert abs(part["shift"] + 3.0) <= 0.2 and abs(part["first"] - moved[0]) < 0.01 and abs(part["last"] - moved[-1]) < 0.01
+    assert part["lines"] == len(moved)
+    assert review.diagnose(str(video), str(subtitle)) == diagnosis
+    write_subtitle_file(subtitle, starts, ends, lambda value: value)
+    os.utime(subtitle, (os.stat(subtitle).st_atime, os.stat(subtitle).st_mtime + 5))
+    assert review.diagnose(str(video), str(subtitle))["state"] == "in-sync"
+
+
+@needs_ffmpeg
+def test_a_subtitle_of_another_film_is_not_reported_as_shifted_parts(movie, tmp_path):
+    video, subtitle, starts, ends = movie
+    _, other_starts, other_ends = video_with_reference(tmp_path / "other", seed=99)
+    write_subtitle_file(subtitle, other_starts, other_ends, lambda value: value)
+    diagnosis = review.diagnose(str(video), str(subtitle))
+    assert diagnosis["state"] == "no-match" and diagnosis["parts"] == []

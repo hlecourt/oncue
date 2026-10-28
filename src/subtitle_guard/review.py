@@ -11,9 +11,10 @@ import subprocess
 import numpy
 
 from . import jobs
-from .alignment import TOLERANCE_SECONDS, nearest_gap, score, weak_minutes
+from .alignment import MIN_CUES, TOLERANCE_SECONDS, judge, nearest_gap, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
+from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours
 from .logs import log
 from .matroska import matroska_texts
@@ -23,6 +24,10 @@ from .storage import backup_path, backup_root, file_signature, heavy_disk_read, 
 from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, write_subtitle
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
+NOTICEABLE_SHIFT_SECONDS = 0.5
+SAME_PART_SECONDS = 0.6
+MIN_PART_LINES = 3
+DIAGNOSIS_CACHE_VERSION = 1
 
 
 def review_items():
@@ -40,16 +45,74 @@ def side_by_side(video, subtitle, first, last):
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
     if reference is None:
-        return {"reference": None, "lines": [(start, "subtitle", clean(text), None) for start, _, text in cues if first <= start < last], "minutes": []}
+        return {"reference": None, "lines": [(start, "subtitle", clean(text), None, index) for index, (start, _, text) in enumerate(cues) if first <= start < last],
+                "minutes": []}
     texts = reference_texts(video, reference) or [(start, start, "") for start in reference["starts"]]
     starts = numpy.array([start for start, _, _ in cues])
     matched = numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS if len(starts) else numpy.array([], dtype=bool)
-    lines = [(start, "reference", clean(text), None) for start, _, text in texts if first <= start < last]
-    lines += [(start, "subtitle", clean(text), bool(hit)) for (start, _, text), hit in zip(cues, matched) if first <= start < last]
+    lines = [(start, "reference", clean(text), None, None) for start, _, text in texts if first <= start < last]
+    lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched)) if first <= start < last]
     minutes = [(minute, float(matched[(starts >= minute * 60) & (starts < minute * 60 + 60)].mean()))
                for minute in range(int(starts.max() // 60) + 1) if ((starts >= minute * 60) & (starts < minute * 60 + 60)).sum() >= 3] if len(starts) else []
     return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minutes,
             "measure": measure(cues, reference)}
+
+
+def diagnose(video, subtitle):
+    key = hashlib.sha1(f"{DIAGNOSIS_CACHE_VERSION}|{subtitle}|{file_signature(subtitle)}|{video}|{file_signature(video)}".encode()).hexdigest()
+    cache_file = state_path("diagnoses", key + ".json")
+    if os.path.exists(cache_file):
+        return json.load(open(cache_file))
+    cues = parse_subtitle(subtitle)["cues"]
+    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues)) if len(cues) >= MIN_CUES else None
+    if len(cues) < MIN_CUES:
+        diagnosis = {"state": "too-short", "parts": [], "fixable": False, "shifts": [], "weak_minutes": []}
+    elif reference is None:
+        diagnosis = {"state": "no-reference", "parts": [], "fixable": False, "shifts": [], "weak_minutes": []}
+    else:
+        diagnosis = diagnosis_from(cues, *judge(cues, reference))
+    write_json(cache_file, diagnosis)
+    return diagnosis
+
+
+def diagnosis_from(cues, decision, original, weak, attempt):
+    if attempt is None:
+        return {"state": "in-sync", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+    if decision == DECISION["kept"]:
+        return {"state": "unclear" if weak else "in-sync", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+    if not attempt["fixed"]:
+        return {"state": "no-match", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+    shifts = [new_start - start for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
+    return {"state": "out-of-sync", "parts": out_of_sync_parts(cues, shifts), "fixable": True, "shifts": shifts, "weak_minutes": weak}
+
+
+def out_of_sync_parts(cues, shifts):
+    parts, current = [], []
+    for index in sorted(range(len(cues)), key=lambda position: cues[position][0]):
+        if abs(shifts[index]) < NOTICEABLE_SHIFT_SECONDS:
+            parts, current = close_part(parts, current, cues, shifts), []
+            continue
+        if current and abs(shifts[index] - numpy.median([shifts[member] for member in current])) > SAME_PART_SECONDS:
+            parts, current = close_part(parts, current, cues, shifts), []
+        current.append(index)
+    return close_part(parts, current, cues, shifts)
+
+
+def close_part(parts, members, cues, shifts):
+    if len(members) < MIN_PART_LINES:
+        return parts
+    return parts + [{"first": cues[members[0]][0], "last": cues[members[-1]][0], "lines": len(members),
+                     "shift": round(float(numpy.median([shifts[member] for member in members])), 1)}]
+
+
+def fix_everything(video, subtitle):
+    outcome = evaluate_and_fix(video, subtitle, True)
+    report(subtitle, "ui", outcome)
+    return outcome
+
+
+def came_from_bazarr(video, subtitle):
+    return any(attempt.get("media_id") and attempt.get("provider") for attempt in load_state(video, subtitle).get("attempts", []))
 
 
 def reference_texts(video, reference):

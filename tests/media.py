@@ -8,6 +8,7 @@ from synthetic import dialogue
 
 def video_with_reference(folder, name="Movie (2020)/Movie.2020.mkv", seed=8, minutes=6):
     starts, ends = dialogue(seed, minutes=minutes)
+    folder.mkdir(parents=True, exist_ok=True)
     reference = folder / "reference.srt"
     reference.write_text("\n".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends), 1)))
     video = folder / "library" / name

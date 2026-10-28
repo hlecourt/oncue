@@ -35,14 +35,14 @@ subtitle-guard serve [--workers N] [--apply]
 
 ## Web UI
 
-`subtitle-guard ui`, or `serve`, which also runs the workers, opens a web UI on port 8484 (`SUBTITLE_GUARD_UI_PORT`):
+`subtitle-guard ui`, or `serve`, which also runs the workers, opens a web UI on port 8484 (`SUBTITLE_GUARD_UI_PORT`). It is written for anyone, in plain words:
 
-- a dashboard of jobs and confidence, refreshed automatically;
-- the review queue: every subtitle whose last decision is not settled, has weak minutes or low confidence, until it is accepted or changes;
-- one page per subtitle with a minute bar coloured by how many lines match, and a side-by-side reading of the embedded reference and the subtitle for the chosen minute;
-- a manual shift: click a subtitle line, then the reference line it belongs to, set where the stretch ends, apply. The file is backed up first and measured again;
-- one-click actions: accept as is, check again, restore the original provider file, ask Bazarr for another subtitle;
-- every job with its error and a retry button, and JSON at `/api/status`, `/api/jobs` and `/api/review`.
+- **Overview**: how many subtitles need a look, were fixed automatically, are in sync or cannot be checked, and the latest activity.
+- **Needs a look**: the subtitles the guard was not sure about, with one sentence each ("Out of sync around 5:00", "Belongs to S01E03"). It stays in a sidebar on every page.
+- **One page per subtitle**: a sentence that says what is going on ("2 parts of this subtitle are out of sync"), then each wrong part in plain terms ("2:34 to 4:19: 21 lines appear 3.1 s too late") with **Fix this part** and **Show**. **Fix everything**, **It looks fine, keep it**, **Restore the original file**, **Try another subtitle** (Bazarr only) and **Move it to S01E03** (wrong episode) are one click. A timeline with one coloured bar per minute and a side-by-side reading of what is said in the video and in the subtitle show where it goes wrong. Fixing a part by hand and the technical details are folded away.
+- **Activity**: every task, its result or error, and a button to run it again. JSON at `/api/status`, `/api/jobs` and `/api/review`.
+
+Keyboard: `j` and `k` move between subtitles, Left and Right between minutes, `a` keeps a subtitle as it is.
 
 The UI listens on 127.0.0.1 unless `SUBTITLE_GUARD_UI_HOST` says otherwise (the Docker image uses 0.0.0.0). It has no user accounts: set `SUBTITLE_GUARD_UI_TOKEN` and open it once with `?token=...` to protect it on a shared network. It only acts on subtitles the guard has already checked.
 

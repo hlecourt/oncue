@@ -50,10 +50,10 @@ def test_dashboard_jobs_and_api(server):
     jobs.claim(1)
     jobs.fail(job_id, "OSError: gone")
     status, page, _ = get(server + "/")
-    assert status == 200 and "Dashboard" in page and "OSError: gone" in page
+    assert status == 200 and "Overview" in page and "OSError: gone" in page and "need a look" in page
     assert json.loads(get(server + "/api/status")[1])["status"] == {"failed": 1}
     code, location = post(server + "/", {"action": "retry-job", "job": str(job_id)})
-    assert code == 303 and "queued+again" in location.lower() and jobs.job(job_id)["status"] == "queued"
+    assert code == 303 and "run+again" in location and jobs.job(job_id)["status"] == "queued"
     assert get(server + "/health")[1] == "ok"
     assert get(server + "/nowhere")[0] == 404
 
@@ -75,9 +75,11 @@ def test_review_page_and_manual_shift(server, tmp_path):
     status, page, _ = get(server + "/review")
     assert status == 200 and "Movie.2020.fr.srt" in page
     status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))
-    assert status == 200 and "line " in page and "ligne " in page and 'class="subtitle pickable off"' in page
+    assert status == 200 and "line " in page and "ligne " in page and 'class="subtitle pickable late"' in page
+    assert "1 part of this subtitle is out of sync." in page and "What is wrong" in page and "s too late." in page and "Fix this part" in page
+    assert "Fix everything" in page and "Try another subtitle" not in page
     code, location = post(server + "/", {"action": "shift", "path": str(subtitle), "minute": "2", "first": "2:03", "last": "3:03", "offset": "-3"})
-    assert code == 303 and "Shifted" in urllib.parse.unquote_plus(location)
+    assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in urllib.parse.unquote_plus(location)
     shifted = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 120 <= start < 180]
     expected = [start for start in starts if 120 <= start < 180]
     assert max(abs(a - b) for a, b in zip(shifted, expected)) < 0.01
@@ -87,7 +89,7 @@ def test_token_protects_the_ui(server, monkeypatch):
     monkeypatch.setattr(web, "TOKEN", "secret")
     storage.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
-    assert status == 401 and "To review" not in page and "Private.Name" not in page
+    assert status == 401 and "Needs a look" not in page and "Private.Name" not in page
     assert get(server + "/health")[0] == 200
     opener = urllib.request.build_opener(NoRedirect)
     try:
@@ -97,3 +99,28 @@ def test_token_protects_the_ui(server, monkeypatch):
     assert cookie.startswith("subtitle_guard_token=secret") and "HttpOnly" in cookie
     assert get(server + "/", {"Cookie": "subtitle_guard_token=secret"})[0] == 200
     assert post(server + "/", {"action": "retry-job", "job": "1"})[0] == 401
+
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
+def test_fix_this_part_and_fix_everything(server, tmp_path):
+    video, starts, ends = video_with_reference(tmp_path)
+    subtitle = video.with_suffix(".fr.srt")
+    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    storage.report(str(subtitle), "scan", {"decision": "fixed", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
+    part = review_part(str(video), str(subtitle))
+    code, location = post(server + "/", {"action": "fix-part", "path": str(subtitle), "minute": "2", "first": f"{part['first']:.3f}",
+                                         "last": f"{part['last']:.3f}", "offset": f"{part['shift']:.2f}"})
+    assert code == 303 and "Done." in urllib.parse.unquote_plus(location)
+    moved = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 119 <= start < 181]
+    assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180])) < 0.25
+    write_subtitle_file(subtitle, starts, ends, lambda value: value * 23.976 / 25 + 6)
+    code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "minute": "0"})
+    assert "The whole subtitle is back in sync." in urllib.parse.unquote_plus(location)
+    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
+    assert "This subtitle is in sync with the video." in page
+
+
+def review_part(video, subtitle):
+    from subtitle_guard import review
+    return review.diagnose(video, subtitle)["parts"][0]
