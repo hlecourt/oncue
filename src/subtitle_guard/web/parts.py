@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Building blocks of the pages: layout, tables, badges, timeline, line-by-line view and formatting helpers."""
 
 import html
@@ -463,10 +464,6 @@ def tone(item):
 def where(path):
     folder = os.path.dirname(path)
     return " / ".join(part for part in (os.path.basename(os.path.dirname(folder)), os.path.basename(folder)) if part)
-
-
-def count(rows, *decisions):
-    return sum(row["decision"] in decisions for row in rows)
 
 
 def subtitle_link(path, minute=None, message=None):

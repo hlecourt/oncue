@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """State shared by one request: authentication, the CSRF token, one-shot notices and a per-request cache."""
 
 import os

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 :root { --background: #1a1c1e; --sidebar: #141517; --surface: #222528; --raised: #2a2e32; --text: #e4e5e7; --muted: #9aa0a7; --line: #33383d;
         --accent: #4aa3df; --good: #3fb871; --medium: #e2a93b; --bad: #f0706a; --reference: #262b31; --control: #5a6068; color-scheme: dark; }
 * { box-sizing: border-box; }

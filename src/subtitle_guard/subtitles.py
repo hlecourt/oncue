@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read and write SRT, WebVTT and ASS/SSA subtitles in any common encoding."""
 
 import codecs

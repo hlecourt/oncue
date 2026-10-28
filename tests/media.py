@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Build a small video with an embedded English text track from synthetic dialogue, for end-to-end tests."""
 
 import subprocess

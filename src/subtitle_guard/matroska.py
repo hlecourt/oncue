@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read subtitle timings and texts from the Matroska Cues index without reading the whole file."""
 
 from functools import wraps

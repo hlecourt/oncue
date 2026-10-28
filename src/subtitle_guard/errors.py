@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Errors subtitle-guard raises on purpose, so callers can tell them from bugs."""
 
 

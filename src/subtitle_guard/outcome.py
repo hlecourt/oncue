@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Decisions the guard can reach and their one-line description."""
 
 DECISION = {"kept": "kept", "fixed": "fixed", "rejected": "rejected", "unverified": "unverified", "wrong_episode": "wrong-episode",
