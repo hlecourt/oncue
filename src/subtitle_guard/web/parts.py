@@ -466,10 +466,6 @@ def where(path):
     return " / ".join(part for part in (os.path.basename(os.path.dirname(folder)), os.path.basename(folder)) if part)
 
 
-def count(rows, *decisions):
-    return sum(row["decision"] in decisions for row in rows)
-
-
 def subtitle_link(path, minute=None, message=None):
     query = {"path": path} if minute is None else {"path": path, "minute": minute}
     if message:
