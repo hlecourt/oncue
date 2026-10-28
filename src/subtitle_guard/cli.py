@@ -1,7 +1,7 @@
 """subtitle-guard: check subtitle timing against a track embedded in the video, and repair or replace it.
 
 Commands:
-  hook VIDEO SUBTITLE LANGUAGE PROVIDER SUBTITLE_ID MEDIA_ID [SERIES_ID]   Bazarr post-processing entry point (queues a job in queue mode)
+  hook [--queue] VIDEO SUBTITLE LANGUAGE PROVIDER SUBTITLE_ID MEDIA_ID [SERIES_ID]   Bazarr post-processing entry point
   check VIDEO SUBTITLE [--apply]                                            one file now, dry run unless --apply
   enqueue VIDEO SUBTITLE [--apply]                                          one file, through the queue
   scan-series SERIES_ID [--apply] [--queue]                                 every external subtitle of a Bazarr series
@@ -43,7 +43,7 @@ def main():
     apply, queue = flags["--apply"], flags["--queue"]
     lower_io_priority()
     if command == "hook" and len(arguments) >= 6:
-        return hook(arguments)
+        return hook(arguments, queue or queue_enabled())
     if command == "check" and len(arguments) == 2:
         outcome = evaluate_and_fix(arguments[0], arguments[1], apply)
         if apply:
@@ -101,8 +101,8 @@ def parse_options(raw):
     return arguments, flags, workers
 
 
-def hook(arguments):
-    if queue_enabled():
+def hook(arguments, queue):
+    if queue:
         print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], dict(zip(HOOK_FIELDS, arguments)))}")
         return 0
     print(describe(handle_download(*arguments)))

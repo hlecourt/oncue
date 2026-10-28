@@ -23,3 +23,11 @@ def test_retry_only_requeues_finished_jobs(monkeypatch, capsys):
     jobs.claim(1)
     jobs.fail(job_id, "boom")
     assert cli.main() == 0 and jobs.job(job_id)["status"] == "queued"
+
+
+def test_hook_queue_flag_works_without_the_environment(monkeypatch):
+    monkeypatch.delenv("SUBTITLE_GUARD_QUEUE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["subtitle-guard", "hook", "--queue", "/m.mkv", "/m.fr.srt", "fr", "opensubtitlescom", "9", "512"])
+    assert cli.main() == 0
+    assert jobs.recent()[0]["arguments"] == {"video": "/m.mkv", "subtitle": "/m.fr.srt", "language": "fr", "provider": "opensubtitlescom",
+                                             "subtitle_id": "9", "media_id": "512"}
