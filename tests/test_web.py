@@ -126,7 +126,7 @@ def test_the_log_page_shows_everything_and_filters_it(server):
     logs.log("bazarr.hook", "Bazarr downloaded a fr subtitle from opensubtitles", subtitle="/media/Show/Show.S01E01.fr.srt")
     logs.log("job.failed", "Task 9 failed: OSError: gone", logs.LEVEL["error"], job=9)
     status, page, _ = get(server + "/log")
-    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Task 9 failed" in page and "Show.S01E01.fr.srt</a>" in page
+    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Task 9 failed" in page and "Show.S01E01.fr.srt" in page
     page = get(server + "/log?level=errors")[1]
     assert "Task 9 failed" in page and "Bazarr downloaded" not in page
     page = get(server + "/log?area=bazarr")[1]
@@ -153,3 +153,23 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     assert location.startswith("/review?") and "back in sync" in urllib.parse.unquote_plus(location)
     storage.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
     assert "Move it to S01E03</button>" in get(server + "/review")[1]
+
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
+def test_the_history_shows_what_each_fix_moved(server, tmp_path):
+    from subtitle_guard.guard import evaluate_and_fix
+    video, starts, ends = video_with_reference(tmp_path)
+    shifted = video.with_suffix(".fr.srt")
+    write_subtitle_file(shifted, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    storage.report(str(shifted), "opensubtitles", evaluate_and_fix(str(video), str(shifted), True))
+    speed = video.with_suffix(".en.srt")
+    write_subtitle_file(speed, starts, ends, lambda value: value * 23.976 / 25)
+    storage.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), False))
+    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
+    assert "This subtitle runs at the wrong speed." in page and "Fix this part" not in page
+    storage.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
+    page = get(server + "/history")[1]
+    assert "Started by: Bazarr, from opensubtitles" in page and "Started by: Library scan" in page
+    assert "lines from 2:" in page and "s earlier</div>" in page and "Speed corrected: it was made for a faster version of the video (4.3%)" in page
+    assert "/ 100, high" in page

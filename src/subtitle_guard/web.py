@@ -3,14 +3,15 @@
 import html
 import json
 import os
+from datetime import date, timedelta
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
-from .logs import LEVEL, log, recent_events, settings
+from .logs import LEVEL, event_area, event_level, event_message, log, recent_events, settings
 from .outcome import DECISION_WORDS
-from .storage import latest_reports
+from .storage import latest_reports, report_history
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
@@ -22,11 +23,21 @@ FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox
            "%3Crect x='3' y='9' width='10' height='2' fill='white'/%3E%3Crect x='3' y='12' width='6' height='2' fill='white'/%3E%3C/svg%3E")
 LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "audio": "Audio sync", "job": "Tasks", "review": "By hand", "watch": "Folder watch",
              "worker": "Workers", "web": "Web UI"}
-LOG_LEVELS = {"": "Everything", "problems": "Warnings and errors", "errors": "Errors only"}
-LOG_TONES = {"info": "neutral", "warning": "warn", "error": "bad"}
+LOG_LEVELS = {"problems": ("Only problems", ("warning", "error")), "errors": ("Only errors", ("error",))}
 LOG_LIMIT = 300
+HISTORY_LIMIT = 300
+HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")),
+                  "not-checked": ("Not checked", ("unverified", "audio-synced")), "by-hand": ("By hand", ("manual", "reverted"))}
+DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
+                  "unverified": "neutral", "audio-synced": "warn", "reverted": "neutral"}
+BAND_TONES = {"high": "good", "medium": "warn", "low": "bad", "none": "neutral"}
+STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
+KIND_WORDS = {"hook": "Check a subtitle from Bazarr", "check": "Check", "blacklist": "Ask Bazarr for another subtitle", "retry-check": "Wait for the other subtitle"}
+CHANGES_SHOWN = 3
+UNCHANGED_DECISIONS = ("kept", "rejected", "wrong-episode", "unverified")
+SPEED_TOLERANCE = 0.001
+TASK_STATES = {"running": ("neutral", "Working on it"), "queued": ("neutral", "Waiting"), "failed": ("bad", "Error")}
 TICK_MINUTES = (1, 2, 5, 10, 15, 30, 60)
-JOB_WORDS = {"queued": "waiting", "running": "working on it", "done": "done", "failed": "error"}
 STYLE = """
 :root { --background: #1a1c1e; --sidebar: #141517; --surface: #222528; --raised: #2a2e32; --text: #e4e5e7; --muted: #8d939a; --line: #33383d;
         --accent: #4aa3df; --good: #3fb871; --medium: #e2a93b; --bad: #e5534b; --reference: #262b31; color-scheme: dark; }
@@ -71,14 +82,20 @@ table.parts td.actions { text-align: right; white-space: nowrap; width: 1%; }
 table.parts td.actions a { margin-right: 12px; }
 .reading-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .minute-links a { margin-left: 16px; font-size: 14px; }
-.activity { list-style: none; padding: 0; margin: 0; }
-.activity li { padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.activity li .when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 140px; }
-.activity li .error { color: var(--bad); }
-.log li { align-items: center; }
-.log li .source { color: var(--muted); font-size: 13px; min-width: 84px; }
-.log li .what { flex: 1 1 320px; }
-details.raw { background: none; border: 0; padding: 0; margin: 0; font-size: 12px; }
+table.history tr.day td { background: var(--background); color: var(--text); font-weight: 650; padding-top: 16px; border-bottom: 1px solid var(--line); }
+table.history { table-layout: fixed; }
+table.history td { overflow-wrap: break-word; }
+table.history td.actions { width: 1%; white-space: nowrap; text-align: right; }
+.badge { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 13px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.badge.good { color: var(--good); border-color: var(--good); } .badge.warn { color: var(--medium); border-color: var(--medium); }
+.badge.bad { color: var(--bad); border-color: var(--bad); }
+.tag { font-size: 12px; color: var(--muted); background: var(--raised); border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.tab { padding: 5px 12px; border: 1px solid var(--line); border-radius: 16px; color: var(--muted); font-size: 14px; }
+.tab:hover { text-decoration: none; color: var(--text); }
+.tab.active { background: var(--raised); color: var(--text); border-color: var(--accent); }
+.tab .count { margin-left: 6px; font-size: 12px; color: var(--muted); }
+details.raw { background: none; border: 0; padding: 0; margin: 4px 0 0; font-size: 12px; }
 details.raw pre { white-space: pre-wrap; word-break: break-all; color: var(--muted); margin: 6px 0 0; }
 form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; }
@@ -97,7 +114,8 @@ td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { backg
 .minutes { display: flex; height: 34px; border-radius: 6px; overflow: hidden; margin: 4px 0 0; background: var(--line); }
 .minutes a { flex: 1 1 0; min-width: 0; display: block; opacity: 0.85; }
 .minutes a:hover { opacity: 1; filter: brightness(1.2); }
-.good { background: var(--good); } .medium { background: var(--medium); } .bad { background: var(--bad); } .quiet { background: var(--line); }
+.minutes .good, .legend .good { background: var(--good); } .minutes .medium, .legend .medium { background: var(--medium); }
+.minutes .bad, .legend .bad { background: var(--bad); } .minutes .quiet, .legend .quiet { background: var(--line); }
 .minutes a.current { box-shadow: inset 0 0 0 2px var(--text); opacity: 1; min-width: 4px; }
 .ticks { position: relative; height: 20px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ticks span { position: absolute; top: 3px; padding-left: 3px; border-left: 1px solid var(--line); white-space: nowrap; }
@@ -175,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(401, layout("Token needed", '<form><input type="text" name="token" placeholder="token"> <button>Open</button></form>', navigation=False))
         if TOKEN and query.get("token") == TOKEN:
             return self.redirect(url.path, cookie=True)
-        pages = {"/": dashboard_page, "/review": review_page, "/jobs": jobs_page, "/log": log_page, "/subtitle": subtitle_page,
+        pages = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/subtitle": subtitle_page,
                  "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
         if url.path not in pages:
             return self.respond(404, layout("Not found", "<p>Nothing here.</p>"))
@@ -219,7 +237,7 @@ def perform(form):
     action, path = form.get("action", ""), form.get("path", "")
     if action == "retry-job":
         message = "It will run again shortly." if jobs.requeue(int(form.get("job", "0"))) else "Only a finished task can be run again."
-        return "/jobs?" + urllib.parse.urlencode({"message": message})
+        return "/history?" + urllib.parse.urlencode({"message": message})
     if not known_subtitle(path):
         return "/review?" + urllib.parse.urlencode({"message": "Unknown subtitle, nothing was changed."})
     video = review.video_for(path)
@@ -267,11 +285,12 @@ def dashboard_page(query):
     needing_a_look = {item["subtitle"] for item in review.review_items()}
     settled = [row for row in rows if row["subtitle"] not in needing_a_look]
     waiting = sum(jobs.counts()["status"].get(status, 0) for status in ("queued", "running"))
-    cards = [("need a look", len(needing_a_look), "/review"), ("fixed automatically", count(settled, "fixed"), "/jobs"),
-             ("in sync", count(settled, "kept", "manual"), "/jobs"), ("cannot be checked", count(settled, "unverified", "audio-synced"), "/jobs"),
-             ("waiting to be checked", waiting, "/jobs?status=queued"), ("errors", jobs.counts()["status"].get("failed", 0), "/jobs?status=failed")]
+    cards = [("need a look", len(needing_a_look), "/review"), ("fixed automatically", count(settled, "fixed"), "/history?result=fixed"),
+             ("in sync", count(settled, "kept", "manual"), "/history?result=in-sync"),
+             ("cannot be checked", count(settled, "unverified", "audio-synced"), "/history?result=not-checked"),
+             ("waiting to be checked", waiting, "/history"), ("errors", jobs.counts()["status"].get("failed", 0), "/history")]
     body = '<div class="cards">' + "".join(f'<a class="card" href="{link}"><b>{number}</b><span>{escape(label)}</span></a>' for label, number, link in cards) + "</div>"
-    body += "<h2>Latest activity</h2>" + activity(jobs.recent(limit=20))
+    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history()[:10]) + '<p><a href="/history">See the whole history</a></p>'
     return 200, layout("Overview", body, refresh=15, page="dashboard"), "text/html; charset=utf-8"
 
 
@@ -301,38 +320,177 @@ def quick_fix(item):
     return f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="fix-all"><button class="small primary">Fix it</button></form>'
 
 
-def jobs_page(query):
-    filters = " ".join(f'<a href="/jobs?status={name}">{JOB_WORDS[name]}</a>' for name in jobs.STATUS)
-    body = message_box(query) + f'<p class="subtle">Show <a href="/jobs">everything</a> {filters}</p>' + activity(jobs.recent(query.get("status"), limit=200), retry=True)
-    return 200, layout("Activity", body, refresh=15, page="jobs"), "text/html; charset=utf-8"
+def history_page(query):
+    rows = report_history()
+    group = query.get("result") if query.get("result") in HISTORY_GROUPS else None
+    options = [(None, "All", len(rows))] + [(key, label, sum(row["decision"] in decisions for row in rows)) for key, (label, decisions) in HISTORY_GROUPS.items()]
+    shown = [row for row in rows if not group or row["decision"] in HISTORY_GROUPS[group][1]][:HISTORY_LIMIT]
+    body = (message_box(query) + tasks_now() + "<h2>Every check</h2><p class=\"subtle words\">Every time the guard checked a subtitle, newest first: "
+            "what started it, what it decided, how sure it was, and how many lines matched the video before and after.</p>"
+            + tab_links("/history", "result", group, options) + history_table(shown))
+    return 200, layout("History", body, refresh=15, page="history"), "text/html; charset=utf-8"
+
+
+def tasks_now():
+    items = [item for status in ("running", "queued", "failed") for item in jobs.recent(status, limit=50)]
+    if not items:
+        return ""
+    rows = "".join(task_row(item) for item in items)
+    return f'<h2>Tasks right now</h2><table class="history">{columns(14, 30, 22, 22, 12)}<tr><th>Since</th><th>Subtitle</th><th>Task</th><th>Status</th><th></th></tr>{rows}</table>'
+
+
+def task_row(item):
+    tone_name, label = TASK_STATES[item["status"]]
+    error = f'<div class="muted">{escape(item["error"])}</div>' if item["error"] else ""
+    button = (f'<form class="inline" method="post"><input type="hidden" name="action" value="retry-job"><input type="hidden" name="job" value="{item["id"]}">'
+              '<button class="small">Run again</button></form>') if item["status"] == "failed" else ""
+    return (f'<tr><td class="time">{escape(readable(item["started"] or item["created"]))}</td><td>{subtitle_cell(item["arguments"].get("subtitle", ""))}</td>'
+            f'<td>{escape(KIND_WORDS.get(item["kind"], item["kind"]))}</td><td><span class="badge {tone_name}">{label}</span>{error}</td><td class="actions">{button}</td></tr>')
+
+
+def history_table(rows):
+    if not rows:
+        return '<p class="muted">Nothing yet.</p>'
+    body, day = "", None
+    for row in rows:
+        if day_label(row["time"]) != day:
+            day = day_label(row["time"])
+            body += f'<tr class="day"><td colspan="5">{day}</td></tr>'
+        body += history_row(row)
+    return f'<table class="history">{columns(9, 23, 22, 28, 18)}<tr><th>Time</th><th>Subtitle</th><th>Result</th><th>What changed</th><th>Confidence</th></tr>{body}</table>'
+
+
+def columns(*widths):
+    return "<colgroup>" + "".join(f'<col style="width: {width}%">' for width in widths) + "</colgroup>"
+
+
+def history_row(row):
+    belongs_elsewhere = row["decision"] == "wrong-episode" and row["note"]
+    words = f"Belongs to {row['note']}" if belongs_elsewhere else DECISION_WORDS.get(row["decision"], row["decision"])
+    result = f'<span class="badge {DECISION_TONES.get(row["decision"], "neutral")}">{escape(words)}</span>'
+    note = f'<div class="muted">{escape(row["note"])}</div>' if row["note"] and not belongs_elsewhere else ""
+    return (f'<tr><td class="time">{row["time"][11:19]}</td><td>{subtitle_cell(row["subtitle"])}</td>'
+            f'<td>{result}{note}<div class="muted">Started by: {escape(started_by(row["provider"]))}</div></td><td>{changes_text(row["changes"], row["decision"])}</td>'
+            f'<td>{confidence_badge(row)}{lines_matching(row)}</td></tr>')
+
+
+def changes_text(changes, decision):
+    if not changes and decision in UNCHANGED_DECISIONS:
+        return '<span class="muted">Nothing moved</span>'
+    if not changes:
+        return '<span class="muted">Not recorded for older checks</span>'
+    sentences = [f"Speed corrected: it was {speed_label(changes['scale'])}"] if speed_changed(changes["scale"]) else []
+    for part in changes["parts"][:CHANGES_SHOWN]:
+        lines = f"All {changes['lines']} lines" if part["lines"] >= 0.9 * changes["lines"] else (
+            f"{part['lines']} lines from {short_clock(part['first'])} to {short_clock(part['last'])}")
+        sentences.append(f"{lines} moved {abs(part['shift']):.1f} s {'earlier' if part['shift'] < 0 else 'later'}")
+    if len(changes["parts"]) > CHANGES_SHOWN:
+        sentences.append(f"and {len(changes['parts']) - CHANGES_SHOWN} more parts")
+    return "".join(f"<div>{escape(sentence)}</div>" for sentence in sentences) or '<span class="muted">Small timing touch-ups</span>'
+
+
+def speed_changed(scale):
+    return abs(scale - 1) > SPEED_TOLERANCE
+
+
+def speed_label(scale):
+    return f"made for a {'faster' if scale > 1 else 'slower'} version of the video ({abs(scale - 1):.1%})"
+
+
+def started_by(provider):
+    if not provider:
+        return "-"
+    return STARTED_BY.get(provider, f"Bazarr, from {provider}")
+
+
+def confidence_badge(row):
+    if not row["confidence"]:
+        return '<span class="muted">-</span>'
+    return f'<span class="badge {BAND_TONES.get(row["band"], "neutral")}">{escape(row["confidence"])} / 100, {escape(row["band"])}</span>'
+
+
+def lines_matching(row):
+    before, after = percent(row["matched_before"]), percent(row["matched"])
+    if not after:
+        return ""
+    if not before or before == after:
+        return f'<div class="muted">{after} of lines match the video</div>'
+    return f'<div class="muted">lines matching the video: {before} before, {after} after</div>'
+
+
+def percent(value):
+    return f"{float(value):.0%}" if value else ""
+
+
+def subtitle_cell(path):
+    if not path:
+        return ""
+    name = escape(os.path.basename(path))
+    link = f'<a href="{subtitle_link(path)}">{name}</a>' if os.path.isfile(path) else name
+    return f'{link}<div class="muted">{escape(where(path))}</div>'
 
 
 def log_page(query):
-    events = filtered_events(query)[:LOG_LIMIT]
-    levels = "".join(f'<option value="{key}"{" selected" if query.get("level", "") == key else ""}>{label}</option>' for key, label in LOG_LEVELS.items())
-    areas = '<option value="">Every part</option>' + "".join(f'<option value="{key}"{" selected" if query.get("area") == key else ""}>{label}</option>'
-                                                             for key, label in LOG_AREAS.items())
-    filters = (f'<form class="filters"><select name="level">{levels}</select><select name="area">{areas}</select>'
-               f'<input type="text" name="q" placeholder="search" value="{escape(query.get("q", ""))}"><button>Show</button></form>')
-    rows = "".join(log_row(event) for event in events)
+    events = recent_events()
+    level = query.get("level") if query.get("level") in LOG_LEVELS else None
+    area = query.get("area") if query.get("area") in LOG_AREAS else None
+    keep = {key: value for key, value in (("level", level), ("area", area), ("q", query.get("q"))) if value}
+    levels = [(None, "Everything", len(events))] + [(key, label, sum(event_level(event) in LOG_LEVELS[key][1] for event in events)) for key, (label, _) in LOG_LEVELS.items()]
+    areas = [(None, "Every part", None)] + [(key, label, sum(event_area(event) == key for event in events)) for key, label in LOG_AREAS.items()]
+    hidden = "".join(f'<input type="hidden" name="{key}" value="{escape(value)}">' for key, value in keep.items() if key != "q")
+    search = f'<form class="filters">{hidden}<input type="text" name="q" placeholder="Search a file, a word..." value="{escape(query.get("q", ""))}"><button>Search</button></form>'
     body = ('<p class="subtle words">Everything subtitle-guard did, newest first: what Bazarr sent, every request to Bazarr, every check, '
-            f'every file it changed and every action taken here.</p>{filters}' + (f'<ul class="activity log">{rows}</ul>' if rows else '<p class="muted">Nothing logged.</p>'))
+            'every file it changed and every action taken here. Problems and errors are marked in colour.</p>'
+            + tab_links("/log", "level", level, levels, keep) + tab_links("/log", "area", area, areas, keep) + search + log_table(filtered_events(query)[:LOG_LIMIT]))
     return 200, layout("Log", body, refresh=None if query else 15, page="log"), "text/html; charset=utf-8"
 
 
 def filtered_events(query):
-    levels = {"problems": ("warning", "error"), "errors": ("error",)}.get(query.get("level", ""))
+    levels = LOG_LEVELS[query["level"]][1] if query.get("level") in LOG_LEVELS else None
     area, text = query.get("area"), query.get("q", "").lower()
-    return [event for event in recent_events() if (not levels or event.get("level") in levels) and (not area or event["event"].split(".")[0] == area)
+    return [event for event in recent_events() if (not levels or event_level(event) in levels) and (not area or event_area(event) == area)
             and (not text or text in json.dumps(event, ensure_ascii=False).lower())]
 
 
+def log_table(events):
+    if not events:
+        return '<p class="muted">Nothing logged.</p>'
+    body, day = "", None
+    for event in events:
+        if day_label(event["time"]) != day:
+            day = day_label(event["time"])
+            body += f'<tr class="day"><td colspan="3">{day}</td></tr>'
+        body += log_row(event)
+    return f'<table class="history">{columns(10, 12, 78)}<tr><th>Time</th><th>Part</th><th>What happened</th></tr>{body}</table>'
+
+
 def log_row(event):
-    subtitle = event.get("subtitle")
-    link = f' <a href="{subtitle_link(subtitle)}">{escape(os.path.basename(subtitle))}</a>' if subtitle else ""
-    return (f'<li><span class="when">{escape(readable(event["time"]))}</span><span class="dot {LOG_TONES.get(event.get("level"), "neutral")}"></span>'
-            f'<span class="source">{escape(event.get("source", ""))}</span><span class="what">{escape(event.get("message") or event["event"])}{link}</span>'
-            f'<details class="raw"><summary>details</summary><pre>{escape(json.dumps(event, ensure_ascii=False, indent=1))}</pre></details></li>')
+    badge = {"warning": '<span class="badge warn">Problem</span> ', "error": '<span class="badge bad">Error</span> '}.get(event_level(event), "")
+    subtitle = f'<div>{subtitle_cell(event["subtitle"])}</div>' if event.get("subtitle") else ""
+    raw = f'<details class="raw"><summary>Technical details</summary><pre>{escape(json.dumps(event, ensure_ascii=False, indent=1))}</pre></details>'
+    return (f'<tr><td class="time">{event["time"][11:19]}</td><td><span class="tag">{LOG_AREAS.get(event_area(event), "Other")}</span></td>'
+            f'<td>{badge}{escape(event_message(event))}{subtitle}{raw}</td></tr>')
+
+
+def tab_links(base, key, current, options, keep=None):
+    links = ""
+    for value, label, number in options:
+        query = {name: kept for name, kept in (keep or {}).items() if name != key}
+        if value:
+            query[key] = value
+        href = base + ("?" + urllib.parse.urlencode(query) if query else "")
+        badge = f'<span class="count">{number}</span>' if number is not None else ""
+        links += f'<a class="tab{" active" if value == current else ""}" href="{href}">{escape(label)}{badge}</a>'
+    return f'<nav class="tabs">{links}</nav>'
+
+
+def day_label(moment):
+    day = date.fromisoformat(moment[:10])
+    if day == date.today():
+        return "Today"
+    if day == date.today() - timedelta(days=1):
+        return "Yesterday"
+    return day.strftime("%A %d %B %Y")
 
 
 def subtitle_page(query):
@@ -371,6 +529,9 @@ def status_box(diagnosis, latest):
     tone_name, title, detail = messages[diagnosis["state"]]
     if diagnosis["state"] == "out-of-sync" and not parts:
         title, detail = "Some lines are slightly off.", "Fix everything to put them back in place."
+    if diagnosis["state"] == "out-of-sync" and speed_changed(diagnosis["scale"]):
+        drift = "earlier and earlier" if diagnosis["scale"] > 1 else "later and later"
+        title, detail = "This subtitle runs at the wrong speed.", f"It was {speed_label(diagnosis['scale'])}, so its lines drift {drift}. Fix everything puts them back."
     return f'<div class="status {tone_name}"><b>{escape(title)}</b><span>{escape(detail)}</span></div>'
 
 
@@ -395,7 +556,7 @@ def actions(video, path, diagnosis, latest, hidden):
 
 
 def parts_list(path, diagnosis, hidden):
-    if not diagnosis["parts"]:
+    if not diagnosis["parts"] or speed_changed(diagnosis["scale"]):
         return ""
     rows = ""
     for part in diagnosis["parts"]:
@@ -478,7 +639,8 @@ def technical(path, video, view, latest):
              ("worst 2 minutes", measured.get("worst_window", "-")), ("confidence now", f"{measured.get('confidence', '-')} {measured.get('confidence_band', '')}"),
              ("video", video)]
     rows = "".join(f'<tr><td class="time">{escape(label)}</td><td>{escape(value)}</td></tr>' for label, value in facts)
-    return f'<details><summary>Technical details</summary><table>{rows}</table><h2>History</h2>{activity(jobs.for_subtitle(path))}</details>'
+    history = history_table([row for row in report_history() if row["subtitle"] == path][:20])
+    return f'<details><summary>Technical details</summary><table>{rows}</table><h2>Checks of this subtitle</h2>{history}</details>'
 
 
 def queue_links(path):
@@ -489,25 +651,6 @@ def queue_links(path):
     if path in queue and queue.index(path) + 1 < len(queue):
         links += f'<a id="next-item" href="{subtitle_link(queue[queue.index(path) + 1])}" hidden></a>'
     return links
-
-
-def activity(items, retry=False):
-    if not items:
-        return '<p class="muted">Nothing yet.</p>'
-    entries = ""
-    for item in items:
-        subtitle = item["arguments"].get("subtitle", "")
-        name = f'<a href="{subtitle_link(subtitle)}">{escape(os.path.basename(subtitle))}</a>' if subtitle else escape(item["kind"])
-        if item["status"] == "failed":
-            what = f'<span class="error">error: {escape(item["error"] or "")}</span>'
-        elif item["status"] == "done":
-            what = escape(DECISION_WORDS.get(item["decision"] or "", (item["decision"] or "done").replace("-", " ")))
-        else:
-            what = f'<span class="muted">{JOB_WORDS[item["status"]]}</span>'
-        button = (f'<form class="inline" method="post"><input type="hidden" name="action" value="retry-job"><input type="hidden" name="job" value="{item["id"]}">'
-                  f'<button class="small">Run again</button></form>') if retry and item["status"] in ("done", "failed") else ""
-        entries += f'<li><span class="when">{escape(readable(item["finished"] or item["created"]))}</span><span>{name}</span><span>{what}</span>{button}</li>'
-    return f'<ul class="activity">{entries}</ul>'
 
 
 def api_status(query):
@@ -529,7 +672,7 @@ def api_review(query):
 def layout(title, body, refresh=None, page="", current=None, navigation=True):
     meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
     links = "".join(f'<a class="{"active" if page == key else ""}" href="{link}">{label}</a>'
-                    for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("jobs", "/jobs", "Activity"),
+                    for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
                                                     ("log", "/log", "Log")))
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{meta}'
             f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body><div class="shell">'

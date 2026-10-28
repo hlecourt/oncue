@@ -34,7 +34,7 @@ from . import jobs
 from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
 from .library import scan_folder, watch
-from .logs import LEVEL, log, recent_events, settings
+from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
 from .storage import print_needs_human, report
 from .web import serve_ui
@@ -137,10 +137,10 @@ def hook(arguments, queue):
 
 
 def print_log(count, problems_only):
-    events = [event for event in recent_events() if not problems_only or event.get("level") in (LEVEL["warning"], LEVEL["error"])][:count]
+    events = [event for event in recent_events() if not problems_only or event_level(event) in (LEVEL["warning"], LEVEL["error"])][:count]
     for event in reversed(events):
         subtitle = f"  [{os.path.basename(event['subtitle'])}]" if event.get("subtitle") else ""
-        print(f"{event['time']}  {event.get('level', LEVEL['info']):7s} {event.get('source', ''):10s} {event.get('message') or event['event']}{subtitle}")
+        print(f"{event['time']}  {event_level(event):7s} {event.get('source', ''):10s} {event_message(event)}{subtitle}")
     return 0
 
 

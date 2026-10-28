@@ -4,7 +4,7 @@ import os
 import shutil
 import time
 
-from .alignment import MIN_CUES, assess, judge
+from .alignment import MIN_CUES, assess, describe_changes, judge
 from .audio import sync_to_audio
 from .confidence import confidence
 from .logs import LEVEL, log
@@ -44,6 +44,8 @@ def examine(video, subtitle, apply, neighbours):
     if outcome["decision"] == DECISION["kept"]:
         return outcome
     attempt = outcome.pop("attempt")
+    if attempt["fixed"]:
+        outcome["changes"] = describe_changes(document["cues"], attempt)
     if not attempt["fixed"]:
         better = find_better_episode(document["cues"], hearing_impaired, neighbours)
         if better:

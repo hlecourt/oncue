@@ -11,7 +11,7 @@ import subprocess
 import numpy
 
 from . import jobs
-from .alignment import MIN_CUES, TOLERANCE_SECONDS, judge, nearest_gap, score, weak_minutes
+from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, score, weak_minutes
 from .bazarr import request_another
 from .confidence import confidence
 from .guard import evaluate_and_fix
@@ -24,10 +24,8 @@ from .storage import backup_path, backup_root, file_signature, heavy_disk_read, 
 from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, parse_timed_text, write_subtitle
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
-NOTICEABLE_SHIFT_SECONDS = 0.5
-SAME_PART_SECONDS = 0.6
-MIN_PART_LINES = 3
-DIAGNOSIS_CACHE_VERSION = 1
+MIN_MINUTE_LINES = 3
+DIAGNOSIS_CACHE_VERSION = 2
 
 
 def review_items():
@@ -63,7 +61,7 @@ def minute_states(starts, on_time, shifted):
     states = []
     for minute in range(int(starts.max() // 60) + 1 if len(starts) else 0):
         inside = (starts >= minute * 60) & (starts < minute * 60 + 60)
-        if inside.sum() < MIN_PART_LINES:
+        if inside.sum() < MIN_MINUTE_LINES:
             states.append((minute, None, "quiet"))
             continue
         share = float(on_time[inside].mean())
@@ -109,9 +107,9 @@ def diagnose(video, subtitle):
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues)) if len(cues) >= MIN_CUES else None
     if len(cues) < MIN_CUES:
-        diagnosis = {"state": "too-short", "parts": [], "fixable": False, "shifts": [], "weak_minutes": []}
+        diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif reference is None:
-        diagnosis = {"state": "no-reference", "parts": [], "fixable": False, "shifts": [], "weak_minutes": []}
+        diagnosis = {"state": "no-reference", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     else:
         diagnosis = diagnosis_from(cues, *judge(cues, reference))
     write_json(cache_file, diagnosis)
@@ -129,33 +127,16 @@ def diagnosis_file(video, subtitle):
 
 
 def diagnosis_from(cues, decision, original, weak, attempt):
+    unchanged = {"parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": weak}
     if attempt is None:
-        return {"state": "in-sync", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+        return {**unchanged, "state": "in-sync"}
     if decision == DECISION["kept"]:
-        return {"state": "unclear" if weak else "in-sync", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+        return {**unchanged, "state": "unclear" if weak else "in-sync"}
     if not attempt["fixed"]:
-        return {"state": "no-match", "parts": [], "fixable": False, "shifts": [], "weak_minutes": weak}
+        return {**unchanged, "state": "no-match"}
     shifts = [new_start - start for (new_start, _, _), (start, _, _) in zip(attempt["timings"], cues)]
-    return {"state": "out-of-sync", "parts": out_of_sync_parts(cues, shifts), "fixable": True, "shifts": shifts, "weak_minutes": weak}
-
-
-def out_of_sync_parts(cues, shifts):
-    parts, current = [], []
-    for index in sorted(range(len(cues)), key=lambda position: cues[position][0]):
-        if abs(shifts[index]) < NOTICEABLE_SHIFT_SECONDS:
-            parts, current = close_part(parts, current, cues, shifts), []
-            continue
-        if current and abs(shifts[index] - numpy.median([shifts[member] for member in current])) > SAME_PART_SECONDS:
-            parts, current = close_part(parts, current, cues, shifts), []
-        current.append(index)
-    return close_part(parts, current, cues, shifts)
-
-
-def close_part(parts, members, cues, shifts):
-    if len(members) < MIN_PART_LINES:
-        return parts
-    return parts + [{"first": cues[members[0]][0], "last": cues[members[-1]][0], "lines": len(members),
-                     "shift": round(float(numpy.median([shifts[member] for member in members])), 1)}]
+    changes = describe_changes(cues, attempt)
+    return {"state": "out-of-sync", "parts": changes["parts"], "scale": changes["scale"], "fixable": True, "shifts": shifts, "weak_minutes": weak}
 
 
 def fix_everything(video, subtitle):
@@ -211,7 +192,9 @@ def shift_range(video, subtitle, first, last, offset):
     measured = measure(cues, reference) if reference else None
     outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": measured or {}, "after": measured or {},
                "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
-               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s"}
+               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s",
+               "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
+                                                                         "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]}}
     report(subtitle, "manual", outcome)
     log("review.shifted", f"Moved the lines from {first:.1f} s to {last:.1f} s by {offset:+.2f} s by hand", subtitle=subtitle, first=first, last=last,
         offset=offset, confidence=outcome["confidence"])
