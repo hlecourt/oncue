@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """POST actions from the UI: fix, shift, revert, keep, move, retry, each on a subtitle the guard knows."""
 
 import os

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """State, report, backups and atomic writes under the guard's state directory."""
 
 import fcntl

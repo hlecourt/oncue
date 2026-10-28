@@ -1,0 +1,35 @@
+name: Bug report
+description: The guard did something wrong with a subtitle, or crashed
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `subtitle-guard` or the image tag
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How you run it
+      options: [Docker with Bazarr, Bazarr hook without Docker, Standalone folder watch, Command line]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: The lines of the Log page (or `subtitle-guard log 200`) for this subtitle. Remove anything private.
+      render: json
+  - type: textarea
+    id: media
+    attributes:
+      label: Video and subtitle
+      description: Output of `ffprobe -show_streams` for the video, and the subtitle if you can share it.

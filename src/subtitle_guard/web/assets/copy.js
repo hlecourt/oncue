@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 document.querySelectorAll('button.copy').forEach(button => button.addEventListener('click', () => {
   const text = button.nextElementSibling.textContent;
   const done = () => { button.textContent = 'Copied'; setTimeout(() => { button.textContent = 'Copy'; }, 1500); };

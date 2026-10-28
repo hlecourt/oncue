@@ -1,6 +1,7 @@
 # subtitle-guard
 
 [![tests](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml)
+[![codeql](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml)
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the subtitle
@@ -8,6 +9,8 @@ track embedded in the video, fixes the timing on its own when it is sure, and li
 the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
 
 Status: alpha.
+
+![A subtitle with two parts out of sync](docs/screenshots/out-of-sync.png)
 
 ## Why
 
@@ -27,20 +30,20 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 ## Quick start
 
 ```
-git clone https://github.com/hlecourt/subtitle-guard.git
-cd subtitle-guard/examples
+curl -O https://raw.githubusercontent.com/hlecourt/subtitle-guard/main/examples/docker-compose.yml
 docker compose up -d
+docker compose logs subtitle-guard | grep token
 ```
 
 Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, and `SUBTITLE_GUARD_ROOTS` the
-folders whose subtitles the web UI may change. Then open `http://<host>:8484` with the token you set in
-`SUBTITLE_GUARD_UI_TOKEN`.
+folders whose subtitles the web UI may change. Then open `http://<host>:8484` with the token printed in the logs.
 
 The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one after
 that. By default it only reports what it would do: add `--apply` to the `serve` command to let it write the fixes it is sure
 about.
 
-It needs Python 3.11+, `ffmpeg` and `ffprobe` on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
+Without Docker: `pip install "subtitle-guard[web,audio]"` from a release wheel, with Python 3.11+, `ffmpeg` and `ffprobe`
+on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
 ## With Bazarr (optional)
 
@@ -50,7 +53,7 @@ fix is blacklisted so that Bazarr fetches another one. Use
 Post-processing, turn post-processing on with this command:
 
 ```
-python -m subtitle_guard hook "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
+/usr/bin/env PYTHONPATH=/opt/subtitle-guard /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
 ```
 
 And turn off two Bazarr options, or the guard never sees the downloads as they arrive:
@@ -66,13 +69,20 @@ To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.h
 `serve` also opens a web UI on port 8484 that lists what the guard was not sure about, with Keep, Check again and Ask Bazarr
 for another, a history of every check and the technical log.
 
+![Overview](docs/screenshots/overview.png)
+
+![A fixed subtitle](docs/screenshots/fixed.png)
+
+![History of every check](docs/screenshots/history.png)
+
 ## Safety
 
 - `check`, the scans and the folder watch only report until `--apply` is given; the Bazarr hook writes the fixes it is sure
   about.
 - The web UI only changes subtitles under `SUBTITLE_GUARD_ROOTS`, and never through a symbolic link.
 - Every write is atomic, after a backup, and refused if the file changed since it was checked.
-- Beyond the machine itself, the web UI asks for a token.
+- Beyond the machine itself, the web UI asks for a token. Details: [docs/security.md](docs/security.md); to report a
+  vulnerability, [SECURITY.md](SECURITY.md).
 
 ## Settings
 
@@ -83,7 +93,7 @@ Settings are environment variables. The ones you are most likely to need:
 | `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
 | `SUBTITLE_GUARD_ROOTS` | unset: the folders whose subtitles the web UI may change |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
-| `SUBTITLE_GUARD_UI_TOKEN` | unset: required beyond the machine itself |
+| `SUBTITLE_GUARD_UI_TOKEN` | generated on first start |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
 All of them, the CLI and the log format: [docs/configuration.md](docs/configuration.md).
@@ -113,6 +123,7 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
   folder of `SUBTITLE_GUARD_LIBRARY`. With Bazarr, check that post-processing is on and that the command's paths exist inside
   the Bazarr container.
 - **"Cannot be checked: could not read the video"**: the reason is in the `guard.checked` event on the Log page.
+- **Files owned by root or not writable**: set `user:` in the compose file to the owner of the media.
 - **`/ready` answers 503**: a worker stopped; the Log page shows `supervisor.role-restarted` or `job.failed`.
 
 ## Development
@@ -121,6 +132,9 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest -q
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the tests and releases, and [CHANGELOG.md](CHANGELOG.md) for what changed. This
+project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## Licence
 

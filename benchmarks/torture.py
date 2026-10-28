@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Misalign known-good subtitles in controlled ways, run the guard on each, and measure every line against its true time.
 
 usage: torture.py WORK_FOLDER CORPUS_JSON [LABEL_FILTER]

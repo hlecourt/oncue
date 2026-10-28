@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """The pages of the UI and its JSON API, each a function of the query returning status, body and content type."""
 
 import json

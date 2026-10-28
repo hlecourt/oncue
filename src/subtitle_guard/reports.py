@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """History of every check, one row per check in the job database; the old report.tsv is imported once."""
 
 import json
@@ -10,6 +11,8 @@ from .outcome import DECISION, SETTLED_DECISIONS
 from .storage import now, state_path
 
 LEGACY_REPORT = "report.tsv"
+FIRST_FORMAT_FIELDS = 8
+LATER_FORMAT_FIELDS = (11, 12, 13, 14)
 COLUMNS = ("time", "subtitle", "provider", "decision", "reference", "matched_before", "matched", "weak_minutes", "note", "confidence", "band", "changes",
            "applied")
 
@@ -78,19 +81,19 @@ def import_legacy_report(connection):
     connection.executemany(f"insert into reports ({', '.join(COLUMNS)}) values ({', '.join('?' * len(COLUMNS))})", rows)
     os.replace(path, path + ".imported")
     log("reports.imported", f"{len(rows)} rows imported from {LEGACY_REPORT}, {skipped} malformed rows skipped", LEVEL["warning"] if skipped else LEVEL["info"],
-        imported=len(rows), skipped=skipped, source=path)
+        imported=len(rows), skipped=skipped, file=path)
 
 
 def legacy_row(fields):
-    if len(fields) < 11:
+    if len(fields) == FIRST_FORMAT_FIELDS:
+        return (fields[0], fields[7], fields[6], fields[1], fields[2], fields[3], fields[4], "", "", "", "", "", 1)
+    if len(fields) not in LATER_FORMAT_FIELDS or (len(fields) >= 13 and "/" not in fields[10]):
         return None
-    score, band = fields[10].split("/", 1) if len(fields) >= 13 and "/" in fields[10] else ("", "")
-    if len(fields) >= 13 and "/" not in fields[10]:
-        return None
-    extended = len(fields) >= 12
-    changes = fields[11] if len(fields) >= 14 else ""
+    score, band = fields[10].split("/", 1) if len(fields) >= 13 else ("", "")
+    changes = fields[11] if len(fields) == 14 else ""
     if changes and not valid_json(changes):
         return None
+    extended = len(fields) >= 12
     return (fields[0], fields[-1], fields[-2], fields[1], fields[2], fields[3], fields[4], fields[8] if extended else "", fields[9] if extended else "",
             score, band, changes, 1)
 

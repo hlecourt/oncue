@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Worker heartbeats: whether the workers of a running supervisor are alive, for /ready and for queueing retries from the UI."""
 
 import json

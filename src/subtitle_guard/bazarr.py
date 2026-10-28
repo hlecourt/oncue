@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Bazarr integration: post-processing hook, retries through the blacklist, and library scans."""
 
 import hashlib
