@@ -10,6 +10,8 @@ Commands:
   scan-folder PATH [--apply] [--queue]                                      every external subtitle under a media folder, without Bazarr
   watch PATH... [--apply]                                                   queue every new or changed subtitle under media folders
   worker [--workers N]                                                      run queued jobs with N parallel workers
+  ui                                                                        web UI only
+  serve [--workers N] [--apply]                                             workers, web UI, and watch of SUBTITLE_GUARD_LIBRARY folders
   status                                                                    jobs by status and confidence band
   jobs [STATUS]                                                             latest jobs, optionally one status
   job ID                                                                    one job in full
@@ -18,7 +20,8 @@ Commands:
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
-SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
+SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, SUBTITLE_GUARD_LIBRARY,
+SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_TOKEN, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
 """
 
 import json
@@ -32,7 +35,8 @@ from .guard import evaluate_and_fix
 from .library import scan_folder, watch
 from .outcome import describe
 from .storage import print_needs_human, report
-from .worker import WORKERS, run_workers
+from .web import serve_ui
+from .worker import WORKERS, run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
 
@@ -70,6 +74,14 @@ def main():
         return watch(arguments, apply)
     if command == "worker":
         return run_workers(workers)
+    if command == "ui":
+        return serve_ui()
+    if command == "serve":
+        roles = {**worker_roles(workers), "web": (serve_ui, ())}
+        roots = [root for root in os.environ.get("SUBTITLE_GUARD_LIBRARY", "").split(os.pathsep) if root]
+        if roots:
+            roles["watch"] = (watch, (roots, apply))
+        return supervise(roles)
     if command == "status":
         print(json.dumps(jobs.counts(), indent=1))
         return 0
