@@ -21,7 +21,8 @@ from .logs import log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
-from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, latest_reports, load_state, needs_review, report, revert_source, save_state, state_path, write_json
+from .reports import latest_reports, needs_review, report
+from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, load_state, revert_source, save_state, state_path, write_json
 from .files import restore_version, save_version, subtitle_lock
 from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, write_subtitle
 

@@ -37,7 +37,7 @@ from .health import report_startup
 from .library import scan_folder, watch
 from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
-from .storage import print_needs_human, report
+from .reports import print_needs_human, report
 from .web import HOST as UI_HOST, PORT as UI_PORT, serve_ui
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
@@ -56,8 +56,7 @@ def main():
         return hook(arguments, queue or queue_enabled())
     if command == "check" and len(arguments) == 2:
         outcome = evaluate_and_fix(arguments[0], arguments[1], apply)
-        if apply:
-            report(arguments[1], "check", outcome)
+        report(arguments[1], "check", outcome, applied=apply)
         print(describe(outcome))
         return 0
     if command == "enqueue" and len(arguments) == 2:

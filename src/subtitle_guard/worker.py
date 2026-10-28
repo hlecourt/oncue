@@ -12,7 +12,7 @@ from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handl
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log, settings
 from .outcome import describe
-from .storage import report
+from .reports import report
 
 WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
 POLL_SECONDS = 2.0
@@ -97,8 +97,7 @@ def run_job(job):
         return handle_download(**arguments)
     if job["kind"] == jobs.KIND["check"]:
         outcome = evaluate_and_fix(arguments["video"], arguments["subtitle"], arguments["apply"], [tuple(pair) for pair in arguments.get("neighbours", [])])
-        if arguments["apply"]:
-            report(arguments["subtitle"], "check", outcome)
+        report(arguments["subtitle"], "check", outcome, applied=arguments["apply"])
         return outcome
     if job["kind"] == jobs.KIND["blacklist"]:
         retry = blacklist_for_retry(arguments["video"], arguments["subtitle"])

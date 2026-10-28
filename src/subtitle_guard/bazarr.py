@@ -15,7 +15,8 @@ from .guard import evaluate_and_fix
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
 from .files import restore_version, save_version, subtitle_lock
-from .storage import backup_path, load_state, now, report, save_state, state_path
+from .reports import report
+from .storage import backup_path, load_state, now, save_state, state_path
 
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
@@ -98,8 +99,7 @@ def scan_one(label, video, subtitle, apply, neighbours, queue=False):
     except (OSError, ValueError) as error:
         print(f"{label} {subtitle['code2']}: error {error}", flush=True)
         return
-    if apply:
-        report(subtitle["path"], "scan", outcome)
+    report(subtitle["path"], "scan", outcome, applied=apply)
     print(f"{label} {subtitle['code2']}: {describe(outcome)}", flush=True)
 
 

@@ -8,7 +8,8 @@ from . import jobs
 from .guard import evaluate_and_fix
 from .logs import log, settings
 from .outcome import describe
-from .storage import file_signature, report
+from .reports import report
+from .storage import file_signature
 
 VIDEO_EXTENSIONS = (".mkv", ".mp4", ".m4v", ".avi", ".mov", ".ts", ".webm")
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa", ".vtt")
@@ -30,8 +31,7 @@ def scan_folder(root, apply, queue=False):
         except (OSError, ValueError) as error:
             print(f"{label}: error {error}", flush=True)
             continue
-        if apply:
-            report(subtitle, "scan", outcome)
+        report(subtitle, "scan", outcome, applied=apply)
         print(f"{label}: {describe(outcome)}", flush=True)
     return 0
 

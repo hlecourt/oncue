@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from subtitle_guard import jobs, storage, web
+from subtitle_guard import jobs, reports, storage, web
 from subtitle_guard.subtitles import parse_subtitle
 from media import video_with_reference, write_subtitle_file
 
@@ -71,7 +71,7 @@ def test_review_page_and_manual_shift(server, tmp_path):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
+    reports.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
     status, page, _ = get(server + "/review")
     assert status == 200 and "Movie.2020.fr.srt" in page
     status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))
@@ -87,7 +87,7 @@ def test_review_page_and_manual_shift(server, tmp_path):
 
 def test_token_protects_the_ui(server, monkeypatch):
     monkeypatch.setattr(web, "TOKEN", "secret")
-    storage.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
+    reports.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
     assert status == 401 and "Needs a look" not in page and "Private.Name" not in page
     assert get(server + "/health")[0] == 200
@@ -107,7 +107,7 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(subtitle), "scan", {"decision": "fixed", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
+    reports.report(str(subtitle), "scan", {"decision": "fixed", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
     part = review_part(str(video), str(subtitle))
     code, location = post(server + "/", {"action": "fix-part", "path": str(subtitle), "minute": "2", "first": f"{part['first']:.3f}",
                                          "last": f"{part['last']:.3f}", "offset": f"{part['shift']:.2f}"})
@@ -147,13 +147,13 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(subtitle), "manual", {"decision": "manual", "weak_minutes": [2], "confidence": 55, "confidence_band": "low"})
+    reports.report(str(subtitle), "manual", {"decision": "manual", "weak_minutes": [2], "confidence": 55, "confidence_band": "low"})
     get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
     status, page, _ = get(server + "/review")
     assert "Fix it</button>" in page
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
     assert location.startswith("/review?") and "back in sync" in urllib.parse.unquote_plus(location)
-    storage.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
+    reports.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
     assert "Move it to S01E03</button>" in get(server + "/review")[1]
 
 
@@ -164,13 +164,13 @@ def test_the_history_shows_what_each_fix_moved(server, tmp_path):
     video, starts, ends = video_with_reference(tmp_path)
     shifted = video.with_suffix(".fr.srt")
     write_subtitle_file(shifted, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(shifted), "opensubtitles", evaluate_and_fix(str(video), str(shifted), True))
+    reports.report(str(shifted), "opensubtitles", evaluate_and_fix(str(video), str(shifted), True))
     speed = video.with_suffix(".en.srt")
     write_subtitle_file(speed, starts, ends, lambda value: value * 23.976 / 25)
-    storage.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), False))
+    reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), False))
     status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
     assert "This subtitle runs at the wrong speed." in page and "Fix this part" not in page
-    storage.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
+    reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
     page = get(server + "/history")[1]
     assert "Started by: Bazarr, from opensubtitles" in page and "Started by: Library scan" in page
     assert "lines from 2:" in page and "s earlier</div>" in page and "Speed corrected: it was made for a faster version of the video (4.3%)" in page
@@ -184,7 +184,7 @@ def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_pa
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    storage.report(str(subtitle), "opensubtitles", evaluate_and_fix(str(video), str(subtitle), True))
+    reports.report(str(subtitle), "opensubtitles", evaluate_and_fix(str(video), str(subtitle), True))
     page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))[1]
     assert "This subtitle is in sync with the video." in page and "What was changed is shown below." in page
     assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page

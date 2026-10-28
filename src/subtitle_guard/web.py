@@ -11,7 +11,7 @@ from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
 from .logs import LEVEL, event_level, event_message, log, log_file, recent_events, settings
 from .outcome import DECISION, DECISION_WORDS
-from .storage import latest_reports, report_history
+from .reports import has_report, latest_reports, report_history
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
@@ -337,7 +337,7 @@ def perform(form):
 def known_subtitle(path):
     if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path):
         return False
-    return any(row["subtitle"] == path for row in latest_reports()) or bool(jobs.for_subtitle(path, limit=1))
+    return has_report(path) or bool(jobs.for_subtitle(path, limit=1))
 
 
 def dashboard_page(query):
@@ -350,7 +350,7 @@ def dashboard_page(query):
              ("cannot be checked", count(settled, "unverified", "audio-synced"), "/history?result=not-checked"),
              ("waiting to be checked", waiting, "/history"), ("errors", jobs.counts()["status"].get("failed", 0), "/history")]
     body = '<div class="cards">' + "".join(f'<a class="card" href="{link}"><b>{number}</b><span>{escape(label)}</span></a>' for label, number, link in cards) + "</div>"
-    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history()[:10]) + '<p><a href="/history">See the whole history</a></p>'
+    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history(limit=10)) + '<p><a href="/history">See the whole history</a></p>'
     return 200, layout("Overview", body, refresh=15, page="dashboard"), "text/html; charset=utf-8"
 
 
@@ -646,7 +646,7 @@ def strip(path, minutes, minute):
 def fix_section(path, fix):
     if not fix:
         return ""
-    recorded = next((row for row in report_history() if row["subtitle"] == path and row["changes"]), None)
+    recorded = next((row for row in report_history(path, limit=50) if row["changes"]), None)
     changes = recorded["changes"] if recorded else {"scale": 1.0, "lines": len(fix["shifts"]), "parts": fix["parts"]}
     by = f", started by {started_by(recorded['provider'])}, confidence {recorded['confidence']} / 100" if recorded and recorded["confidence"] else ""
     return (f'<h2>What was changed</h2><p class="subtle words">Compared with the file as it was before, on {escape(fix_time(fix["time"]))}{escape(by)}. '
@@ -715,7 +715,7 @@ def technical(path, video, view, latest):
              ("worst 2 minutes", measured.get("worst_window", "-")), ("confidence now", f"{measured.get('confidence', '-')} {measured.get('confidence_band', '')}"),
              ("video", video)]
     rows = "".join(f'<tr><td class="time">{escape(label)}</td><td>{escape(value)}</td></tr>' for label, value in facts)
-    history = history_table([row for row in report_history() if row["subtitle"] == path][:20])
+    history = history_table(report_history(path, limit=20))
     return f'<details><summary>Technical details</summary><table>{rows}</table><h2>Checks of this subtitle</h2>{history}</details>'
 
 
