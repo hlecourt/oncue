@@ -2,16 +2,18 @@
 # The guard must see the media at the same paths as Bazarr, and share Bazarr's /config when the hook is used.
 services:
   subtitle-guard:
-    build: ..
-    image: subtitle-guard:latest
+    image: ghcr.io/hlecourt/subtitle-guard:0.1.0
     command: serve --workers 2          # add --apply to let the folder watch write fixes, not only report them
     restart: unless-stopped
+    user: "1000:1000"                   # the user that owns your media and Bazarr's files
     ports:
       - "8484:8484"                     # web UI
     environment:
       SUBTITLE_GUARD_STATE: /config/subtitle-guard
       SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
-      SUBTITLE_GUARD_UI_TOKEN: ${SUBTITLE_GUARD_UI_TOKEN}
+      SUBTITLE_GUARD_UI_TOKEN: ${SUBTITLE_GUARD_UI_TOKEN:-}   # empty: a token is generated and printed in the logs
+      SUBTITLE_GUARD_ROOTS: /data/media                       # the UI only acts on subtitles under these folders
+      SUBTITLE_GUARD_QUEUE: "1"                               # Bazarr hooks go through the queue and the workers
       BAZARR_URL: http://bazarr:6767    # Bazarr mode
       BAZARR_API_KEY: ${BAZARR_API_KEY}
       # SUBTITLE_GUARD_LIBRARY: /data/media/movies:/data/media/series   # standalone mode: watch these folders
@@ -20,7 +22,10 @@ services:
       - /mnt/media:/data                # same folder Bazarr mounts as /data
 
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: lscr.io/linuxserver/bazarr:1.6.2
+    environment:
+      PUID: "1000"
+      PGID: "1000"
     volumes:
       - ./bazarr:/config
       - /mnt/media:/data
