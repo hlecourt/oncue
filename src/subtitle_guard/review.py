@@ -14,6 +14,7 @@ from .errors import MatroskaError, ToolError, UnsafePathError
 from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
 from .alignment import MIN_CUES, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
+from .worker import worker_health
 from .confidence import confidence
 from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours
@@ -284,7 +285,7 @@ def ask_for_another(video, subtitle):
     state["pending_retry"] = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
                               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
     save_state(video, subtitle, state)
-    request_another(video, subtitle)
+    request_another(video, subtitle, queued=bool(worker_health()))
     log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True
 

@@ -12,6 +12,7 @@ import traceback
 
 from . import jobs
 from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
+from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log, settings
 from .outcome import describe
@@ -184,7 +185,7 @@ def work_once(number):
 def run_job(job):
     arguments = job["arguments"]
     if job["kind"] == jobs.KIND["hook"]:
-        return handle_download(**arguments)
+        return handle_download(**arguments, queued=True)
     if job["kind"] == jobs.KIND["check"]:
         outcome = evaluate_and_fix(arguments["video"], arguments["subtitle"], arguments["apply"], [tuple(pair) for pair in arguments.get("neighbours", [])])
         report(arguments["subtitle"], "check", outcome, applied=arguments["apply"])
@@ -197,4 +198,4 @@ def run_job(job):
         return {"decision": "blacklisted", "summary": f"blacklisted {retry['pending']['provider']} {retry['pending']['subtitle_id']}, waiting for another"}
     if job["kind"] == jobs.KIND["retry_check"]:
         return finish_retry(arguments["video"], arguments["subtitle"], arguments["pending"], arguments["attempts_before"])
-    raise ValueError(f"unknown job kind {job['kind']}")
+    raise UnknownJobKindError(f"unknown job kind {job['kind']}")

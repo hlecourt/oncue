@@ -48,6 +48,11 @@ def test_every_decision_is_logged_in_plain_words(tmp_path):
     assert event["pid"] and event["source"] == "cli"
 
 
+class Opener:
+    def __init__(self, open_function):
+        self.open = open_function
+
+
 class Answer:
     status = 200
 
@@ -57,7 +62,7 @@ class Answer:
 
 def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
     monkeypatch.setenv("BAZARR_API_KEY", "secret-key")
-    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: Answer())
+    monkeypatch.setattr(bazarr, "OPENER", Opener(lambda request, timeout: Answer()))
     assert bazarr.bazarr_get("/api/movies?start=0&length=-1") == {"data": []}
     event = events()[-1]
     assert event["event"] == "bazarr.api-call" and event["status"] == 200 and event["path"] == "/api/movies?start=0&length=-1"
@@ -65,7 +70,7 @@ def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
 
     def refuse(request, timeout):
         raise urllib.error.URLError("connection refused")
-    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(bazarr, "OPENER", Opener(refuse))
     with pytest.raises(OSError):
         bazarr.bazarr_post("/api/episodes/blacklist", {"provider": "opensubtitles"})
     event = events()[-1]

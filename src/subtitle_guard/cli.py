@@ -31,7 +31,7 @@ import subprocess
 import sys
 
 from . import jobs
-from .bazarr import bazarr_get, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
+from .bazarr import bazarr_get, file_hash, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
@@ -134,7 +134,7 @@ def hook(arguments, queue):
     log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
         f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
-        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], dict(zip(HOOK_FIELDS, arguments)))}")
+        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': file_hash(fields['subtitle']) if os.path.isfile(fields['subtitle']) else None})}")
         return 0
     print(describe(handle_download(*arguments)))
     return 0
