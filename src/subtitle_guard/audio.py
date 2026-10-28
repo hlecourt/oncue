@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Fallback for videos without an embedded track: sync to the audio with ffsubsync, unverified."""
 
 import json

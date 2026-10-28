@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Synthetic dialogue: a reference track and a translation segmented differently, for tests without media."""
 
 import numpy

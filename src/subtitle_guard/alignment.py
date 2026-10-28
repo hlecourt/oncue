@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Score a subtitle against a reference, realign it piecewise and decide whether the result can be trusted."""
 
 import itertools

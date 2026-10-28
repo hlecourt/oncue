@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Turn a decision and its measurements into a 0-100 confidence score and a band."""
 
 from .alignment import (

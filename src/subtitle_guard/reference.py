@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Find the embedded subtitle track whose timing is the reference for a video, and cache it."""
 
 import hashlib

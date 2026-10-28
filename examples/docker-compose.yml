@@ -2,16 +2,17 @@
 # For Bazarr, use docker-compose.bazarr.yml instead.
 services:
   subtitle-guard:
-    build: ..
-    image: subtitle-guard:latest
+    image: ghcr.io/hlecourt/subtitle-guard:0.1.0
     command: serve --workers 2          # add --apply to let the folder watch write fixes, not only report them
     restart: unless-stopped
+    user: "1000:1000"                   # the user that owns your media
     ports:
       - "8484:8484"                     # web UI
     environment:
       SUBTITLE_GUARD_STATE: /config
       SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
-      SUBTITLE_GUARD_UI_TOKEN: ${SUBTITLE_GUARD_UI_TOKEN}
+      SUBTITLE_GUARD_UI_TOKEN: ${SUBTITLE_GUARD_UI_TOKEN:-}   # empty: a token is generated and printed in the logs
+      SUBTITLE_GUARD_ROOTS: /data/media                       # the UI only acts on subtitles under these folders
       SUBTITLE_GUARD_LIBRARY: /data/media/movies:/data/media/series   # the folders to watch
     volumes:
       - ./subtitle-guard:/config

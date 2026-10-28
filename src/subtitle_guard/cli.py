@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """subtitle-guard: check subtitle timing against a track embedded in the video, and repair or replace it.
 
 Commands:

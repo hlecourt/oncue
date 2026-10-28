@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Download the Blender open movie Tears of Steel and its subtitles, build test videos with an embedded English track, and write a corpus file.
 
 Every translation is of the same film, so the corpus has no "another episode" case: a translation of the same film is not a wrong match.

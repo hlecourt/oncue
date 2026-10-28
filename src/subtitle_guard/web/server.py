@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """HTTP server: authentication, sessions, CSRF and origin checks, limits and security headers, then the page routes."""
 
 import hmac

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Startup report: the settings a long-running command uses and the health of the tools, folders and Bazarr it depends on."""
 
 import os
