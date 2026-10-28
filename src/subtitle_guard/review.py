@@ -2,9 +2,9 @@
 """Review tools behind the web UI: side-by-side reading, manual shifts, revert, accept, recheck and asking for another subtitle."""
 
 import hashlib
-import json
 import os
 import re
+from contextlib import suppress
 
 import numpy
 
@@ -19,23 +19,24 @@ from .alignment import (
     judge,
     nearest_gap,
     out_of_sync_parts,
+    oversized_reason,
     score,
     weak_minutes,
     wrong_end_share,
 )
-from .bazarr import request_another
+from .bazarr import RETRY_STAGE, file_hash, request_another
 from .confidence import confidence
 from .errors import MatroskaError, ToolError, UnsafePathError
-from .files import restore_version, save_version, subtitle_lock
+from .files import restore_version, save_version, subtitle_lock, subtitle_locks
 from .guard import evaluate_and_fix
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
 from .logs import LEVEL, log
 from .matroska import matroska_texts
 from .outcome import DECISION
-from .reference import load_reference
+from .reference import load_reference, probe_json
 from .reports import latest_reports, needs_review, report
-from .state import load_state, save_state
+from .state import load_state, update_state
 from .storage import (
     backup_folders,
     backup_path,
@@ -52,7 +53,7 @@ from .subtitles import (
     parse_timed_text,
     write_subtitle,
 )
-from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
+from .tools import EXTRACT_SECONDS, run_tool
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3
@@ -157,11 +158,14 @@ def readable_reference(video, subtitle, cue_count):
 def diagnose(video, subtitle):
     cache_file = diagnosis_file(video, subtitle)
     if os.path.exists(cache_file):
-        return read_json(cache_file)
+        with suppress(ValueError):
+            return read_json(cache_file)
     cues = parse_subtitle(subtitle)["cues"]
-    reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES else None
+    reference = readable_reference(video, subtitle, len(cues)) if len(cues) >= MIN_CUES and not oversized_reason(cues) else None
     if len(cues) < MIN_CUES:
         diagnosis = {"state": "too-short", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
+    elif oversized_reason(cues):
+        diagnosis = {"state": "too-large", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif wrong_end_share(cues) > MAX_WRONG_END_SHARE:
         diagnosis = {"state": "wrong-ends", "parts": [], "scale": 1.0, "fixable": False, "shifts": [], "weak_minutes": []}
     elif reference is None:
@@ -213,18 +217,26 @@ def reference_texts(video, reference):
     cache_file = state_path("texts", hashlib.sha1(f"{video}|{status.st_size}|{int(status.st_mtime)}|{reference['index']}".encode()).hexdigest() + ".json")
     if os.path.exists(cache_file):
         return [tuple(line) for line in read_json(cache_file)]
-    probe = json.loads(run_tool(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json",
-                                 video], PROBE_SECONDS).stdout or "{}").get("streams", [])
+    try:
+        probe = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "stream=index,codec_type,codec_name", "-of", "json", video],
+                           video).get("streams", [])
+    except ToolError:
+        return None
     codec = next((stream.get("codec_name") for stream in probe if stream["index"] == reference["index"]), "")
     try:
         texts = matroska_texts(video, sum(stream.get("codec_type") != "attachment" for stream in probe), reference["index"], ass=codec in ("ass", "ssa"))
     except (MatroskaError, OSError):
         texts = None
     if texts is None:
-        with heavy_disk_read():
-            extracted = run_tool(["ffmpeg", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-i", video, "-map", f"0:{reference['index']}",
-                                  "-f", "srt", "-"], EXTRACT_SECONDS).stdout
-        texts = parse_timed_text(extracted.replace("\r\n", "\n"))
+        try:
+            with heavy_disk_read():
+                extracted = run_tool(["ffmpeg", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file", "-i", video, "-map", f"0:{reference['index']}",
+                                      "-f", "srt", "-"], EXTRACT_SECONDS)
+        except ToolError:
+            return None
+        if extracted.returncode != 0:
+            return None
+        texts = parse_timed_text(extracted.stdout.replace("\r\n", "\n"))
     write_json(cache_file, texts)
     return texts
 
@@ -297,7 +309,9 @@ def move_to_episode(video, subtitle, label):
     target = os.path.splitext(target_video)[0] + suffix
     if os.path.islink(subtitle) or os.path.islink(target):
         raise UnsafePathError(f"refusing to move a symlinked subtitle: {subtitle}")
-    with subtitle_lock(subtitle), subtitle_lock(target):
+    if os.path.realpath(target) == os.path.realpath(subtitle):
+        return None
+    with subtitle_locks(subtitle, target):
         if os.path.exists(target):
             save_version(target, backup_path(target), "before-move")
         save_version(subtitle, backup_path(subtitle), "moved-away")
@@ -311,9 +325,10 @@ def ask_for_another(video, subtitle):
     last = next((attempt for attempt in reversed(state.get("attempts", [])) if attempt.get("media_id") and attempt.get("provider")), None)
     if last is None:
         return False
-    state["pending_retry"] = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
-                              "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
-    save_state(video, subtitle, state)
+    pending = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
+               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language"),
+               "content_hash": file_hash(subtitle), "stage": RETRY_STAGE["requested"]}
+    update_state(video, subtitle, lambda current: current.update(pending_retry=pending))
     request_another(video, subtitle, queued=bool(worker_health()))
     log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True

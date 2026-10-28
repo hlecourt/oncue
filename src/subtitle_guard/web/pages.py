@@ -9,7 +9,7 @@ from ..logs import (
     log_file,
     recent_events,
 )
-from ..reports import latest_reports, report_history
+from ..reports import decision_counts, latest_reports, report_history
 from .actions import known_subtitle
 from .context import DIAGNOSES, cached
 from .parts import (
@@ -23,7 +23,6 @@ from .parts import (
     fix_section,
     history_table,
     human_time,
-    keys_help,
     layout,
     live_status,
     message_box,
@@ -52,16 +51,23 @@ HISTORY_LIMIT = 300
 
 
 def dashboard_page(query):
-    rows = cached("latest", latest_reports)
+    needing_a_look = cached("review", review.review_items)
+    settled = settled_latest()
     status = jobs.counts()["status"]
-    cards = [("need a look", len(cached("review", review.review_items)), "/review")]
-    cards += [(label.lower(), sum(row["decision"] in HISTORY_GROUPS[group][1] for row in rows), f"/history?latest=1&result={group}")
+    cards = [("need a look", len(needing_a_look), "/review")]
+    cards += [(label.lower(), sum(row["decision"] in HISTORY_GROUPS[group][1] for row in settled), f"/history?latest=1&result={group}")
               for group, label in (("fixed", "Fixed automatically"), ("in-sync", "In sync"), ("not-checked", "Cannot be checked"))]
     cards += [("waiting to be checked", status.get("queued", 0) + status.get("running", 0), "/history#tasks"), ("errors", status.get("failed", 0), "/history#tasks")]
     body = '<div class="cards">' + "".join(f'<a class="card" href="{link}"><b>{number}</b><span>{escape(label)}</span></a>' for label, number, link in cards) + "</div>"
-    body += ('<p class="subtle words">The cards count each subtitle once, by its latest check.</p>' + tasks_now() + '<h2>Latest checks</h2>'
+    body += ('<p class="subtle words">The cards count each subtitle once, by its latest check. A subtitle that needs a look is only counted there.</p>'
+             + tasks_now() + '<h2>Latest checks</h2>'
              + history_table(report_history(limit=10)) + '<p><a href="/history">See the whole history</a></p>')
     return 200, layout("Overview", body, refresh=15, page="dashboard"), "text/html; charset=utf-8"
+
+
+def settled_latest():
+    needing_a_look = {item["subtitle"] for item in cached("review", review.review_items)}
+    return [row for row in cached("latest", latest_reports) if row["subtitle"] not in needing_a_look]
 
 
 def review_page(query):
@@ -75,7 +81,7 @@ def review_page(query):
     body = (message_box(query) + "<p class=\"subtle words\">The guard was not sure about these subtitles. Use the button when there is one, "
             "or open the subtitle to see what is wrong.</p>"
             + f'<table class="review"><tr><th><span class="visually-hidden">How sure</span></th><th>Subtitle</th><th>What happened</th>'
-              f'<th><span class="visually-hidden">Fix</span></th><th>Checked</th></tr>{rows}</table>' + keys_help())
+              f'<th><span class="visually-hidden">Fix</span></th><th>Checked</th></tr>{rows}</table>')
     return 200, layout("Needs a look", body, page="review"), "text/html; charset=utf-8"
 
 
@@ -93,12 +99,18 @@ def quick_fix(item):
 
 def history_page(query):
     latest = query.get("latest") == "1"
-    rows = sorted(cached("latest", latest_reports), key=lambda row: row["id"], reverse=True) if latest else report_history()
     group = query.get("result") if query.get("result") in HISTORY_GROUPS else None
+    decisions = HISTORY_GROUPS[group][1] if group else None
+    if latest:
+        rows = sorted(settled_latest() if group else cached("latest", latest_reports), key=lambda row: row["id"], reverse=True)
+        counts = {decision: sum(row["decision"] == decision for row in rows) for decision in {row["decision"] for row in rows}}
+        shown = [row for row in rows if not decisions or row["decision"] in decisions][:HISTORY_LIMIT]
+    else:
+        counts = decision_counts()
+        shown = report_history(limit=HISTORY_LIMIT, decisions=decisions)
     keep = {key: value for key, value in (("latest", "1" if latest else None), ("result", group)) if value}
     views = [(None, "Every check", None), ("1", "Latest check of each subtitle", None)]
-    options = [(None, "All", len(rows))] + [(key, label, sum(row["decision"] in decisions for row in rows)) for key, (label, decisions) in HISTORY_GROUPS.items()]
-    shown = [row for row in rows if not group or row["decision"] in HISTORY_GROUPS[group][1]][:HISTORY_LIMIT]
+    options = [(None, "All", sum(counts.values()))] + [(key, label, sum(counts.get(decision, 0) for decision in decisions)) for key, (label, decisions) in HISTORY_GROUPS.items()]
     body = (message_box(query) + tasks_now() + "<h2>Checks</h2><p class=\"subtle words\">Every time the guard checked a subtitle, newest first: "
             "what started it, what it decided, how sure it was, and what it changed.</p>"
             + tab_links("/history", "latest", "1" if latest else None, views, keep) + tab_links("/history", "result", group, options, keep) + history_table(shown))
@@ -142,7 +154,7 @@ def subtitle_page(query):
     body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest, fix)
             + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden) + fix_section(path, fix)
             + timeline(path, view, minute, fix) + reading(path, view, diagnosis, minute, fix) + by_hand(hidden, minute)
-            + technical(path, video, view, latest) + queue_links(path) + keys_help() + f"<script>{PICKER}</script>")
+            + technical(path, video, view, latest) + queue_links(path) + f"<script>{PICKER}</script>")
     return 200, layout(os.path.basename(path), body, current=path), "text/html; charset=utf-8"
 
 

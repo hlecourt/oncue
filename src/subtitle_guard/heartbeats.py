@@ -7,6 +7,7 @@ import time
 
 from .storage import state_path
 
+SUPERVISED_VARIABLE = "SUBTITLE_GUARD_SUPERVISED"
 HEARTBEAT_SECONDS = 10
 HEARTBEAT_STALE_SECONDS = 60
 

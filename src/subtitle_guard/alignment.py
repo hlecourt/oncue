@@ -37,11 +37,21 @@ NOTICEABLE_SHIFT_SECONDS = 0.5
 SAME_PART_SECONDS = 0.6
 MIN_PART_LINES = 3
 MAX_CUE_SECONDS = 30
+MAX_CHECKED_CUES = 8000
+MAX_TIMESTAMP_SECONDS = 48 * 3600
 MAX_WRONG_END_SHARE = 0.05
 
 
 def cue_starts(cues):
     return numpy.array([start for start, _, _ in cues])
+
+
+def oversized_reason(cues):
+    if len(cues) > MAX_CHECKED_CUES:
+        return f"too many lines to check safely ({len(cues)}, at most {MAX_CHECKED_CUES})"
+    if cues and max(max(start, end) for start, end, _ in cues) > MAX_TIMESTAMP_SECONDS:
+        return f"times beyond {MAX_TIMESTAMP_SECONDS // 3600} hours, the file is not a real subtitle"
+    return None
 
 
 def wrong_end_share(cues):

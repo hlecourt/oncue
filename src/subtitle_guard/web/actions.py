@@ -1,24 +1,28 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """POST actions from the UI: fix, shift, revert, keep, move, retry, each on a subtitle the guard knows."""
 
+import math
 import os
 import urllib.parse
 
 from .. import jobs, review
 from ..errors import SubtitleGuardError
+from ..files import inside_roots
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
 from .context import notice
 from .parts import seconds, short_clock, subtitle_link
 
-ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
+MAX_MANUAL_SHIFT_SECONDS = 3600
 
 
 def perform(form):
     action, path = form.get("action", ""), form.get("path", "")
     if action == "retry-job":
-        job = form.get("job", "")
-        message = "It will run again shortly." if job.isdigit() and jobs.requeue(int(job)) else "Only a finished task can be run again."
+        number = form.get("job", "")
+        item = jobs.job(int(number)) if number.isascii() and number.isdigit() else None
+        allowed = item is not None and all(inside_roots(item["arguments"][key]) for key in ("video", "subtitle") if item["arguments"].get(key))
+        message = "It will run again shortly." if allowed and jobs.requeue(item["id"]) else "Only a finished task can be run again."
         return "/history?" + urllib.parse.urlencode({"notice": notice(message)})
     if not known_subtitle(path):
         return "/review?" + urllib.parse.urlencode({"notice": notice("Unknown subtitle, nothing was changed.")})
@@ -30,6 +34,8 @@ def perform(form):
             first, last, shift = seconds(form.get("first", "")), seconds(form.get("last", "")), float(form.get("offset", "").replace(",", "."))
         except ValueError:
             return subtitle_link(path, form.get("minute", "0"), "Nothing was changed: the times must look like 2:03 or 1:02:03.50, and the move like -1.5.")
+        if not all(math.isfinite(value) for value in (first, last, shift)) or abs(shift) > MAX_MANUAL_SHIFT_SECONDS:
+            return subtitle_link(path, form.get("minute", "0"), f"Nothing was changed: a move must be a number of seconds up to {MAX_MANUAL_SHIFT_SECONDS}.")
         review.shift_range(video, path, first - 0.05, last + 0.05, shift)
         message = f"Done. The lines from {short_clock(first)} to {short_clock(last)} now appear {abs(shift):.1f} s {'earlier' if shift < 0 else 'later'}."
     elif action == "fix-all":
@@ -65,6 +71,6 @@ def perform(form):
 def known_subtitle(path):
     if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path) or os.path.islink(path):
         return False
-    if ROOTS and not any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS):
+    if not inside_roots(path):
         return False
     return has_report(path) or bool(jobs.for_subtitle(path, limit=1))

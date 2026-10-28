@@ -13,14 +13,14 @@ import urllib.parse
 import urllib.request
 
 from . import jobs
-from .errors import ConfigError
-from .files import restore_version, save_version, subtitle_lock
+from .errors import ConfigError, SubtitleGuardError
+from .files import read_regular, restore_version, save_version, subtitle_lock
 from .guard import evaluate_and_fix
 from .library import nearby
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
 from .reports import report
-from .state import load_state, save_state
+from .state import load_state, update_state
 from .storage import backup_path, now, state_path
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
@@ -29,39 +29,49 @@ MAX_SUBTITLES_PER_MEDIA = 4
 RETRY_WAIT_SECONDS = 900
 BLACKLIST_DELAY_SECONDS = 20
 API_KEY_HEADER = "X-API-KEY"
+RETRY_STAGE = {"requested": "requested", "blacklisted": "blacklisted"}
 
 
 def handle_download(video, subtitle, language, provider, subtitle_id, media_id, series_id="", content_hash=None, queued=False):
-    if content_hash and content_hash != file_hash(subtitle):
+    try:
+        received = file_hash(subtitle)
+    except SubtitleGuardError as error:
+        return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}
+    if content_hash and content_hash != received:
         log("bazarr.stale-hook", "subtitle replaced since this hook was queued, skipped; the newer download has its own hook", LEVEL["warning"],
             subtitle=subtitle, provider=provider, subtitle_id=subtitle_id)
         return {"decision": "skipped", "summary": "the subtitle changed since it was queued, the newer download is checked on its own"}
-    state = load_state(video, subtitle)
-    if state.get("video_size") != os.path.getsize(video):
-        state = {"video_size": os.path.getsize(video), "attempts": []}
     series_number = int(series_id) if series_id.isdigit() else None
     media_number = int(media_id) if media_id.isdigit() else None
     neighbours = series_neighbours(series_number, video) if series_number else ()
     outcome = evaluate_and_fix(video, subtitle, apply=True, neighbours=neighbours)
-    state["attempts"].append({"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, "language": language,
-                              "media_id": media_number, "series_id": series_number, **outcome})
-    save_state(video, subtitle, state)
+    attempt = {"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, "language": language, "media_id": media_number,
+               "series_id": series_number, "content_hash": received, **outcome}
+
+    def record(state):
+        if state.get("video_size") != os.path.getsize(video):
+            state.clear()
+            state.update(video_size=os.path.getsize(video), attempts=[])
+        state.setdefault("attempts", []).append(attempt)
+        if outcome["decision"] != DECISION["rejected"]:
+            state.pop("pending_retry", None)
+
+    state = update_state(video, subtitle, record)
     report(subtitle, provider, outcome)
     if outcome["decision"] != DECISION["rejected"] or media_number is None:
         return outcome
     if len(state["attempts"]) >= MAX_SUBTITLES_PER_MEDIA:
         restore_best(subtitle, state)
         return outcome
-    state["pending_retry"] = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number,
-                              "subtitle": subtitle, "provider": provider, "subtitle_id": subtitle_id, "language": language}
-    save_state(video, subtitle, state)
+    pending = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number, "subtitle": subtitle,
+               "provider": provider, "subtitle_id": subtitle_id, "language": language, "content_hash": received, "stage": RETRY_STAGE["requested"]}
+    update_state(video, subtitle, lambda state: state.update(pending_retry=pending))
     request_another(video, subtitle, queued)
     return outcome
 
 
 def file_hash(path):
-    with open(path, "rb") as handle:
-        return hashlib.sha1(handle.read()).hexdigest()
+    return hashlib.sha1(read_regular(path)).hexdigest()
 
 
 def request_another(video, subtitle, queued=False):
@@ -108,7 +118,7 @@ def scan_one(label, video, subtitle, apply, neighbours, queue=False):
         return
     try:
         outcome = evaluate_and_fix(video, subtitle["path"], apply, neighbours)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, SubtitleGuardError) as error:
         print(f"{label} {subtitle['code2']}: error {error}", flush=True)
         return
     report(subtitle["path"], "scan", outcome, applied=apply)
@@ -146,6 +156,13 @@ def blacklist_for_retry(video, subtitle):
     pending = state.get("pending_retry")
     if not pending:
         return None
+    if replaced_since(subtitle, pending):
+        update_state(video, subtitle, lambda current: current.pop("pending_retry", None))
+        log("bazarr.replacement-cancelled", "the rejected subtitle was replaced before the blacklist, nothing sent to Bazarr", LEVEL["info"], video=video,
+            subtitle=subtitle, provider=pending["provider"], subtitle_id=pending["subtitle_id"])
+        return None
+    if pending.get("stage") == RETRY_STAGE["blacklisted"]:
+        return {"pending": pending, "attempts_before": len(state.get("attempts", []))}
     form = {"provider": pending["provider"], "subs_id": pending["subtitle_id"], "language": pending["language"],
             "subtitles_path": pending["subtitle"]}
     if pending["media_type"] == "series":
@@ -155,22 +172,28 @@ def blacklist_for_retry(video, subtitle):
         form.update(radarrid=pending["media_id"])
         endpoint = "/api/movies/blacklist"
     bazarr_post(endpoint, form)
-    state.pop("pending_retry")
-    save_state(video, subtitle, state)
+    pending = {**pending, "stage": RETRY_STAGE["blacklisted"]}
+    update_state(video, subtitle, lambda current: current.update(pending_retry=pending))
     log("bazarr.blacklisted", f"subtitle blacklisted provider={pending['provider']} id={pending['subtitle_id']}", video=video, subtitle=subtitle,
         provider=pending["provider"], subtitle_id=pending["subtitle_id"], endpoint=endpoint)
-    return {"pending": pending, "attempts_before": len(state["attempts"])}
+    return {"pending": pending, "attempts_before": len(state.get("attempts", []))}
+
+
+def replaced_since(subtitle, pending):
+    return bool(pending.get("content_hash")) and os.path.isfile(subtitle) and file_hash(subtitle) != pending["content_hash"]
 
 
 def another_arrived(video, subtitle, pending, attempts_before):
-    return len(load_state(video, subtitle).get("attempts", [])) > attempts_before or any_subtitle_for_language(pending)
+    return len(load_state(video, subtitle).get("attempts", [])) > attempts_before or replaced_since(subtitle, pending)
 
 
 def finish_retry(video, subtitle, pending, attempts_before):
     if another_arrived(video, subtitle, pending, attempts_before):
+        update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
         return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
     restore_best(pending["subtitle"], load_state(video, subtitle))
     rescan(pending)
+    update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
     log("bazarr.replacement-timeout", f"no replacement after {RETRY_WAIT_SECONDS}s, best attempt restored", LEVEL["warning"], video=video, subtitle=subtitle)
     return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
@@ -182,22 +205,12 @@ def restore_best(subtitle, state):
         return
     best = max(candidates, key=lambda attempt: attempt["after"]["matched"])
     with subtitle_lock(subtitle):
-        save_version(subtitle, backup_path(subtitle), "before-restore")
+        if os.path.exists(subtitle):
+            save_version(subtitle, backup_path(subtitle), "before-restore")
         restore_version(subtitle, best["best_copy"])
     report(subtitle, best.get("provider", ""), {**best, "decision": DECISION["best_effort"]})
     log("bazarr.best-attempt-restored", f"best attempt restored provider={best.get('provider')} matched={best['after']['matched']:.2f}", LEVEL["warning"],
         subtitle=subtitle, provider=best.get("provider"), matched=best["after"]["matched"])
-
-
-def any_subtitle_for_language(pending):
-    if pending["media_type"] == "series":
-        items = bazarr_get(f"/api/episodes?episodeid[]={pending['media_id']}")["data"]
-    else:
-        items = bazarr_get(f"/api/movies?radarrid[]={pending['media_id']}")["data"]
-    if not items:
-        return False
-    item = items[0]
-    return any(subtitle["code2"] == pending["language"] and subtitle.get("path") for subtitle in item.get("subtitles", []))
 
 
 def rescan(pending):
@@ -208,7 +221,8 @@ def rescan(pending):
 
 
 def bazarr_get(path):
-    return json.load(call_bazarr(urllib.request.Request(BAZARR_URL + path, headers={API_KEY_HEADER: api_key()}), 60))
+    with call_bazarr(urllib.request.Request(BAZARR_URL + path, headers={API_KEY_HEADER: api_key()}), 60) as response:
+        return json.load(response)
 
 
 def bazarr_post(path, form):
@@ -222,7 +236,8 @@ def bazarr_patch(path, form):
 def bazarr_send(path, form, method):
     request = urllib.request.Request(BAZARR_URL + path, data=urllib.parse.urlencode(form).encode(), method=method,
                                      headers={API_KEY_HEADER: api_key()})
-    return call_bazarr(request, 900).status
+    with call_bazarr(request, 900) as response:
+        return response.status
 
 
 def call_bazarr(request, timeout):
@@ -250,9 +265,14 @@ def api_key():
 
 class SameOriginRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
-        if urllib.parse.urlparse(new_url).netloc != urllib.parse.urlparse(request.full_url).netloc:
-            raise urllib.error.HTTPError(request.full_url, code, f"refused a redirect to another host: {new_url}", headers, response)
+        if origin(new_url) != origin(request.full_url):
+            raise urllib.error.HTTPError(request.full_url, code, f"refused a redirect to another origin: {new_url}", headers, response)
         return super().redirect_request(request, response, code, message, headers, new_url)
+
+
+def origin(url):
+    parts = urllib.parse.urlparse(url)
+    return parts.scheme, parts.hostname, parts.port or {"http": 80, "https": 443}.get(parts.scheme)
 
 
 OPENER = urllib.request.build_opener(SameOriginRedirect)

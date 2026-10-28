@@ -23,7 +23,7 @@ def make_video(folder, extension, codec):
 @needs_ffmpeg
 @pytest.mark.parametrize("extension, codec", [("mkv", "srt"), ("mp4", "mov_text")])
 def test_embedded_text_track_gives_start_and_end_times(tmp_path, extension, codec):
-    tracks = reference.extract_tracks(make_video(tmp_path, extension, codec))
+    tracks = reference.extract_tracks(make_video(tmp_path, extension, codec))["tracks"]
     assert len(tracks) == 1
     assert tracks[0]["language"] == "eng"
     assert tracks[0]["starts"] == pytest.approx([number + 0.5 for number in range(1, 56)], abs=0.002)
@@ -60,16 +60,22 @@ def test_a_failed_probe_is_an_error_and_is_never_cached(tmp_path, monkeypatch):
     assert outcome["decision"] == "unverified" and "could not read the video" in outcome["reason"] and "Input/output error" in outcome["reason"]
 
 
-def test_a_complete_bitmap_track_is_kept_when_the_text_track_is_short(monkeypatch):
+def test_a_complete_bitmap_track_is_read_when_no_text_track_is_complete_for_this_subtitle(monkeypatch, tmp_path):
     streams = [{"index": 2, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng"}},
                {"index": 3, "codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle", "tags": {"language": "eng"}}]
+    reads = []
     monkeypatch.setattr(reference, "probe_json", lambda command, video: {"streams": streams})
-    monkeypatch.setattr(reference, "read_tracks", lambda video, all_streams, candidates: [
-        {"index": stream["index"], "language": "eng", "image": stream["codec_name"] != "subrip", "sdh": False,
-         "starts": list(range(40 if stream["codec_name"] == "subrip" else 800)), "ends": []} for stream in candidates])
-    tracks = reference.extract_tracks("/movie.mkv")
-    assert [track["index"] for track in tracks] == [2, 3]
-    assert reference.choose_reference(tracks, False, 780)["index"] == 3
+
+    def read_tracks(video, all_streams, candidates):
+        reads.append([stream["index"] for stream in candidates])
+        return [{"index": stream["index"], "language": "eng", "image": stream["codec_name"] != "subrip", "sdh": False,
+                 "starts": list(range(350 if stream["codec_name"] == "subrip" else 990)), "ends": []} for stream in candidates]
+    monkeypatch.setattr(reference, "read_tracks", read_tracks)
+    video = tmp_path / "movie.mkv"
+    video.write_bytes(b"x")
+    assert reference.load_reference(str(video), False, 1000)["index"] == 3
+    assert reference.load_reference(str(video), False, 400)["index"] == 2
+    assert reads == [[2], [2], [3]]
 
 
 def test_a_hung_tool_raises_a_typed_error():

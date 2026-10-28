@@ -15,31 +15,34 @@ from .matroska import matroska_cue_timings
 from .storage import heavy_disk_read, read_json, state_path, write_json
 from .tools import PROBE_SECONDS, run_tool, stderr_tail
 
-REFERENCE_CACHE_VERSION = 4
+REFERENCE_CACHE_VERSION = 5
 TEXT_CODECS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")
 CUE_PER_PACKET_BITMAP_CODECS = ("dvd_subtitle",)
 SPLIT_BITMAP_CODECS = ("hdmv_pgs_subtitle",)
 BITMAP_MIN_PACKET_BYTES = 100
-FULL_TEXT_TRACK_CUES = 300
 EMPTY_TEXT_PACKET_BYTES = 2
 
 
 def load_reference(video, hearing_impaired=False, subtitle_cue_count=0):
-    return choose_reference(load_tracks(video), hearing_impaired, subtitle_cue_count)
+    chosen = choose_reference(load_tracks(video), hearing_impaired, subtitle_cue_count)
+    return chosen or choose_reference(load_tracks(video, with_bitmaps=True), hearing_impaired, subtitle_cue_count)
 
 
-def load_tracks(video):
+def load_tracks(video, with_bitmaps=False):
     stat = os.stat(video)
     cache_key = hashlib.sha1(f"{REFERENCE_CACHE_VERSION}|{video}|{stat.st_size}|{int(stat.st_mtime)}".encode()).hexdigest()
     cache_file = state_path("references", f"{cache_key}.json")
     if os.path.exists(cache_file):
         try:
-            return read_json(cache_file)
-        except ValueError as error:
+            cached = read_json(cache_file)
+            if cached["bitmaps_read"] or not with_bitmaps:
+                return cached["tracks"]
+        except (ValueError, KeyError, TypeError) as error:
             log("reference.cache-corrupt", f"track cache unreadable, re-extracting: {error}", LEVEL["warning"], video=video, cache=cache_file)
     started = time.time()
-    tracks = extract_tracks(video)
-    write_json(cache_file, tracks)
+    extracted = extract_tracks(video, with_bitmaps)
+    tracks = extracted["tracks"]
+    write_json(cache_file, extracted)
     log("reference.extracted", f"{len(tracks)} candidate tracks extracted in {time.time() - started:.2f}s", LEVEL["debug"], video=video,
         seconds=round(time.time() - started, 2), tracks=[{key: track[key] for key in ("index", "language", "image", "sdh")} | {"lines": len(track["starts"])}
                                                         for track in tracks])
@@ -57,17 +60,16 @@ def choose_reference(tracks, hearing_impaired, subtitle_cue_count):
             "image": best["image"]}
 
 
-def extract_tracks(video):
+def extract_tracks(video, with_bitmaps=False):
     streams = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries",
                           "stream=index,codec_type,codec_name:stream_tags=language,title:stream_disposition=forced,hearing_impaired", "-of", "json", video],
                          video).get("streams", [])
     candidates = [stream for stream in streams if stream.get("codec_type") == "subtitle" and is_reference_candidate(stream)]
     text_streams = [stream for stream in candidates if stream.get("codec_name") in TEXT_CODECS]
     bitmap_streams = [stream for stream in candidates if stream.get("codec_name") not in TEXT_CODECS]
-    tracks = read_tracks(video, streams, text_streams) if text_streams else []
-    if bitmap_streams and max((len(track["starts"]) for track in tracks), default=0) < FULL_TEXT_TRACK_CUES:
-        tracks += read_tracks(video, streams, bitmap_streams)
-    return tracks
+    read_bitmaps = bool(bitmap_streams) and (with_bitmaps or not text_streams)
+    tracks = (read_tracks(video, streams, text_streams) if text_streams else []) + (read_tracks(video, streams, bitmap_streams) if read_bitmaps else [])
+    return {"tracks": tracks, "bitmaps_read": read_bitmaps or not bitmap_streams}
 
 
 def probe_json(command, video):

@@ -21,11 +21,11 @@ def test_delayed_jobs_wait_for_their_time():
 def test_finish_fail_and_requeue():
     job_id = jobs.enqueue("check", {})
     jobs.claim(1)
-    jobs.finish(job_id, {"decision": "fixed", "confidence": 93, "confidence_band": "high", "summary": "fixed"})
+    jobs.finish(job_id, 1, {"decision": "fixed", "confidence": 93, "confidence_band": "high", "summary": "fixed"})
     assert jobs.job(job_id)["status"] == "done" and jobs.job(job_id)["confidence"] == 93
     other = jobs.enqueue("check", {})
     jobs.claim(1)
-    jobs.fail(other, "OSError: missing file")
+    jobs.fail(other, 1, "OSError: missing file")
     assert jobs.job(other)["error"] == "OSError: missing file"
     assert jobs.requeue(other) and jobs.job(other)["status"] == "queued"
     assert not jobs.requeue(other)
@@ -69,3 +69,14 @@ def test_parallel_workers_never_share_a_job():
     for thread in threads:
         thread.join()
     assert sorted(claimed) == list(range(1, 61))
+
+
+def test_only_the_worker_that_claimed_a_job_can_finish_it():
+    job_id = jobs.enqueue("check", {})
+    jobs.claim(1)
+    jobs.recover_running(3, worker=1)
+    jobs.claim(2)
+    jobs.finish(job_id, 1, {"decision": "kept"})
+    assert jobs.job(job_id)["status"] == "running" and jobs.job(job_id)["worker"] == 2
+    jobs.finish(job_id, 2, {"decision": "kept"})
+    assert jobs.job(job_id)["status"] == "done"

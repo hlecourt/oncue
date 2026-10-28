@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import os
 import shutil
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from http.server import ThreadingHTTPServer
 
 import pytest
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import jobs, reports
+from subtitle_guard import files, jobs, reports, storage
 from subtitle_guard.subtitles import parse_subtitle
 from subtitle_guard.web import actions, context
 from subtitle_guard.web import server as web_server
@@ -23,7 +23,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 @pytest.fixture
 def server():
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), web_server.Handler)
+    httpd = web_server.Server(("127.0.0.1", 0), web_server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -58,7 +58,7 @@ def notice_text(location):
 def test_dashboard_jobs_and_api(server):
     job_id = jobs.enqueue(jobs.KIND["check"], {"subtitle": "/media/a.fr.srt"})
     jobs.claim(1)
-    jobs.fail(job_id, "OSError: gone")
+    jobs.fail(job_id, 1, "OSError: gone")
     status, page, _ = get(server + "/")
     assert status == 200 and "Overview" in page and "OSError: gone" in page and "need a look" in page
     assert json.loads(get(server + "/api/status")[1])["status"] == {"failed": 1}
@@ -95,27 +95,72 @@ def test_review_page_and_manual_shift(server, tmp_path):
     assert max(abs(a - b) for a, b in zip(shifted, expected, strict=False)) < 0.01
 
 
-def test_token_protects_the_ui(server, monkeypatch):
-    monkeypatch.setitem(context.AUTH, "token", "secret")
+def test_a_password_protects_the_ui(server, monkeypatch):
+    from subtitle_guard.web import auth
+    monkeypatch.setitem(context.AUTH, "required", True)
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", "correct horse battery")
+    auth.configure("0.0.0.0")
     reports.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
-    assert status == 401 and "Needs a look" not in page and "Private.Name" not in page and 'action="/login"' in page
-    assert get(server + "/?token=secret")[0] == 401
+    assert status == 401 and "Needs a look" not in page and "Private.Name" not in page and 'name="password"' in page
     assert get(server + "/health")[0] == 200
-    assert post(server + "/login", {"token": "wrong"}, csrf=None) == (401, "")
-    code, _ = post(server + "/login", {"token": "secret"}, csrf=None)
-    assert code == 303
-    session = next(iter(context.SESSIONS))
-    assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 200
-    assert post(server + "/", {"action": "retry-job", "job": "1"})[0] == 401
-    assert post(server + "/logout", {}, {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 303
+    assert post(server + "/login", {"user": "admin", "password": "wrong password!"}, csrf=None) == (401, "")
+    assert post(server + "/login", {"user": "someone", "password": "correct horse battery"}, csrf=None) == (401, "")
+    assert post(server + "/login", {"user": "admin", "password": "correct horse battery"}, csrf=None)[0] == 303
+    session = next(iter(auth.SESSIONS))
+    cookie = {"Cookie": f"{web_server.SESSION_COOKIE}={session}"}
+    assert get(server + "/", cookie)[0] == 200
+    assert post(server + "/", {"action": "retry-job", "job": "1"}, cookie)[0] == 403
+    assert post(server + "/", {"action": "retry-job", "job": "1"}, cookie, csrf=auth.SESSIONS[session]["csrf"])[0] == 303
+    assert post(server + "/logout", {}, cookie, csrf=auth.SESSIONS[session]["csrf"])[0] == 303
+    assert get(server + "/", cookie)[0] == 401
+
+
+def test_failed_logins_lock_the_client_out_and_sessions_expire(server, monkeypatch):
+    from subtitle_guard.web import auth
+    monkeypatch.setitem(context.AUTH, "required", True)
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", "correct horse battery")
+    auth.configure("0.0.0.0")
+    for _ in range(auth.MAX_FAILED_LOGINS):
+        post(server + "/login", {"user": "admin", "password": "nope nope nope"}, csrf=None)
+    assert post(server + "/login", {"user": "admin", "password": "correct horse battery"}, csrf=None)[0] == 429
+    auth.FAILURES.clear()
+    session = auth.open_session("admin")
+    auth.SESSIONS[session]["expires"] = 0
     assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 401
+
+
+def test_without_a_password_only_loopback_requests_without_proxy_headers_pass(server):
+    assert get(server + "/")[0] == 200
+    assert get(server + "/", {"Host": "nas.example:8484"})[0] == 400
+    assert get(server + "/", {"X-Forwarded-For": "203.0.113.9"})[0] == 400
+
+
+def test_an_empty_or_broken_credentials_file_refuses_to_serve(tmp_path):
+    from subtitle_guard.errors import ConfigError
+    from subtitle_guard.web import auth
+    os.makedirs(storage.state_path(), exist_ok=True)
+    open(storage.state_path(auth.CREDENTIALS_FILE), "w").close()
+    with pytest.raises(ConfigError):
+        auth.configure("0.0.0.0")
+    with pytest.raises(ConfigError):
+        auth.configure("127.0.0.1")
+
+
+def test_a_first_start_off_loopback_generates_a_password_once(capsys):
+    from subtitle_guard.web import auth
+    assert auth.configure("0.0.0.0") is True
+    printed = capsys.readouterr().out
+    password = printed.split("with the password ")[1].split(" ")[0]
+    assert auth.verify("admin", password) and oct(os.stat(storage.state_path(auth.CREDENTIALS_FILE)).st_mode & 0o777) == "0o600"
+    assert auth.configure("0.0.0.0") is True and "with the password" not in capsys.readouterr().out
+    assert auth.configure("127.0.0.1") is True
 
 
 def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
     job_id = jobs.enqueue(jobs.KIND["check"], {"subtitle": "/media/a.fr.srt"})
     jobs.claim(1)
-    jobs.fail(job_id, "boom")
+    jobs.fail(job_id, 1, "boom")
     assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, csrf=None)[0] == 403
     assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, {"Origin": "http://evil.example"})[0] == 403
     assert jobs.job(job_id)["status"] == "failed"
@@ -231,7 +276,7 @@ def test_subtitles_outside_the_roots_or_symlinked_are_unknown(tmp_path, monkeypa
     link = tmp_path / "media" / "c.fr.srt"
     link.symlink_to(outside)
     reports.report(str(link), "scan", {"decision": "kept"})
-    monkeypatch.setattr(actions, "ROOTS", [str((tmp_path / "media").resolve())])
+    monkeypatch.setattr(files, "ROOTS", [str((tmp_path / "media").resolve())])
     assert actions.known_subtitle(str(inside)) and not actions.known_subtitle(str(outside)) and not actions.known_subtitle(str(link))
 
 
@@ -255,3 +300,27 @@ def test_restore_is_offered_only_when_a_backup_exists(server, tmp_path):
     reports.report(str(subtitle), "scan", {"decision": "kept"})
     page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))[1]
     assert "Restore the original file" not in page and "Every minute is on time." in page
+
+
+
+def test_scripts_are_allowed_by_hash_and_bad_requests_get_a_clean_answer(server, monkeypatch):
+    import socket
+    _, _, headers = get(server + "/")
+    policy = headers["Content-Security-Policy"]
+    assert "'unsafe-inline'" not in policy.split("script-src")[1].split(";")[0] and "'sha256-" in policy and headers["Cache-Control"] == "no-store"
+    host, port = server.removeprefix("http://").split(":")
+    with socket.create_connection((host, int(port))) as connection:
+        connection.sendall(b"POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: \xc2\xb2\r\n\r\n")
+        assert b" 413 " in connection.recv(200)
+    assert get(server + "/?" + "&".join(f"field{number}=1" for number in range(80)))[0] == 400
+    monkeypatch.setenv("SUBTITLE_GUARD_SUPERVISED", "1")
+    status, body, _ = get(server + "/ready")
+    assert status == 503 and json.loads(body)["ready"] is False
+
+
+def test_unsure_results_read_as_unsure_and_tabs_mark_the_current_one(server):
+    reports.report("/media/Unsure.fr.srt", "scan", {"decision": "kept", "confidence": 41, "confidence_band": "low", "before": {"matched": 0.7}, "after": {"matched": 0.7}})
+    page = get(server + "/history")[1]
+    assert '<span class="badge warn">Looks in sync, not sure</span>' in page
+    assert 'aria-label="Filter by result"' in page and 'aria-current="page"' in page
+    assert "keys.js" not in page and "Started by: Library scan" in page

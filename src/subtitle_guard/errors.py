@@ -14,10 +14,6 @@ class SubtitleTooLargeError(SubtitleGuardError):
     pass
 
 
-class FileChangedError(SubtitleGuardError):
-    pass
-
-
 class MatroskaError(SubtitleGuardError):
     pass
 

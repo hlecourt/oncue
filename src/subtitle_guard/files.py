@@ -1,34 +1,56 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every change to a subtitle file goes through here: one writer at a time, no symlinks, atomic replace, owner and mode kept."""
 
+import errno
 import fcntl
 import hashlib
 import os
 import stat
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 
 from .errors import SubtitleTooLargeError, UnsafePathError
 from .logs import LEVEL, log
 from .storage import state_path
 
 MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
+ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
 TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
+
+
+def inside_roots(path):
+    return not ROOTS or any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS)
 
 
 @contextmanager
 def subtitle_lock(path):
-    lock_file = state_path("locks", hashlib.sha1(os.path.abspath(path).encode()).hexdigest() + ".lock")
+    lock_file = state_path("locks", hashlib.sha1(os.path.realpath(path).encode()).hexdigest() + ".lock")
     os.makedirs(os.path.dirname(lock_file), exist_ok=True)
     with open(lock_file, "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         yield
 
 
-def read_regular(path):
-    if os.path.islink(path):
-        raise UnsafePathError(f"refusing to read a symlink: {path}")
-    with open(path, "rb") as handle:
+@contextmanager
+def subtitle_locks(*paths):
+    with ExitStack() as stack:
+        for path in sorted({os.path.realpath(path) for path in paths}):
+            stack.enter_context(subtitle_lock(path))
+        yield
+
+
+def read_regular(path, confined=True):
+    if confined and not inside_roots(path):
+        raise UnsafePathError(f"refusing a file outside SUBTITLE_GUARD_ROOTS: {path}")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise UnsafePathError(f"refusing to read a symlink: {path}") from error
+        raise
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise UnsafePathError(f"refusing to read something that is not a regular file: {path}")
         data = handle.read(MAX_SUBTITLE_BYTES + 1)
     if len(data) > MAX_SUBTITLE_BYTES:
         raise SubtitleTooLargeError(f"larger than {MAX_SUBTITLE_BYTES // (1024 * 1024)} MB: {path}")
@@ -36,6 +58,8 @@ def read_regular(path):
 
 
 def replace_file(path, data):
+    if not inside_roots(path):
+        raise UnsafePathError(f"refusing to write outside SUBTITLE_GUARD_ROOTS: {path}")
     if os.path.islink(path):
         raise UnsafePathError(f"refusing to write through a symlink: {path}")
     previous = os.stat(path) if os.path.exists(path) else None
@@ -73,4 +97,4 @@ def save_version(subtitle, folder, label):
 
 
 def restore_version(subtitle, source):
-    replace_file(subtitle, read_regular(source))
+    replace_file(subtitle, read_regular(source, confined=False))
