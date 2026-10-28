@@ -13,13 +13,12 @@ import urllib.request
 
 from . import jobs
 from .errors import ConfigError
+from .files import restore_version, save_version, subtitle_lock
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
-from .files import restore_version, save_version, subtitle_lock
 from .reports import report
 from .storage import backup_path, load_state, now, save_state, state_path
-
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")

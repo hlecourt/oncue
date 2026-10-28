@@ -8,8 +8,6 @@ import os
 from contextlib import contextmanager
 from datetime import datetime
 
-
-
 STATE_DIRECTORY = os.environ.get("SUBTITLE_GUARD_STATE", "/config/subtitle-guard")
 BACKUP_DIRECTORY = os.environ.get("SUBTITLE_GUARD_BACKUPS", "/data/backup/subtitle-guard")
 

@@ -6,7 +6,6 @@ import numpy
 
 from .outcome import DECISION
 
-
 TOLERANCE_SECONDS = 0.3
 WINDOW_SECONDS = 120
 MIN_WINDOW_CUES = 8

@@ -6,7 +6,6 @@ import re
 
 from .files import read_regular, replace_file
 
-
 TIMING = re.compile(r"^\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})")
 HEARING_IMPAIRED_TAGS = (".hi.", ".sdh.", ".cc.")
 

@@ -1,6 +1,11 @@
 """Turn a decision and its measurements into a 0-100 confidence score and a band."""
 
-from .alignment import MAX_UNSUPPORTED_SHARE, OBJECTIVE_MARGIN, PASS_MARGIN, WINDOW_PASS_MARGIN
+from .alignment import (
+    MAX_UNSUPPORTED_SHARE,
+    OBJECTIVE_MARGIN,
+    PASS_MARGIN,
+    WINDOW_PASS_MARGIN,
+)
 from .outcome import DECISION
 
 FULL_CONFIDENCE_MARGIN = 0.25

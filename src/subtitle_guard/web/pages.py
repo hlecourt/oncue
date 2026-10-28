@@ -17,17 +17,17 @@ from .parts import (
     WINDOW_SECONDS,
     actions,
     by_hand,
-    count,
     escape,
     first_problem_minute,
     fix_section,
     history_table,
+    human_time,
     keys_help,
     layout,
+    live_status,
     message_box,
     parts_list,
     queue_links,
-    readable,
     reading,
     reason,
     status_box,
@@ -52,15 +52,14 @@ HISTORY_LIMIT = 300
 
 def dashboard_page(query):
     rows = cached("latest", latest_reports)
-    needing_a_look = {item["subtitle"] for item in cached("review", review.review_items)}
-    settled = [row for row in rows if row["subtitle"] not in needing_a_look]
-    waiting = sum(jobs.counts()["status"].get(status, 0) for status in ("queued", "running"))
-    cards = [("need a look", len(needing_a_look), "/review"), ("fixed automatically", count(settled, "fixed"), "/history?result=fixed"),
-             ("in sync", count(settled, "kept", "manual"), "/history?result=in-sync"),
-             ("cannot be checked", count(settled, "unverified", "audio-synced"), "/history?result=not-checked"),
-             ("waiting to be checked", waiting, "/history"), ("errors", jobs.counts()["status"].get("failed", 0), "/history")]
+    status = jobs.counts()["status"]
+    cards = [("need a look", len(cached("review", review.review_items)), "/review")]
+    cards += [(label.lower(), sum(row["decision"] in HISTORY_GROUPS[group][1] for row in rows), f"/history?latest=1&result={group}")
+              for group, label in (("fixed", "Fixed automatically"), ("in-sync", "In sync"), ("not-checked", "Cannot be checked"))]
+    cards += [("waiting to be checked", status.get("queued", 0) + status.get("running", 0), "/history#tasks"), ("errors", status.get("failed", 0), "/history#tasks")]
     body = '<div class="cards">' + "".join(f'<a class="card" href="{link}"><b>{number}</b><span>{escape(label)}</span></a>' for label, number, link in cards) + "</div>"
-    body += tasks_now() + '<h2>Latest checks</h2>' + history_table(report_history(limit=10)) + '<p><a href="/history">See the whole history</a></p>'
+    body += ('<p class="subtle words">The cards count each subtitle once, by its latest check.</p>' + tasks_now() + '<h2>Latest checks</h2>'
+             + history_table(report_history(limit=10)) + '<p><a href="/history">See the whole history</a></p>')
     return 200, layout("Overview", body, refresh=15, page="dashboard"), "text/html; charset=utf-8"
 
 
@@ -71,10 +70,11 @@ def review_page(query):
                                                                   "</span></div>", page="review"), "text/html; charset=utf-8"
     rows = "".join(f'<tr><td><span class="dot {tone(item)}"></span></td><td><a href="{subtitle_link(item["subtitle"])}">'
                    f'{escape(os.path.basename(item["subtitle"]))}</a><div class="muted">{escape(where(item["subtitle"]))}</div></td>'
-                   f'<td>{escape(reason(item))}</td><td>{quick_fix(item)}</td><td class="time">{escape(readable(item["time"]))}</td></tr>' for item in items)
+                   f'<td>{escape(reason(item))}</td><td>{quick_fix(item)}</td><td class="time">{escape(human_time(item["time"]))}</td></tr>' for item in items)
     body = (message_box(query) + "<p class=\"subtle words\">The guard was not sure about these subtitles. Use the button when there is one, "
             "or open the subtitle to see what is wrong.</p>"
-            + f'<table class="review"><tr><th></th><th>Subtitle</th><th>What happened</th><th></th><th>Checked</th></tr>{rows}</table>' + keys_help())
+            + f'<table class="review"><tr><th><span class="visually-hidden">How sure</span></th><th>Subtitle</th><th>What happened</th>'
+              f'<th><span class="visually-hidden">Fix</span></th><th>Checked</th></tr>{rows}</table>' + keys_help())
     return 200, layout("Needs a look", body, page="review"), "text/html; charset=utf-8"
 
 
@@ -91,18 +91,21 @@ def quick_fix(item):
 
 
 def history_page(query):
-    rows = report_history()
+    latest = query.get("latest") == "1"
+    rows = sorted(cached("latest", latest_reports), key=lambda row: row["id"], reverse=True) if latest else report_history()
     group = query.get("result") if query.get("result") in HISTORY_GROUPS else None
+    keep = {key: value for key, value in (("latest", "1" if latest else None), ("result", group)) if value}
+    views = [(None, "Every check", None), ("1", "Latest check of each subtitle", None)]
     options = [(None, "All", len(rows))] + [(key, label, sum(row["decision"] in decisions for row in rows)) for key, (label, decisions) in HISTORY_GROUPS.items()]
     shown = [row for row in rows if not group or row["decision"] in HISTORY_GROUPS[group][1]][:HISTORY_LIMIT]
-    body = (message_box(query) + tasks_now() + "<h2>Every check</h2><p class=\"subtle words\">Every time the guard checked a subtitle, newest first: "
-            "what started it, what it decided, how sure it was, and how many lines matched the video before and after.</p>"
-            + tab_links("/history", "result", group, options) + history_table(shown))
+    body = (message_box(query) + tasks_now() + "<h2>Checks</h2><p class=\"subtle words\">Every time the guard checked a subtitle, newest first: "
+            "what started it, what it decided, how sure it was, and what it changed.</p>"
+            + tab_links("/history", "latest", "1" if latest else None, views, keep) + tab_links("/history", "result", group, options, keep) + history_table(shown))
     return 200, layout("History", body, refresh=15, page="history"), "text/html; charset=utf-8"
 
 
 def log_page(query):
-    search = (f'<form class="filters"><input type="text" name="q" placeholder="Search a file, an event, a word..." value="{escape(query.get("q", ""))}">'
+    search = (f'<form class="filters" role="search"><label class="visually-hidden" for="search">Search the log</label><input type="text" id="search" name="q" placeholder="Search a file, an event, a word..." value="{escape(query.get("q", ""))}">'
               '<button>Search</button></form>')
     body = search + technical_log(filtered_events(recent_events(), query)[:LOG_LIMIT])
     return 200, layout("Log", body, refresh=None if query else 15, page="log"), "text/html; charset=utf-8"
@@ -140,7 +143,7 @@ def subtitle_page(query):
 
 
 def api_status(query):
-    return 200, json.dumps({**jobs.counts(), "to_review": len(cached("review", review.review_items))}), "application/json"
+    return 200, live_status(), "application/json"
 
 
 def api_jobs(query):

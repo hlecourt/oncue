@@ -22,7 +22,8 @@ from .heartbeats import HEARTBEAT_SECONDS
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
 from .outcome import describe
-from .reports import report
+from .reports import needs_review, report
+from .review import diagnose
 from .storage import state_path, write_json
 
 WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
@@ -165,9 +166,20 @@ def check(arguments):
             jobs.remember(arguments["subtitle"], FAILED + watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
         raise
     report(arguments["subtitle"], "watch" if arguments.get("watched") else "check", outcome, applied=arguments["apply"])
+    prepare_review(arguments["video"], arguments["subtitle"], outcome, arguments["apply"])
     if arguments.get("watched"):
         jobs.remember(arguments["subtitle"], watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
     return outcome
+
+
+def prepare_review(video, subtitle, outcome, applied):
+    row = {"applied": applied, "decision": outcome["decision"], "weak_minutes": outcome.get("weak_minutes"), "band": outcome.get("confidence_band")}
+    if not needs_review(row):
+        return
+    try:
+        diagnose(video, subtitle)
+    except Exception as error:
+        log("worker.review-not-prepared", f"could not prepare the review page: {type(error).__name__}: {error}", LEVEL["warning"], subtitle=subtitle)
 
 
 def run_job(job):

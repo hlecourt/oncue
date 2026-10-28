@@ -31,14 +31,24 @@ import subprocess
 import sys
 
 from . import jobs
-from .bazarr import bazarr_get, file_hash, handle_download, queue_enabled, scan_movies, scan_series, try_another_subtitle
+from .bazarr import (
+    bazarr_get,
+    file_hash,
+    handle_download,
+    queue_enabled,
+    scan_movies,
+    scan_series,
+    try_another_subtitle,
+)
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
 from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
 from .reports import print_needs_human, report
-from .web import HOST as UI_HOST, PORT as UI_PORT, serve_ui
+from .web import HOST as UI_HOST
+from .web import PORT as UI_PORT
+from .web import serve_ui
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")

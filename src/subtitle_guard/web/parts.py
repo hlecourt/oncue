@@ -33,7 +33,7 @@ FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox
 
 
 HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")),
-                  "not-checked": ("Not checked", ("unverified", "audio-synced")), "by-hand": ("By hand", ("manual", "reverted"))}
+                  "not-checked": ("Cannot be checked", ("unverified", "audio-synced")), "by-hand": ("By hand", ("manual", "reverted"))}
 
 
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
@@ -74,6 +74,8 @@ COPY = asset("copy.js")
 
 
 PICKER = asset("picker.js")
+REFRESH = asset("refresh.js")
+BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 
 
 def tasks_now():
@@ -81,7 +83,7 @@ def tasks_now():
     if not items:
         return ""
     rows = "".join(task_row(item) for item in items)
-    return f'<h2>Tasks right now</h2><table class="history">{columns(14, 30, 22, 22, 12)}<tr><th>Since</th><th>Subtitle</th><th>Task</th><th>Status</th><th></th></tr>{rows}</table>'
+    return f'<h2 id="tasks">Tasks right now</h2><table class="history">{columns(14, 30, 22, 22, 12)}<tr><th>Since</th><th>Subtitle</th><th>Task</th><th>Status</th><th></th></tr>{rows}</table>'
 
 
 def task_row(item):
@@ -89,7 +91,7 @@ def task_row(item):
     error = f'<div class="muted">{escape(item["error"])}</div>' if item["error"] else ""
     button = (f'<form class="inline" method="post"><input type="hidden" name="action" value="retry-job"><input type="hidden" name="job" value="{item["id"]}">'
               '<button class="small">Run again</button></form>') if item["status"] == "failed" else ""
-    return (f'<tr><td class="time">{escape(readable(item["started"] or item["created"]))}</td><td>{subtitle_cell(item["arguments"].get("subtitle", ""))}</td>'
+    return (f'<tr><td class="time">{escape(human_time(item["started"] or item["created"]))}</td><td>{subtitle_cell(item["arguments"].get("subtitle", ""))}</td>'
             f'<td>{escape(KIND_WORDS.get(item["kind"], item["kind"]))}</td><td><span class="badge {tone_name}">{label}</span>{error}</td><td class="actions">{button}</td></tr>')
 
 
@@ -112,9 +114,11 @@ def columns(*widths):
 def history_row(row):
     belongs_elsewhere = row["decision"] == "wrong-episode" and row["note"]
     words = f"Belongs to {row['note']}" if belongs_elsewhere else DECISION_WORDS.get(row["decision"], row["decision"])
-    result = f'<span class="badge {DECISION_TONES.get(row["decision"], "neutral")}">{escape(words)}</span>'
+    dry_run = not row.get("applied", 1)
+    tone_name = "neutral" if dry_run else DECISION_TONES.get(row["decision"], "neutral")
+    result = f'<span class="badge {tone_name}">{escape(("Dry run, " + words.lower()) if dry_run else words)}</span>'
     note = f'<div class="muted">{escape(row["note"])}</div>' if row["note"] and not belongs_elsewhere else ""
-    return (f'<tr><td class="time">{escape(row["time"][11:19])}</td><td>{subtitle_cell(row["subtitle"])}</td>'
+    return (f'<tr><td class="time">{escape(row["time"][11:16])}</td><td>{subtitle_cell(row["subtitle"])}</td>'
             f'<td>{result}{note}<div class="muted">Started by: {escape(started_by(row["provider"]))}</div></td><td>{changes_text(row["changes"], row["decision"])}</td>'
             f'<td>{confidence_badge(row)}{lines_matching(row)}</td></tr>')
 
@@ -145,13 +149,15 @@ def speed_label(scale):
 def started_by(provider):
     if not provider:
         return "-"
-    return STARTED_BY.get(provider, f"Bazarr, from {provider}")
+    return STARTED_BY.get(provider, f"Bazarr (downloaded from {provider})")
 
 
 def confidence_badge(row):
     if not row["confidence"]:
         return '<span class="muted">not recorded</span>'
-    return f'<span class="badge {BAND_TONES.get(row["band"], "neutral")}">{escape(row["confidence"])} / 100, {escape(row["band"])}</span>'
+    band = row["band"] or "none"
+    return (f'<span class="badge {BAND_TONES.get(band, "neutral")}" title="{escape(row["confidence"])} / 100">'
+            f'{escape(BAND_WORDS.get(band, band))}</span>')
 
 
 def lines_matching(row):
@@ -208,7 +214,7 @@ def day_label(moment):
         return "Today"
     if day == date.today() - timedelta(days=1):
         return "Yesterday"
-    return day.strftime("%A %d %B %Y")
+    return f"{day.strftime('%A')} {day.day} {day.strftime('%B %Y')}"
 
 
 def status_box(diagnosis, latest, fix):
@@ -227,7 +233,7 @@ def status_box(diagnosis, latest, fix):
     }
     tone_name, title, detail = messages[diagnosis["state"]]
     if diagnosis["state"] == "in-sync" and fix:
-        detail = f"It was fixed on {fix_time(fix['time'])}. What was changed is shown below."
+        detail = f"It was fixed {fix_time(fix['time'])}. What was changed is shown below."
     if diagnosis["state"] == "out-of-sync" and not parts:
         title, detail = "Some lines are slightly off.", "Fix everything to put them back in place."
     if diagnosis["state"] == "out-of-sync" and speed_changed(diagnosis["scale"]):
@@ -249,7 +255,8 @@ def actions(video, path, diagnosis, latest, hidden):
     if diagnosis["fixable"]:
         buttons.append(("fix-all", "Fix everything", not buttons, ""))
     buttons.append(("accept", "It looks fine, keep it", False, ""))
-    buttons.append(("revert", "Restore the original file", False, ""))
+    if review.has_backup(path):
+        buttons.append(("revert", "Restore the original file", False, ""))
     if review.came_from_bazarr(video, path):
         buttons.append(("another", "Try another subtitle", False, ""))
     return "".join(f'<form class="inline" method="post" id="{action}-form">{hidden}{extra}<input type="hidden" name="action" value="{action}">'
@@ -280,16 +287,37 @@ def timeline(path, view, minute, fix):
     legend = ('<p class="legend"><span><i class="good"></i>on time</span>' + ('<span><i class="fixed"></i>fixed by the guard, now on time</span>' if fixed else "")
               + '<span><i class="medium"></i>some lines off</span><span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span>'
               '<span>Click anywhere to read that minute.</span></p>')
-    return f'<h2>The whole video ({duration_label(len(minutes))})</h2>{legend}{strip(path, minutes, minute)}'
+    return (f'<h2>The whole video ({duration_label(len(minutes))})</h2>{legend}{strip(path, minutes, minute)}'
+            f'<p class="summary" id="timeline-summary">{escape(timeline_summary(minutes))}</p>')
+
+
+def timeline_summary(minutes):
+    ranges, current = [], None
+    for number, _, state in minutes:
+        if state in ("bad", "medium"):
+            current = [number, number] if current is None else [current[0], number]
+            continue
+        if current:
+            ranges.append(current)
+        current = None
+    ranges += [current] if current else []
+    if not ranges:
+        return "Every minute is on time."
+    return "Out of sync: " + ", ".join(f"{duration_label(first)} to {duration_label(last + 1)}" for first, last in ranges) + "."
 
 
 def strip(path, minutes, minute):
     length = len(minutes)
-    segments = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{escape(minute_title(number, share))}" href="{subtitle_link(path, number)}"></a>'
-                       for number, share, state in minutes)
+    segments = "".join(minute_link(path, number, share, state, number == minute) for number, share, state in minutes)
     step = next((step for step in TICK_MINUTES if length / step <= 10), TICK_MINUTES[-1])
     ticks = "".join(f'<span style="left: {100 * number / length:.2f}%">{duration_label(number)}</span>' for number in range(0, length - step // 2, step))
-    return f'<div class="minutes">{segments}</div><div class="ticks">{ticks}<span class="end">{duration_label(length)}</span></div>'
+    return f'<div class="minutes" role="group" aria-describedby="timeline-summary" aria-label="Timeline, one link per minute">{segments}</div><div class="ticks" aria-hidden="true">{ticks}<span class="end">{duration_label(length)}</span></div>'
+
+
+def minute_link(path, number, share, state, current):
+    title = escape(minute_title(number, share))
+    marker = ' aria-current="true"' if current else ""
+    return f'<a class="{state}{" current" if current else ""}" title="{title}" aria-label="{title}"{marker} href="{subtitle_link(path, number)}"></a>'
 
 
 def fix_section(path, fix):
@@ -298,13 +326,13 @@ def fix_section(path, fix):
     recorded = next((row for row in report_history(path, limit=50) if row["changes"]), None)
     changes = recorded["changes"] if recorded else {"scale": 1.0, "lines": len(fix["shifts"]), "parts": fix["parts"]}
     by = f", started by {started_by(recorded['provider'])}, confidence {recorded['confidence']} / 100" if recorded and recorded["confidence"] else ""
-    return (f'<h2>What was changed</h2><p class="subtle words">Compared with the file as it was before, on {escape(fix_time(fix["time"]))}{escape(by)}. '
+    return (f'<h2>What was changed</h2><p class="subtle words">Compared with the file as it was before, {escape(fix_time(fix["time"]))}{escape(by)}. '
             'The original is kept: Restore the original file puts it back.</p>'
             f'<div class="changes">{changes_text(changes, DECISION["fixed"])}</div>')
 
 
 def fix_time(folder):
-    return f"{folder[:4]}-{folder[4:6]}-{folder[6:8]} at {folder[9:11]}:{folder[11:13]}"
+    return human_time(f"{folder[:4]}-{folder[4:6]}-{folder[6:8]}T{folder[9:11]}:{folder[11:13]}")
 
 
 def minute_title(number, share):
@@ -316,10 +344,10 @@ def reading(path, view, diagnosis, minute, fix):
     rows = "".join(moment_row(moment, diagnosis, fix) for moment in view["moments"])
     if not rows:
         return ""
-    left = "what the subtitles built into the video say" if view["reference"] else "nothing to compare with"
+    video = "what the subtitles built into the video say" if view["reference"] else "nothing, the video has no subtitles to compare with"
     return (f'<div class="reading-head"><h2>{short_clock(minute * 60)} to {short_clock(minute * 60 + 60)}, line by line</h2>{minute_links(path, view, minute)}</div>'
-            f'<p class="subtle words">Each row is one moment of the video. On the left, {left}. '
-            "On the right, the line of your subtitle that goes with it, and whether it shows on time.</p>"
+            f'<p class="subtle words">Each row is one moment of the video. "In the video" shows {video}. '
+            '"Your subtitle" shows the line of your subtitle that goes with it, and whether it shows on time.</p>'
             f'<table class="reading"><tr><th>Time</th><th>In the video</th><th>Your subtitle</th><th>On time?</th></tr>{rows}</table>')
 
 
@@ -343,10 +371,12 @@ def moment_row(moment, diagnosis, fix):
     moved = fix["shifts"][moment["index"]] if fix and moment.get("index") is not None and moment["index"] < len(fix["shifts"]) else 0.0
     if abs(moved) >= NOTICEABLE_SECONDS:
         label += f'<div class="muted">was at {short_clock(moment["shown_at"] - moved)}, moved {abs(moved):.1f} s {"later" if moved > 0 else "earlier"}</div>'
-    video_time = f' data-time="{moment["time"]:.3f}"' if moment["video"] is not None else ""
-    subtitle_time = f' data-time="{moment["shown_at"]:.3f}"' if moment["subtitle"] is not None else ""
-    return (f'<tr class="{state}"><td class="time">{short_clock(moment["time"])}</td><td class="video pickable"{video_time}>{video_cell}</td>'
-            f'<td class="yours pickable"{subtitle_time}>{subtitle_cell}</td><td class="state {state}">{label}</td></tr>')
+    if moment["video"] is not None:
+        video_cell = f'<button type="button" class="pick" data-time="{moment["time"]:.3f}">{video_cell}</button>'
+    if moment["subtitle"] is not None:
+        subtitle_cell = f'<button type="button" class="pick" data-time="{moment["shown_at"]:.3f}">{subtitle_cell}</button>'
+    return (f'<tr class="{state}"><td class="time">{short_clock(moment["time"])}</td><td class="video">{video_cell}</td>'
+            f'<td class="yours">{subtitle_cell}</td><td class="state {state}">{label}</td></tr>')
 
 
 def by_hand(hidden, minute):
@@ -354,12 +384,12 @@ def by_hand(hidden, minute):
             f'<label>From <input type="text" id="first" name="first" value="{clock(minute * 60)}"></label>'
             f'<label>To <input type="text" id="last" name="last" value="{clock(minute * 60 + WINDOW_SECONDS)}"></label>'
             f'<label>Move by (s) <input type="text" id="offset" name="offset" value="0"></label><button class="primary">Move</button></form>'
-            '<p class="hint" id="hint">Click a line of your subtitle on the right, then the moment in the video it should match on the left. The move is filled in for you.</p></details>')
+            '<p class="hint" id="hint" role="status">Choose a line in "Your subtitle", then the moment "In the video" it should match. The move is filled in for you.</p></details>')
 
 
 def technical(path, video, view, latest):
     measured = view.get("measure") or {}
-    facts = [("last check", f"{latest['decision']} ({latest['confidence'] or '-'} {latest['band']}) at {readable(latest['time'])}" if latest else "never"),
+    facts = [("last check", f"{latest['decision']} ({latest['confidence'] or '-'} {latest['band']}), {human_time(latest['time'])}" if latest else "never"),
              ("reference track", view["reference"] or "none"), ("lines in sync now", measured.get("matched", "-")),
              ("worst 2 minutes", measured.get("worst_window", "-")), ("confidence now", f"{measured.get('confidence', '-')} {measured.get('confidence_band', '')}"),
              ("video", video)]
@@ -379,30 +409,38 @@ def queue_links(path):
 
 
 def layout(title, body, refresh=None, page="", current=None, navigation=True):
-    meta = f'<meta http-equiv="refresh" content="{refresh}">' if refresh else ""
-    links = "".join(f'<a class="{"active" if page == key else ""}" href="{link}">{label}</a>'
-                    for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
+    live = f' data-status="{escape(live_status())}"' if refresh else ""
+    links = "".join(navigation_link(link, label, page == key) for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
                                                     ("log", "/log", "Log")))
     logout = ('<form method="post" action="/logout" class="logout"><button class="small">Log out</button></form>' if AUTH["token"] and navigation else "")
-    page_html = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{meta}'
-                 f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body><div class="shell">'
-                 f'<aside><a class="brand" href="/">subtitle-guard</a>{f"<nav>{links}</nav>{sidebar(current)}{logout}" if navigation else ""}</aside>'
-                 f'<main><h1>{escape(title)}</h1>{body}</main></div><script>{KEYS}</script></body></html>')
+    navigation_html = f'<nav aria-label="Pages">{links}</nav>{sidebar(current)}{logout}' if navigation else ""
+    page_html = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+                 f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body{live}>'
+                 '<a class="skip" href="#content">Skip to the content</a><div class="shell">'
+                 f'<aside><a class="brand" href="/">subtitle-guard</a>{navigation_html}</aside>'
+                 f'<main id="content"><h1>{escape(title)}</h1>{body}</main></div><script>{KEYS}</script>{f"<script>{REFRESH}</script>" if refresh else ""}</body></html>')
     csrf = escape(getattr(REQUEST, "csrf", ""))
     return re.sub(r'(<form\b[^>]*method="post"[^>]*>)', lambda match: match.group(1) + f'<input type="hidden" name="csrf" value="{csrf}">', page_html)
+
+
+def navigation_link(link, label, active):
+    marker = ' class="active" aria-current="page"' if active else ""
+    return f'<a{marker} href="{link}">{label}</a>'
 
 
 def sidebar(current):
     items = cached("review", review.review_items)
     if not items:
-        return '<h3>Needs a look</h3><p class="empty">Nothing right now.</p>'
+        return '<h2 class="queue-title">Needs a look</h2><p class="empty">Nothing right now.</p>'
     entries = "".join(f'<a class="item{" current" if item["subtitle"] == current else ""}" title="{escape(item["subtitle"])}" '
                       f'href="{subtitle_link(item["subtitle"])}"><span class="dot {tone(item)}"></span>'
                       f'<span class="name">{escape(os.path.basename(item["subtitle"]))}</span><span class="why">{escape(reason(item))}</span></a>' for item in items)
-    return f"<h3>Needs a look ({len(items)})</h3>{entries}"
+    return f'<h2 class="queue-title">Needs a look ({len(items)})</h2>{entries}'
 
 
 def reason(item):
+    if not item.get("applied", 1) and item["decision"] == DECISION["fixed"]:
+        return "Would be fixed (dry run)"
     if item["decision"] == "wrong-episode" and item["note"]:
         return f"Belongs to {item['note']}"
     if item["weak_minutes"]:
@@ -439,7 +477,7 @@ def subtitle_link(path, minute=None, message=None):
 
 
 def keys_help():
-    return '<p class="keys">Keyboard: <kbd>j</kbd> <kbd>k</kbd> next or previous subtitle, <kbd>Left</kbd> <kbd>Right</kbd> previous or next minute, <kbd>a</kbd> keep it.</p>'
+    return '<p class="keys">Keyboard: <kbd>j</kbd> <kbd>k</kbd> next or previous subtitle, <kbd>Left</kbd> <kbd>Right</kbd> previous or next minute.</p>'
 
 
 def message_box(query):
@@ -447,8 +485,18 @@ def message_box(query):
     return f'<div class="message" role="status">{escape(message)}</div>' if message else ""
 
 
-def readable(moment):
-    return moment.replace("T", " ")
+def human_time(moment):
+    day = date.fromisoformat(moment[:10])
+    clock_time = moment[11:16]
+    if day == date.today():
+        return f"today at {clock_time}"
+    if day == date.today() - timedelta(days=1):
+        return f"yesterday at {clock_time}"
+    return f"on {day.day} {day.strftime('%b %Y')} at {clock_time}"
+
+
+def live_status():
+    return json.dumps({**jobs.counts(), "to_review": len(cached("review", review.review_items))}, sort_keys=True)
 
 
 def clock(value):

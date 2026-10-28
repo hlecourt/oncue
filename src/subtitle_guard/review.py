@@ -8,22 +8,49 @@ import re
 import numpy
 
 from . import jobs
-from .errors import MatroskaError, ToolError, UnsafePathError
-from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
-from .alignment import MAX_WRONG_END_SHARE, MIN_CUES, wrong_end_share, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
+from .alignment import (
+    MAX_WRONG_END_SHARE,
+    MIN_CUES,
+    NOTICEABLE_SHIFT_SECONDS,
+    TOLERANCE_SECONDS,
+    describe_changes,
+    judge,
+    nearest_gap,
+    out_of_sync_parts,
+    score,
+    weak_minutes,
+    wrong_end_share,
+)
 from .bazarr import request_another
-from .heartbeats import worker_health
 from .confidence import confidence
+from .errors import MatroskaError, ToolError, UnsafePathError
+from .files import restore_version, save_version, subtitle_lock
 from .guard import evaluate_and_fix
+from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
 from .logs import LEVEL, log
 from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
 from .reports import latest_reports, needs_review, report
-from .storage import backup_folders, backup_path, file_signature, heavy_disk_read, load_state, revert_source, save_state, state_path, write_json
-from .files import restore_version, save_version, subtitle_lock
-from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text, write_subtitle
+from .storage import (
+    backup_folders,
+    backup_path,
+    file_signature,
+    heavy_disk_read,
+    load_state,
+    revert_source,
+    save_state,
+    state_path,
+    write_json,
+)
+from .subtitles import (
+    is_hearing_impaired,
+    parse_subtitle,
+    parse_timed_text,
+    write_subtitle,
+)
+from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
 
 MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
 MIN_MINUTE_LINES = 3

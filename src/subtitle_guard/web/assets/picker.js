@@ -4,13 +4,13 @@ const clock = value => {
   const hours = Math.floor(value / 3600);
   return hours ? `${hours}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${seconds}` : `${Math.floor(value / 60)}:${seconds}`;
 };
-document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEventListener('click', () => {
-  const time = parseFloat(cell.dataset.time);
+document.querySelectorAll('button.pick').forEach(button => button.addEventListener('click', () => {
+  const time = parseFloat(button.dataset.time);
   document.getElementById('by-hand').open = true;
-  if (cell.classList.contains('yours')) {
+  if (button.closest('td').classList.contains('yours')) {
     picked = time;
     document.getElementById('first').value = clock(Math.max(0, time - 0.05));
-    document.getElementById('hint').textContent = 'Now click the moment in the video it should match, on the left.';
+    document.getElementById('hint').textContent = 'Now choose the moment "In the video" it should match.';
     return;
   }
   if (picked === null) return;

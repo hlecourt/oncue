@@ -200,9 +200,9 @@ def test_the_history_shows_what_each_fix_moved(server, tmp_path):
     assert "This subtitle runs at the wrong speed." in page and "Fix this part" not in page
     reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
     page = get(server + "/history")[1]
-    assert "Started by: Bazarr, from opensubtitles" in page and "Started by: Library scan" in page
+    assert "Started by: Bazarr (downloaded from opensubtitles)" in page and "Started by: Library scan" in page
     assert "lines from 2:" in page and "s earlier</div>" in page and "Speed corrected: it was made for a faster version of the video (4.3%)" in page
-    assert "/ 100, high" in page
+    assert "High confidence" in page
 
 
 
@@ -215,7 +215,7 @@ def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_pa
     reports.report(str(subtitle), "opensubtitles", evaluate_and_fix(str(video), str(subtitle), True))
     page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))[1]
     assert "This subtitle is in sync with the video." in page and "What was changed is shown below." in page
-    assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page
+    assert "What was changed" in page and "started by Bazarr (downloaded from opensubtitles), confidence" in page and "s earlier</div>" in page
     assert "fixed by the guard, now on time" in page and 'class="fixed' in page
     assert "moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page
 
@@ -232,3 +232,25 @@ def test_subtitles_outside_the_roots_or_symlinked_are_unknown(tmp_path, monkeypa
     reports.report(str(link), "scan", {"decision": "kept"})
     monkeypatch.setattr(actions, "ROOTS", [str((tmp_path / "media").resolve())])
     assert actions.known_subtitle(str(inside)) and not actions.known_subtitle(str(outside)) and not actions.known_subtitle(str(link))
+
+
+def test_every_page_escapes_a_hostile_file_name(server, tmp_path):
+    from subtitle_guard import logs
+    hostile = tmp_path / "Show" / "Season 1" / "<x\"'&>.fr.srt"
+    hostile.parent.mkdir(parents=True)
+    hostile.write_text("x")
+    reports.report(str(hostile), "<b>provider</b>", {"decision": "rejected", "reason": "<script>alert(1)</script>", "confidence": 10, "confidence_band": "low"})
+    logs.log("guard.checked", "<x>", subtitle=str(hostile))
+    pages = ["/", "/review", "/history", "/history?latest=1", "/log", "/subtitle?" + urllib.parse.urlencode({"path": str(hostile)})]
+    for page in pages:
+        status, body, _ = get(server + page)
+        assert status in (200, 404) and "<x" not in body and "<script>alert" not in body and "<b>provider" not in body, page
+
+
+def test_restore_is_offered_only_when_a_backup_exists(server, tmp_path):
+    video, starts, ends = video_with_reference(tmp_path)
+    subtitle = video.with_suffix(".fr.srt")
+    write_subtitle_file(subtitle, starts, ends, lambda value: value)
+    reports.report(str(subtitle), "scan", {"decision": "kept"})
+    page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))[1]
+    assert "Restore the original file" not in page and "Every minute is on time." in page

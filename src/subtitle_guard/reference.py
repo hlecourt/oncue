@@ -8,12 +8,11 @@ import time
 import numpy
 
 from .alignment import MIN_CUES
-from .logs import LEVEL, log
 from .errors import MatroskaError, ProbeError
+from .logs import LEVEL, log
 from .matroska import matroska_cue_timings
-from .tools import PROBE_SECONDS, run_tool, stderr_tail
 from .storage import heavy_disk_read, state_path, write_json
-
+from .tools import PROBE_SECONDS, run_tool, stderr_tail
 
 REFERENCE_CACHE_VERSION = 4
 TEXT_CODECS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")
