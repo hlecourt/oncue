@@ -27,6 +27,7 @@ SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_TOKEN, BAZARR_
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -140,7 +141,7 @@ def parse_options(raw):
 
 def hook(arguments, queue):
     settings["source"] = "hook"
-    fields = dict(zip(HOOK_FIELDS, arguments))
+    fields = dict(zip(HOOK_FIELDS, arguments, strict=False))
     log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
         f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
@@ -159,7 +160,5 @@ def print_log(count, problems_only):
 
 
 def lower_io_priority():
-    try:
-        subprocess.run(["ionice", "-c2", "-n7", "-p", str(os.getpid())], capture_output=True)
-    except OSError:
-        pass
+    if shutil.which("ionice"):
+        subprocess.run(["ionice", "-c2", "-n7", "-p", str(os.getpid())], capture_output=True, check=False)

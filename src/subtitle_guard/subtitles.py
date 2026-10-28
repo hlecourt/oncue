@@ -99,7 +99,7 @@ def parse_ass(lines):
 def clock(value):
     *larger, whole = value.replace(",", ".").split(":")
     total = float(whole)
-    for unit, part in zip((60, 3600), reversed(larger)):
+    for unit, part in zip((60, 3600), reversed(larger), strict=False):
         total += unit * int(part)
     return total
 
@@ -118,7 +118,7 @@ def create_subtitle(path, cues, subtitle_format="srt"):
 
 def timed_lines(document, timings):
     lines = list(document["lines"])
-    for line_index, (start, end, _) in zip(document["timing_lines"], timings):
+    for line_index, (start, end, _) in zip(document["timing_lines"], timings, strict=False):
         line = lines[line_index]
         timing = TIMING.match(line)
         separator = "." if "." in timing.group(1) else ","
@@ -129,7 +129,7 @@ def timed_lines(document, timings):
 
 def ass_lines(document, timings):
     lines, columns = list(document["lines"]), document["columns"]
-    for line_index, timing in zip(document["events"], timings):
+    for line_index, timing in zip(document["events"], timings, strict=False):
         prefix, body = lines[line_index].split(":", 1)
         fields = body.split(",", len(columns) - 1)
         fields[columns.index("start")] = ass_timestamp(timing[0])

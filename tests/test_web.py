@@ -7,12 +7,12 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
-
-from subtitle_guard import jobs, reports, storage
-from subtitle_guard.web import actions, context, parts
-from subtitle_guard.web import server as web_server
-from subtitle_guard.subtitles import parse_subtitle
 from media import video_with_reference, write_subtitle_file
+
+from subtitle_guard import jobs, reports
+from subtitle_guard.subtitles import parse_subtitle
+from subtitle_guard.web import actions, context
+from subtitle_guard.web import server as web_server
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -70,7 +70,7 @@ def test_dashboard_jobs_and_api(server):
 def test_unknown_subtitles_are_never_touched(server, tmp_path):
     stranger = tmp_path / "stranger.srt"
     stranger.write_text("1\n00:00:01,000 --> 00:00:02,000\nx\n")
-    code, location = post(server + "/", {"action": "revert", "path": str(stranger)})
+    _code, location = post(server + "/", {"action": "revert", "path": str(stranger)})
     assert "Unknown subtitle" in notice_text(location)
     assert get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(stranger)}))[0] == 404
 
@@ -91,7 +91,7 @@ def test_review_page_and_manual_shift(server, tmp_path):
     assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in notice_text(location)
     shifted = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 120 <= start < 180]
     expected = [start for start in starts if 120 <= start < 180]
-    assert max(abs(a - b) for a, b in zip(shifted, expected)) < 0.01
+    assert max(abs(a - b) for a, b in zip(shifted, expected, strict=False)) < 0.01
 
 
 def test_token_protects_the_ui(server, monkeypatch):
@@ -121,7 +121,7 @@ def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
     assert post(server + "/", {"action": "retry-job", "job": "1" * 70000})[0] == 413
     code, location = post(server + "/", {"action": "retry-job", "job": "not-a-number"})
     assert code == 303 and notice_text(location) == "Only a finished task can be run again."
-    status, _, headers = get(server + "/")
+    _status, _, headers = get(server + "/")
     assert headers["X-Frame-Options"] == "DENY" and "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert 'name="csrf"' in get(server + "/history")[1] or "Run again" not in get(server + "/history")[1]
     assert get(server + "/", {"Host": "rebinding.example:8484"})[0] == 400
@@ -141,11 +141,11 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
                                          "last": f"{part['last']:.3f}", "offset": f"{part['shift']:.2f}"})
     assert code == 303 and "Done." in notice_text(location)
     moved = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 119 <= start < 181]
-    assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180])) < 0.25
+    assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180], strict=False)) < 0.25
     write_subtitle_file(subtitle, starts, ends, lambda value: value * 23.976 / 25 + 6)
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "minute": "0"})
     assert "The whole subtitle is back in sync." in notice_text(location)
-    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
+    _status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
     assert "This subtitle is in sync with the video." in page
 
 
@@ -177,9 +177,9 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
     reports.report(str(subtitle), "manual", {"decision": "manual", "weak_minutes": [2], "confidence": 55, "confidence_band": "low"})
     get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
-    status, page, _ = get(server + "/review")
+    _status, page, _ = get(server + "/review")
     assert "Fix it</button>" in page
-    code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
+    _code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
     assert location.startswith("/review?") and "back in sync" in notice_text(location)
     reports.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
     assert "Move it to S01E03</button>" in get(server + "/review")[1]
@@ -196,7 +196,7 @@ def test_the_history_shows_what_each_fix_moved(server, tmp_path):
     speed = video.with_suffix(".en.srt")
     write_subtitle_file(speed, starts, ends, lambda value: value * 23.976 / 25)
     reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), False))
-    status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
+    _status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(speed)}))
     assert "This subtitle runs at the wrong speed." in page and "Fix this part" not in page
     reports.report(str(speed), "scan", evaluate_and_fix(str(video), str(speed), True))
     page = get(server + "/history")[1]

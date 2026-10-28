@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import numpy
 import pytest
@@ -6,9 +7,7 @@ import pytest
 from subtitle_guard import files, storage
 from subtitle_guard.errors import UnsafePathError
 from subtitle_guard.guard import evaluate_and_fix
-from subtitle_guard.subtitles import parse_subtitle, write_subtitle
-
-from subtitle_guard.subtitles import timestamp
+from subtitle_guard.subtitles import parse_subtitle, timestamp, write_subtitle
 
 LINES = 150
 SRT = "".join(f"{number}\n{timestamp(number * 3.0)} --> {timestamp(number * 3.0 + 1)}\nline {number}\n\n" for number in range(1, LINES + 1))
@@ -65,7 +64,7 @@ def test_revert_uses_the_latest_original(tmp_path):
         subtitle.write_text(content)
         files.save_version(str(subtitle), storage.backup_path(str(subtitle)), "original")
     subtitle.write_text("fixed")
-    assert open(storage.revert_source(str(subtitle))).read() == "second download"
+    assert Path(storage.revert_source(str(subtitle))).read_text() == "second download"
 
 
 def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):

@@ -18,13 +18,13 @@ def test_roles_start_with_default_signal_handlers_in_their_own_group(tmp_path):
         process.join(timeout=20)
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    assert json.load(open(tmp_path / "result.json")) == {"term": True, "group": True}
+    assert json.loads((tmp_path / "result.json").read_text()) == {"term": True, "group": True}
 
 
 def test_a_second_supervisor_is_refused():
     first = worker.single_supervisor_lock()
     assert first is not None and worker.single_supervisor_lock() is None
-    first.close()
+    os.close(first)
     assert worker.single_supervisor_lock() is not None
 
 

@@ -117,7 +117,10 @@ def filtered_events(events, query):
 
 
 def raw_log(query):
-    return 200, open(log_file()).read() if os.path.exists(log_file()) else "", "text/plain; charset=utf-8"
+    if not os.path.exists(log_file()):
+        return 200, "", "text/plain; charset=utf-8"
+    with open(log_file()) as handle:
+        return 200, handle.read(), "text/plain; charset=utf-8"
 
 
 def subtitle_page(query):

@@ -48,24 +48,9 @@ def revert_source(subtitle):
     return next((path for path in originals + manual if os.path.exists(path)), None)
 
 
-def load_state(video, subtitle):
-    path = state_file(video, subtitle)
-    if not os.path.exists(path):
-        return {}
-    try:
-        return json.load(open(path))
-    except ValueError:
-        return {}
-
-
-def save_state(video, subtitle, state):
-    write_json(state_file(video, subtitle), state)
-
-
-def state_file(video, subtitle):
-    stem, name = os.path.splitext(os.path.basename(video))[0], os.path.basename(subtitle)
-    suffix = name[len(stem):] if name.startswith(stem) else name
-    return os.path.join(STATE_DIRECTORY, "state", hashlib.sha1(f"{video}|{suffix}".encode()).hexdigest() + ".json")
+def read_json(path):
+    with open(path) as handle:
+        return json.load(handle)
 
 
 def write_json(path, data):

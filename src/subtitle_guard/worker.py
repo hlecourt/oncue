@@ -63,13 +63,13 @@ def supervise(roles):
 
 def single_supervisor_lock():
     os.makedirs(state_path(), exist_ok=True)
-    handle = open(state_path("supervisor.lock"), "w")
+    descriptor = os.open(state_path("supervisor.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        handle.close()
+        os.close(descriptor)
         return None
-    return handle
+    return descriptor
 
 
 def restart(name, process, role):

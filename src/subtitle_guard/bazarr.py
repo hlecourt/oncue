@@ -15,17 +15,18 @@ from . import jobs
 from .errors import ConfigError
 from .files import restore_version, save_version, subtitle_lock
 from .guard import evaluate_and_fix
+from .library import nearby
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
 from .reports import report
-from .storage import backup_path, load_state, now, save_state, state_path
+from .state import load_state, save_state
+from .storage import backup_path, now, state_path
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")
 MAX_SUBTITLES_PER_MEDIA = 4
 RETRY_WAIT_SECONDS = 900
 BLACKLIST_DELAY_SECONDS = 20
-NEIGHBOUR_EPISODES = 2
 API_KEY_HEADER = "X-API-KEY"
 
 
@@ -67,11 +68,11 @@ def request_another(video, subtitle, queued=False):
         jobs.enqueue(jobs.KIND["blacklist"], {"video": video, "subtitle": subtitle}, delay_seconds=BLACKLIST_DELAY_SECONDS)
         log("bazarr.replacement-scheduled", f"blacklist job queued, delay={BLACKLIST_DELAY_SECONDS}s", video=video, subtitle=subtitle)
         return
-    log_file = open(state_path("retries.log"), "a")
     package_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (package_parent, os.environ.get("PYTHONPATH"))))}
-    child = subprocess.Popen([sys.executable, "-m", "subtitle_guard", "try-another", video, subtitle], stdin=subprocess.DEVNULL,
-                             stdout=log_file, stderr=log_file, start_new_session=True, env=environment)
+    with open(state_path("retries.log"), "a") as retries_log:
+        child = subprocess.Popen([sys.executable, "-m", "subtitle_guard", "try-another", video, subtitle], stdin=subprocess.DEVNULL,
+                                 stdout=retries_log, stderr=retries_log, start_new_session=True, env=environment)
     log("bazarr.replacement-spawned", f"try-another subprocess spawned, child_pid={child.pid}", video=video, subtitle=subtitle, child_pid=child.pid)
 
 
@@ -83,8 +84,7 @@ def scan_series(series_id, apply, queue=False):
     episodes = sorted((episode for episode in bazarr_get(f"/api/episodes?seriesid[]={series_id}")["data"] if episode.get("path")),
                       key=lambda item: (item["season"], item["episode"]))
     for position, episode in enumerate(episodes):
-        nearby = episodes[max(0, position - NEIGHBOUR_EPISODES):position] + episodes[position + 1:position + NEIGHBOUR_EPISODES + 1]
-        neighbours = [(f"S{other['season']:02d}E{other['episode']:02d}", other["path"]) for other in nearby]
+        neighbours = [(f"S{other['season']:02d}E{other['episode']:02d}", other["path"]) for other in nearby(episodes, position)]
         for subtitle in episode.get("subtitles", []):
             if subtitle.get("path"):
                 label = f"S{episode['season']:02d}E{episode['episode']:02d}"
@@ -123,8 +123,7 @@ def series_neighbours(series_id, video):
     position = next((index for index, episode in enumerate(episodes) if episode["path"] == video), None)
     if position is None:
         return ()
-    nearby = episodes[max(0, position - NEIGHBOUR_EPISODES):position] + episodes[position + 1:position + NEIGHBOUR_EPISODES + 1]
-    return [(f"S{episode['season']:02d}E{episode['episode']:02d}", episode["path"]) for episode in nearby]
+    return [(f"S{episode['season']:02d}E{episode['episode']:02d}", episode["path"]) for episode in nearby(episodes, position)]
 
 
 def try_another_subtitle(video, subtitle):
@@ -242,7 +241,7 @@ def api_key():
     if os.environ.get("BAZARR_API_KEY"):
         return os.environ["BAZARR_API_KEY"]
     with open(BAZARR_CONFIG) as handle:
-        match = re.search(r"^auth:\n(?:[ \t]+.*\n)*?[ \t]+apikey: *(\S+)", handle.read(), re.M)
+        match = re.search(r"^auth:\n(?:[ \t]+.*\n)*?[ \t]+apikey: *(\S+)", handle.read(), re.MULTILINE)
     if match is None:
         raise ConfigError(f"no auth.apikey in {BAZARR_CONFIG}, set BAZARR_API_KEY")
     return match.group(1).strip("'\"")

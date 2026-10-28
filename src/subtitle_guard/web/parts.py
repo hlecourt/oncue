@@ -518,7 +518,7 @@ def duration_label(minutes):
 
 def seconds(value):
     *larger, whole = value.strip().replace(",", ".").split(":")
-    return float(whole) + sum(int(part) * unit for part, unit in zip(reversed(larger), (60, 3600)))
+    return float(whole) + sum(int(part) * unit for part, unit in zip(reversed(larger), (60, 3600), strict=False))
 
 
 def escape(value):

@@ -2,10 +2,10 @@ import os
 import shutil
 
 import pytest
-
-from subtitle_guard import jobs, reports, review, storage
-from subtitle_guard.guard import evaluate_and_fix
 from media import video_with_reference, write_subtitle_file
+
+from subtitle_guard import jobs, reports, review, state, storage
+from subtitle_guard.guard import evaluate_and_fix
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -44,7 +44,7 @@ def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
 
 @needs_ffmpeg
 def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
-    video, subtitle, starts, ends = movie
+    _video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
     reports.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
     assert [item["subtitle"] for item in review.review_items()] == [str(subtitle)]
@@ -73,11 +73,11 @@ def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
     write_subtitle_file(subtitle, starts, ends, lambda value: value)
     assert not review.ask_for_another(str(video), str(subtitle))
     monkeypatch.setenv("SUBTITLE_GUARD_QUEUE", "1")
-    storage.save_state(str(video), str(subtitle), {"attempts": [{"provider": "gestdown", "subtitle_id": "x1", "media_id": 12, "series_id": None,
+    state.save_state(str(video), str(subtitle), {"attempts": [{"provider": "gestdown", "subtitle_id": "x1", "media_id": 12, "series_id": None,
                                                                  "language": "fr", "subtitle": str(subtitle)}]})
     assert review.ask_for_another(str(video), str(subtitle))
     assert jobs.recent()[0]["kind"] == "blacklist"
-    assert storage.load_state(str(video), str(subtitle))["pending_retry"]["media_type"] == "movie"
+    assert state.load_state(str(video), str(subtitle))["pending_retry"]["media_type"] == "movie"
 
 
 def test_a_wrong_episode_subtitle_moves_to_the_episode_it_matches(tmp_path):
@@ -117,7 +117,7 @@ def test_diagnosis_lists_the_out_of_sync_parts_in_plain_terms(movie):
 
 @needs_ffmpeg
 def test_a_subtitle_of_another_film_is_not_reported_as_shifted_parts(movie, tmp_path):
-    video, subtitle, starts, ends = movie
+    video, subtitle, _starts, _ends = movie
     _, other_starts, other_ends = video_with_reference(tmp_path / "other", seed=99)
     write_subtitle_file(subtitle, other_starts, other_ends, lambda value: value)
     diagnosis = review.diagnose(str(video), str(subtitle))

@@ -1,10 +1,11 @@
 import io
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
-from subtitle_guard import bazarr, jobs, storage
+from subtitle_guard import bazarr, jobs, state
 from subtitle_guard.errors import ConfigError
 
 
@@ -40,7 +41,7 @@ def test_a_rejected_download_under_workers_queues_the_blacklist(tmp_path, monkey
     video, subtitle = rejected_download(tmp_path, monkeypatch)
     bazarr.handle_download(video, subtitle, "fr", "opensubtitles", "abc", "7", "2", queued=True)
     queued = jobs.recent()[0]
-    assert queued["kind"] == jobs.KIND["blacklist"] and storage.load_state(video, subtitle)["pending_retry"]["subtitle_id"] == "abc"
+    assert queued["kind"] == jobs.KIND["blacklist"] and state.load_state(video, subtitle)["pending_retry"]["subtitle_id"] == "abc"
 
 
 def test_a_failed_blacklist_keeps_the_pending_retry_and_a_success_clears_it(tmp_path, monkeypatch):
@@ -49,18 +50,18 @@ def test_a_failed_blacklist_keeps_the_pending_retry_and_a_success_clears_it(tmp_
     monkeypatch.setattr(bazarr, "OPENER", FakeBazarr(fail=True))
     with pytest.raises(OSError):
         bazarr.blacklist_for_retry(video, subtitle)
-    assert storage.load_state(video, subtitle)["pending_retry"]["subtitle_id"] == "abc"
+    assert state.load_state(video, subtitle)["pending_retry"]["subtitle_id"] == "abc"
     fake = FakeBazarr()
     monkeypatch.setattr(bazarr, "OPENER", fake)
     retry = bazarr.blacklist_for_retry(video, subtitle)
     assert retry["pending"]["subtitle_id"] == "abc" and fake.calls == [("POST", "/api/episodes/blacklist")]
-    assert "pending_retry" not in storage.load_state(video, subtitle)
+    assert "pending_retry" not in state.load_state(video, subtitle)
 
 
 def test_a_hook_queued_for_an_older_download_is_skipped(tmp_path, monkeypatch):
     video, subtitle = rejected_download(tmp_path, monkeypatch)
     queued_hash = bazarr.file_hash(subtitle)
-    open(subtitle, "w").write("a newer download")
+    Path(subtitle).write_text("a newer download")
     outcome = bazarr.handle_download(video, subtitle, "fr", "opensubtitles", "abc", "7", "2", content_hash=queued_hash, queued=True)
     assert outcome["decision"] == "skipped" and not jobs.recent()
 

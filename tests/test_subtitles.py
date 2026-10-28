@@ -1,4 +1,6 @@
-from subtitle_guard import storage
+from pathlib import Path
+
+from subtitle_guard import state
 from subtitle_guard.guard import evaluate_and_fix
 from subtitle_guard.subtitles import ass_timestamp, parse_subtitle, write_subtitle
 
@@ -32,7 +34,7 @@ def test_srt_rewrite_changes_only_the_timings_and_keeps_the_order(tmp_path):
     path = write(tmp_path, "unsorted.srt", "1\n00:00:09,000 --> 00:00:10,000\nB\n\n2\n00:00:01,000 --> 00:00:02,000\nA\n")
     document = parse_subtitle(path)
     write_subtitle(path, document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
-    assert open(path).read() == "1\n00:00:10,000 --> 00:00:11,000\nB\n\n2\n00:00:02,000 --> 00:00:03,000\nA\n"
+    assert Path(path).read_text() == "1\n00:00:10,000 --> 00:00:11,000\nB\n\n2\n00:00:02,000 --> 00:00:03,000\nA\n"
 
 
 def test_a_rewrite_keeps_the_encoding_line_endings_and_bom(tmp_path):
@@ -54,7 +56,7 @@ def test_a_vtt_rewrite_keeps_settings_styles_notes_and_lines_after_a_blank(tmp_p
     path = write(tmp_path, "styled.vtt", content)
     document = parse_subtitle(path)
     write_subtitle(path, document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
-    assert open(path).read() == content.replace("00:00:01.000 --> 00:00:02.000", "00:00:02.000 --> 00:00:03.000").replace(
+    assert Path(path).read_text() == content.replace("00:00:01.000 --> 00:00:02.000", "00:00:02.000 --> 00:00:03.000").replace(
         "00:00:03.000 --> 00:00:04.000", "00:00:04.000 --> 00:00:05.000")
 
 
@@ -65,7 +67,7 @@ def test_vtt_without_hours_round_trip(tmp_path):
     assert document["format"] == "vtt"
     assert [start for start, _, _ in document["cues"]] == [62.5, 65.0]
     write_subtitle(path, document, [(start + 0.25, end + 0.25, text) for start, end, text in document["cues"]])
-    assert open(path).read().startswith("WEBVTT\n\nNOTE a comment\n\nintro\n00:01:02.750 --> 00:01:04.250 align:start\nSans heures")
+    assert Path(path).read_text().startswith("WEBVTT\n\nNOTE a comment\n\nintro\n00:01:02.750 --> 00:01:04.250 align:start\nSans heures")
 
 
 def test_ass_only_times_change(tmp_path):
@@ -74,7 +76,7 @@ def test_ass_only_times_change(tmp_path):
     assert [(start, text) for start, _, text in document["cues"]] == [(1.0, "Bonjour, toi {\\i1}ici{\\i0}"), (65.25, "{\\pos(10,20)}Panneau")]
     write_subtitle(path, document, [(start + 2, end + 2, text) for start, end, text in document["cues"]])
     expected = ASS.replace("0:00:01.00,0:00:02.50", "0:00:03.00,0:00:04.50").replace("0:01:05.25,0:01:06.00", "0:01:07.25,0:01:08.00")
-    assert open(path).read() == expected
+    assert Path(path).read_text() == expected
     assert ass_timestamp(3725.456) == "1:02:05.46"
 
 
@@ -85,5 +87,5 @@ def test_forced_and_short_files_are_left_alone_before_reading_the_video(tmp_path
 
 def test_state_is_kept_per_language():
     video = "/media/Show/Season 1/Show.S01E01.mkv"
-    french, english = storage.state_file(video, "/media/Show/Season 1/Show.S01E01.fr.srt"), storage.state_file(video, "/media/Show/Season 1/Show.S01E01.en.srt")
+    french, english = state.state_file(video, "/media/Show/Season 1/Show.S01E01.fr.srt"), state.state_file(video, "/media/Show/Season 1/Show.S01E01.en.srt")
     assert french != english

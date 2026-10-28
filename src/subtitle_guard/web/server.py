@@ -93,7 +93,8 @@ def generated_token(host):
         with os.fdopen(descriptor, "w") as handle:
             handle.write(secrets.token_urlsafe(24))
         log("web.token-generated", f"SUBTITLE_GUARD_UI_TOKEN unset while listening on {host}, token generated in {path}", LEVEL["warning"], path=path)
-    token = open(path).read().strip()
+    with open(path) as handle:
+        token = handle.read().strip()
     print(f"subtitle-guard: open the UI with the token {token} (stored in {path})", flush=True)
     return token
 
