@@ -2,6 +2,8 @@
 
 import multiprocessing
 import os
+import signal
+import sys
 import time
 import traceback
 
@@ -9,7 +11,7 @@ from . import jobs
 from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log, settings
-from .outcome import DECISION_WORDS, describe
+from .outcome import describe
 from .storage import report
 
 WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
@@ -28,16 +30,27 @@ def worker_roles(count):
 def supervise(roles):
     settings["echo"], settings["source"] = True, "supervisor"
     recovered = jobs.recover_running()
-    log("worker.supervisor-started", f"Started {', '.join(sorted(roles))}" + (f", put {recovered} interrupted tasks back in the queue" if recovered else ""),
-        roles=sorted(roles), recovered=recovered)
+    log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} recovered_jobs={recovered}", roles=sorted(roles), recovered=recovered)
     processes = {name: start(*role) for name, role in roles.items()}
+    for stop_signal in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(stop_signal, lambda number, frame: shut_down(processes, signal.Signals(number).name))
     while True:
         time.sleep(SUPERVISION_SECONDS)
         for name, process in list(processes.items()):
             if not process.is_alive():
-                log("worker.restarted", f"{name} stopped with exit code {process.exitcode}, started it again", LEVEL["warning"], role=name,
+                log("supervisor.role-restarted", f"role {name} exited code={process.exitcode}, restarted", LEVEL["warning"], role=name,
                     exit_code=process.exitcode)
                 processes[name] = start(*roles[name])
+
+
+def shut_down(processes, signal_name):
+    log("supervisor.stopping", f"{signal_name} received, stopping {len(processes)} roles", signal=signal_name, roles=sorted(processes))
+    for process in processes.values():
+        process.terminate()
+    for process in processes.values():
+        process.join(timeout=10)
+    log("supervisor.stopped", "all roles stopped")
+    sys.exit(0)
 
 
 def start(target, arguments):
@@ -48,6 +61,7 @@ def start(target, arguments):
 
 def work_forever(number):
     settings["echo"], settings["source"] = True, f"worker-{number}"
+    log("worker.started", f"worker {number} started poll={POLL_SECONDS}s", worker=number)
     while True:
         if not work_once(number):
             time.sleep(POLL_SECONDS)
@@ -58,17 +72,20 @@ def work_once(number):
     if job is None:
         return False
     started = time.time()
-    log("job.started", f"Started task {job['id']} ({job['kind']})", job=job["id"], kind=job["kind"], worker=number, subtitle=job["arguments"].get("subtitle"))
+    log("job.started", f"job {job['id']} started kind={job['kind']} attempt={job['attempts']}", job=job["id"], kind=job["kind"], worker=number,
+        subtitle=job["arguments"].get("subtitle"))
+    settings["context"] = {"job": job["id"]}
     try:
         outcome = run_job(job)
     except Exception as error:
         jobs.fail(job["id"], f"{type(error).__name__}: {error}")
-        log("job.failed", f"Task {job['id']} failed: {type(error).__name__}: {error}", LEVEL["error"], job=job["id"], kind=job["kind"], worker=number,
+        log("job.failed", f"job {job['id']} failed: {type(error).__name__}: {error}", LEVEL["error"], job=job["id"], kind=job["kind"], worker=number,
             subtitle=job["arguments"].get("subtitle"), error=f"{type(error).__name__}: {error}", trace=traceback.format_exc(limit=6))
         return True
+    finally:
+        settings["context"] = {}
     jobs.finish(job["id"], {**outcome, "summary": outcome.get("summary") or describe(outcome)})
-    result = DECISION_WORDS.get(outcome.get("decision"), outcome.get("summary") or outcome.get("decision"))
-    log("job.done", f"Finished task {job['id']} in {time.time() - started:.1f} s: {result}", job=job["id"], kind=job["kind"], worker=number,
+    log("job.succeeded", f"job {job['id']} succeeded in {time.time() - started:.2f}s decision={outcome.get('decision')}", job=job["id"], kind=job["kind"], worker=number,
         subtitle=job["arguments"].get("subtitle"), decision=outcome.get("decision"), confidence=outcome.get("confidence"), band=outcome.get("confidence_band"),
         seconds=round(time.time() - started, 2))
     return True

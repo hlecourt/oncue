@@ -38,7 +38,7 @@ def scan_folder(root, apply, queue=False):
 
 def watch(roots, apply):
     settings["source"] = "watch"
-    log("watch.started", f"Watching {', '.join(roots)} every {WATCH_SECONDS} s", roots=roots, applied=apply, interval=WATCH_SECONDS)
+    log("watch.started", f"watching {len(roots)} roots interval={WATCH_SECONDS}s apply={apply}", roots=roots, applied=apply, interval=WATCH_SECONDS)
     while True:
         queued = 0
         for root in roots:
@@ -50,7 +50,7 @@ def watch(roots, apply):
                 jobs.remember(subtitle, signature)
                 queued += 1
         if queued:
-            log("watch.queued", f"Found {queued} new or changed subtitles, queued a check for each", jobs=queued)
+            log("watch.changes-queued", f"{queued} new or changed subtitles queued", jobs=queued)
         time.sleep(WATCH_SECONDS)
 
 

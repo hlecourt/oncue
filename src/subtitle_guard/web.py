@@ -22,7 +22,6 @@ NOTICEABLE_SECONDS = 0.5
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5fd0'/%3E"
            "%3Crect x='3' y='9' width='10' height='2' fill='white'/%3E%3Crect x='3' y='12' width='6' height='2' fill='white'/%3E%3C/svg%3E")
 LOG_LIMIT = 300
-TECHNICAL_HEADER = ("time", "level", "source", "event", "message", "trace")
 HISTORY_LIMIT = 300
 HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed",)), "in-sync": ("In sync", ("kept",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")),
                   "not-checked": ("Not checked", ("unverified", "audio-synced")), "by-hand": ("By hand", ("manual", "reverted"))}
@@ -94,12 +93,19 @@ table.history td.actions { width: 1%; white-space: nowrap; text-align: right; }
 .tab .count { margin-left: 6px; font-size: 12px; color: var(--muted); }
 .technical-log { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--sidebar); border: 1px solid var(--line);
                  border-radius: 8px; padding: 8px 12px; overflow-x: auto; }
-.technical-log .line { white-space: pre-wrap; overflow-wrap: anywhere; padding: 3px 0; border-bottom: 1px solid var(--surface); }
-.technical-log .when, .technical-log .fields, .technical-log .source { color: var(--muted); }
-.technical-log .event { color: var(--accent); }
+.technical-log details.line { background: none; border: 0; border-bottom: 1px solid var(--surface); border-radius: 0; padding: 0; margin: 0; }
+.technical-log details.line[open] summary { margin-bottom: 0; }
+.technical-log summary { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 0; cursor: pointer; list-style: none; }
+.technical-log summary::-webkit-details-marker { display: none; }
+.technical-log summary:hover { background: var(--surface); }
+.technical-log .when, .technical-log .source { color: var(--muted); }
+.technical-log .event { color: var(--accent); font-weight: 600; }
+.technical-log .metadata { position: relative; margin: 2px 0 8px 2ch; }
+.technical-log .metadata pre { margin: 0; padding: 10px 12px; background: var(--background); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto;
+                               white-space: pre; color: var(--text); }
+.technical-log .copy { position: absolute; top: 6px; right: 6px; }
 .technical-log .debug .level { color: var(--muted); } .technical-log .warning .level { color: var(--medium); }
-.technical-log .error .level, .technical-log .trace { color: var(--bad); }
-.technical-log .trace { white-space: pre; overflow-x: auto; margin: 2px 0 0 2ch; }
+.technical-log .error .level, .technical-log .error .text { color: var(--bad); }
 form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; }
 form.filters input[type=text] { flex: 1 1 320px; max-width: 560px; width: auto; }
@@ -189,6 +195,22 @@ document.addEventListener('keydown', event => {
   if (event.key === 'a' && document.getElementById('accept-form')) { document.getElementById('accept-form').submit(); }
 });
 """
+COPY = """
+document.querySelectorAll('button.copy').forEach(button => button.addEventListener('click', () => {
+  const text = button.nextElementSibling.textContent;
+  const done = () => { button.textContent = 'Copied'; setTimeout(() => { button.textContent = 'Copy'; }, 1500); };
+  const select = () => {
+    const range = document.createRange();
+    range.selectNodeContents(button.nextElementSibling);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    document.execCommand('copy');
+    done();
+  };
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, select); return; }
+  select();
+}));
+"""
 PICKER = """
 let picked = null;
 const clock = value => {
@@ -215,7 +237,8 @@ document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEven
 def serve_ui(host=HOST, port=PORT):
     settings["source"] = "web"
     server = ThreadingHTTPServer((host, port), Handler)
-    log("web.started", f"Web UI listening on {host}:{server.server_address[1]}", token_required=bool(TOKEN))
+    log("web.listening", f"HTTP listening on {host}:{server.server_address[1]} auth={'token' if TOKEN else 'none'}", host=host, port=server.server_address[1],
+        token_required=bool(TOKEN))
     server.serve_forever()
 
 
@@ -226,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/health":
             return self.respond(200, "ok", "text/plain")
         if not self.authorised(query):
-            log("web.denied", "Refused a page without the right token", LEVEL["warning"], path=url.path, client=self.client_address[0])
+            log("web.auth-denied", f"401 GET {url.path} from {self.client_address[0]}", LEVEL["warning"], method="GET", path=url.path, client=self.client_address[0])
             return self.respond(401, layout("Token needed", '<form><input type="text" name="token" placeholder="token"> <button>Open</button></form>', navigation=False))
         if TOKEN and query.get("token") == TOKEN:
             return self.redirect(url.path, cookie=True)
@@ -239,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self.authorised({}):
-            log("web.denied", "Refused an action without the right token", LEVEL["warning"], path=self.path, client=self.client_address[0])
+            log("web.auth-denied", f"401 POST {self.path} from {self.client_address[0]}", LEVEL["warning"], method="POST", path=self.path, client=self.client_address[0])
             return self.respond(401, layout("Token needed", "<p>Open the UI with its token first.</p>", navigation=False))
         length = int(self.headers.get("Content-Length", 0))
         form = {key: values[0] for key, values in urllib.parse.parse_qs(self.rfile.read(length).decode()).items()}
@@ -442,16 +465,14 @@ def started_by(provider):
 
 def confidence_badge(row):
     if not row["confidence"]:
-        return '<span class="muted">-</span>'
+        return '<span class="muted">not recorded</span>'
     return f'<span class="badge {BAND_TONES.get(row["band"], "neutral")}">{escape(row["confidence"])} / 100, {escape(row["band"])}</span>'
 
 
 def lines_matching(row):
     before, after = percent(row["matched_before"]), percent(row["matched"])
-    if not after:
+    if not after or not before or before == after:
         return ""
-    if not before or before == after:
-        return f'<div class="muted">{after} of lines match the video</div>'
     return f'<div class="muted">lines matching the video: {before} before, {after} after</div>'
 
 
@@ -483,17 +504,17 @@ def technical_log(events):
     if not events:
         return '<p class="muted">Nothing logged.</p>'
     lines = "".join(technical_line(event) for event in events)
-    return f'<p class="subtle words">Newest first. <a href="/log.jsonl">Download the raw log</a>.</p><div class="technical-log">{lines}</div>'
+    return (f'<p class="subtle words">Newest first. Click a line to open its metadata. <a href="/log.jsonl">Download the raw log</a>.</p>'
+            f'<div class="technical-log">{lines}</div><script>{COPY}</script>')
 
 
 def technical_line(event):
     level = event_level(event)
-    fields = " ".join(f"{key}={json.dumps(value, ensure_ascii=False, default=str)}" for key, value in event.items()
-                      if key not in TECHNICAL_HEADER and value not in (None, "", [], {}))
-    trace = f'<div class="trace">{escape(event["trace"])}</div>' if event.get("trace") else ""
-    return (f'<div class="line {level}"><span class="when">{escape(event["time"])}</span> <span class="level">{level.upper():<7}</span> '
-            f'<span class="source">{escape(event.get("source", "-")):<10}</span> <span class="event">{escape(event["event"])}</span> {escape(event_message(event))} '
-            f'<span class="fields">{escape(fields)}</span>{trace}</div>')
+    metadata = escape(json.dumps(event, ensure_ascii=False, indent=2, default=str))
+    return (f'<details class="line {level}"><summary><span class="when">{escape(event["time"])}</span> <span class="level">{level.upper():<7}</span> '
+            f'<span class="source">{escape(event.get("source", "-")):<10}</span> <b class="event">{escape(event["event"])}</b> '
+            f'<span class="text">{escape(event_message(event))}</span></summary>'
+            f'<div class="metadata"><button class="small copy" type="button">Copy</button><pre>{metadata}</pre></div></details>')
 
 
 def raw_log(query):

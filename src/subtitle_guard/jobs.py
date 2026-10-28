@@ -25,8 +25,8 @@ def enqueue(kind, arguments, delay_seconds=0):
     with closing(connect()) as connection:
         cursor = connection.execute("insert into jobs (kind, arguments, status, run_after, created) values (?, ?, ?, ?, ?)",
                                     (kind, json.dumps(arguments), STATUS["queued"], time.time() + delay_seconds, now()))
-    log("job.queued", f"Queued task {cursor.lastrowid} ({kind})" + (f", runs in {delay_seconds} s" if delay_seconds else ""), job=cursor.lastrowid, kind=kind,
-        subtitle=arguments.get("subtitle"))
+    log("job.queued", f"job {cursor.lastrowid} queued kind={kind}" + (f" delay={delay_seconds}s" if delay_seconds else ""), job=cursor.lastrowid, kind=kind,
+        subtitle=arguments.get("subtitle"), delay_seconds=delay_seconds)
     return cursor.lastrowid
 
 
@@ -41,7 +41,7 @@ def claim(worker):
         connection.execute("update jobs set status = ?, started = ?, attempts = attempts + 1, worker = ? where id = ?",
                            (STATUS["running"], now(), worker, row["id"]))
         connection.execute("commit")
-        return {**as_job(row), "status": STATUS["running"]}
+        return {**as_job(row), "status": STATUS["running"], "attempts": row["attempts"] + 1}
 
 
 def finish(job_id, outcome):

@@ -10,7 +10,7 @@ from .storage import now, state_path
 MAX_LOG_BYTES = 10 * 1024 * 1024
 TAIL_BYTES = 2 * 1024 * 1024
 LEVEL = {"debug": "debug", "info": "info", "warning": "warning", "error": "error"}
-settings = {"echo": False, "source": "cli"}
+settings = {"echo": False, "source": "cli", "context": {}}
 LEGACY_EVENTS = {
     "decision": ("guard", "info", "Checked: {decision}"),
     "job-started": ("job", "info", "Started task {job} ({kind})"),
@@ -34,8 +34,8 @@ LEGACY_EVENTS = {
 
 
 def log(event, message, level=LEVEL["info"], **fields):
-    line = json.dumps({"time": now(), "level": level, "source": settings["source"], "event": event, "message": message, **fields},
-                      ensure_ascii=False, default=str)
+    line = json.dumps({"time": now(), "level": level, "source": settings["source"], "pid": os.getpid(), "event": event, "message": message,
+                       **settings["context"], **fields}, ensure_ascii=False, default=str)
     path = log_file()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path) and os.path.getsize(path) > MAX_LOG_BYTES:

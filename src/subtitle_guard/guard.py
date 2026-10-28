@@ -8,7 +8,7 @@ from .alignment import MIN_CUES, assess, describe_changes, judge
 from .audio import sync_to_audio
 from .confidence import confidence
 from .logs import LEVEL, log
-from .outcome import DECISION, DECISION_WORDS, WORRYING_DECISIONS
+from .outcome import DECISION, WORRYING_DECISIONS
 from .reference import load_reference
 from .storage import backup_path
 from .subtitles import HEARING_IMPAIRED_TAGS, parse_subtitle, write_subtitle
@@ -19,8 +19,8 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     outcome = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
     outcome = {**outcome, "confidence": score, "confidence_band": band}
-    sentence = DECISION_WORDS.get(outcome["decision"], outcome["decision"]) + (f": {outcome['matches']}" if outcome.get("matches") else "")
-    message = f"Checked: {sentence}, confidence {score}" + ("" if apply else " (dry run, nothing changed)")
+    message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {time.time() - started:.2f}s"
+               + (f" matches={outcome['matches']}" if outcome.get("matches") else "") + ("" if apply else " dry-run"))
     level = LEVEL["warning"] if outcome["decision"] in WORRYING_DECISIONS else LEVEL["info"]
     log("guard.checked", message, level, video=video, subtitle=subtitle, applied=apply, decision=outcome["decision"], confidence=score, band=band,
         reference=outcome.get("reference"), reason=outcome.get("reason"), matches=outcome.get("matches"),
@@ -59,7 +59,7 @@ def examine(video, subtitle, apply, neighbours):
     shutil.copy2(subtitle, os.path.join(backup_folder, "original" + extension))
     if attempt["fixed"]:
         write_subtitle(subtitle, document, attempt["timings"])
-        log("guard.rewritten", "Rewrote the subtitle with the new timings, the original is in the backups", subtitle=subtitle, backup=backup_folder)
+        log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
     best_copy = os.path.join(backup_folder, "kept" + extension)
     shutil.copy2(subtitle, best_copy)
     return {**outcome, "best_copy": best_copy}

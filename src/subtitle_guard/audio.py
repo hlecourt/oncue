@@ -37,11 +37,12 @@ def sync_to_audio(video, subtitle):
     if not result:
         if os.path.exists(output):
             os.remove(output)
-        log("audio.not-synced", "ffsubsync could not sync this subtitle to the audio with confidence, nothing changed", LEVEL["warning"], subtitle=subtitle)
+        log("audio.sync-rejected", "ffsubsync gave no usable result (failed or offset beyond limit), file unchanged", LEVEL["warning"], subtitle=subtitle)
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, audio sync not confident"}
     starts = [start for start, _, _ in parse_subtitle(subtitle)["cues"]]
     os.replace(output, subtitle)
-    log("audio.synced", f"Synced to the audio with ffsubsync, moved by {result['offset_seconds']:+.2f} s", subtitle=subtitle, backup=backup_folder, **result)
+    log("audio.synced", f"ffsubsync applied offset={result['offset_seconds']:+.2f}s scale={result['framerate_scale_factor']:.4f}", subtitle=subtitle,
+        backup=backup_folder, **result)
     shutil.copy2(subtitle, os.path.join(backup_folder, "kept" + extension))
     moved = [{"first": starts[0], "last": starts[-1], "lines": len(starts), "shift": round(result["offset_seconds"], 2)}] if starts else []
     return {"decision": DECISION["audio_synced"], "reason": f"synced to the audio by ffsubsync, offset {result['offset_seconds']:+.2f}s, "

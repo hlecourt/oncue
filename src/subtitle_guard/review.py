@@ -156,7 +156,7 @@ def diagnosis_from(cues, decision, original, weak, attempt):
 
 
 def fix_everything(video, subtitle):
-    log("review.fix-everything", "Asked by hand to fix the whole subtitle", subtitle=subtitle)
+    log("review.fix-requested", "full fix requested from the UI", subtitle=subtitle)
     outcome = evaluate_and_fix(video, subtitle, True)
     report(subtitle, "ui", outcome)
     return outcome
@@ -212,7 +212,7 @@ def shift_range(video, subtitle, first, last, offset):
                "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
                                                                          "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]}}
     report(subtitle, "manual", outcome)
-    log("review.shifted", f"Moved the lines from {first:.1f} s to {last:.1f} s by {offset:+.2f} s by hand", subtitle=subtitle, first=first, last=last,
+    log("review.shifted", f"manual shift range={first:.2f}-{last:.2f}s offset={offset:+.2f}s", subtitle=subtitle, first=first, last=last,
         offset=offset, confidence=outcome["confidence"])
     return outcome
 
@@ -224,19 +224,19 @@ def revert(subtitle):
     keep_current(subtitle, "before-revert")
     shutil.copy2(originals[0], subtitle)
     report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(originals[0]))}"})
-    log("review.reverted", "Put the original file back", subtitle=subtitle, original=originals[0])
+    log("review.reverted", f"original restored from {originals[0]}", subtitle=subtitle, original=originals[0])
     return True
 
 
 def accept(subtitle):
     jobs.accept(subtitle, file_signature(subtitle))
-    log("review.accepted", "Kept as it is by hand, it leaves the review list", subtitle=subtitle)
+    log("review.accepted", "accepted as is, excluded from review until the file changes", subtitle=subtitle)
 
 
 def recheck(video, subtitle):
     folder, name = os.path.split(video)
     videos = sorted(entry for entry in os.listdir(folder) if entry.lower().endswith(VIDEO_EXTENSIONS))
-    log("review.recheck", "Asked by hand for a new check", subtitle=subtitle)
+    log("review.recheck-requested", "recheck requested from the UI", subtitle=subtitle)
     return jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": True, "neighbours": folder_neighbours(folder, name, videos)})
 
 
@@ -252,7 +252,7 @@ def move_to_episode(video, subtitle, label):
         keep_current(target, "before-move")
     keep_current(subtitle, "moved-away")
     os.replace(subtitle, target)
-    log("review.moved", f"Moved to {label}", subtitle=subtitle, target=target, episode=label)
+    log("review.moved", f"moved to {label} target={target}", subtitle=subtitle, target=target, episode=label)
     return target, recheck(target_video, target)
 
 
@@ -265,7 +265,7 @@ def ask_for_another(video, subtitle):
                               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
     save_state(video, subtitle, state)
     request_another(video, subtitle)
-    log("review.asked-another", f"Asked Bazarr for another subtitle instead of the {last['provider']} one", subtitle=subtitle, provider=last["provider"])
+    log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True
 
 

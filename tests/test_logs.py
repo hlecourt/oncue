@@ -44,7 +44,8 @@ def test_every_decision_is_logged_in_plain_words(tmp_path):
     evaluate_and_fix("/nonexistent.mkv", str(subtitle), False)
     event = events()[-1]
     assert event["event"] == "guard.checked" and event["decision"] == "unverified" and event["subtitle"] == str(subtitle)
-    assert event["message"].startswith("Checked: Cannot be checked") and "dry run" in event["message"]
+    assert event["message"].startswith("decision=unverified confidence=0 band=none") and event["message"].endswith("dry-run")
+    assert event["pid"] and event["source"] == "cli"
 
 
 class Answer:
@@ -59,7 +60,8 @@ def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: Answer())
     assert bazarr.bazarr_get("/api/movies?start=0&length=-1") == {"data": []}
     event = events()[-1]
-    assert event["event"] == "bazarr.request" and event["status"] == 200 and event["path"] == "/api/movies?start=0&length=-1"
+    assert event["event"] == "bazarr.api-call" and event["status"] == 200 and event["path"] == "/api/movies?start=0&length=-1"
+    assert event["message"].startswith("GET /api/movies?start=0&length=-1 200 in ")
 
     def refuse(request, timeout):
         raise urllib.error.URLError("connection refused")
@@ -67,7 +69,7 @@ def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
     with pytest.raises(OSError):
         bazarr.bazarr_post("/api/episodes/blacklist", {"provider": "opensubtitles"})
     event = events()[-1]
-    assert event["event"] == "bazarr.request-failed" and event["level"] == "error" and event["method"] == "POST"
+    assert event["event"] == "bazarr.api-error" and event["level"] == "error" and event["method"] == "POST" and "connection refused" in event["error"]
     assert "secret-key" not in open(logs.log_file()).read()
 
 
@@ -75,5 +77,28 @@ def test_a_download_from_bazarr_is_logged_as_it_arrives(monkeypatch, tmp_path):
     monkeypatch.setitem(logs.settings, "source", "cli")
     cli.hook([str(tmp_path / "a.mkv"), str(tmp_path / "a.fr.srt"), "fr", "opensubtitles", "123", "7", "2"], True)
     written = events()
-    assert [event["event"] for event in written] == ["bazarr.hook", "job.queued"]
-    assert written[0]["source"] == "hook" and written[0]["message"] == "Bazarr downloaded a fr subtitle from opensubtitles, queued for a check"
+    assert [event["event"] for event in written] == ["bazarr.hook-received", "job.queued"]
+    assert written[0]["source"] == "hook" and written[0]["message"] == "post-processing hook lang=fr provider=opensubtitles id=123 mode=queued"
+    assert written[1]["message"] == "job 1 queued kind=hook"
+
+
+def test_a_long_running_command_reports_its_start_and_health(monkeypatch, tmp_path):
+    from subtitle_guard import health
+    monkeypatch.delenv("BAZARR_API_KEY", raising=False)
+    monkeypatch.setattr(health, "BAZARR_CONFIG", str(tmp_path / "missing.yaml"))
+    checks = health.report_startup("worker", workers=2)
+    started, checked = events()[-2:]
+    assert started["event"] == "service.started" and started["command"] == "worker" and started["workers"] == 2 and started["version"]
+    assert checked["event"] == "health.checked" and checks["bazarr"] == {"ok": True, "configured": False} and checks["state_writable"]["ok"]
+    assert checked["message"] == "health ok" or checked["message"].startswith("health degraded failing=")
+
+
+def test_events_inside_a_job_carry_the_job_id(monkeypatch):
+    from subtitle_guard import jobs, worker
+    job_id = jobs.enqueue(jobs.KIND["check"], {"video": "/missing.mkv", "subtitle": "/missing.fr.srt", "apply": False})
+    monkeypatch.setattr(worker, "run_job", lambda job: (logs.log("guard.checked", "decision=kept"), {"decision": "kept", "summary": "in sync"})[1])
+    worker.work_once(1)
+    by_event = {event["event"]: event for event in events()}
+    assert by_event["guard.checked"]["job"] == job_id and by_event["job.succeeded"]["job"] == job_id
+    logs.log("web.listening", "HTTP listening on 127.0.0.1:8484 auth=none")
+    assert "job" not in events()[-1]

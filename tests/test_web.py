@@ -121,18 +121,18 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     assert "This subtitle is in sync with the video." in page
 
 
-def test_the_log_page_is_technical_lines_with_a_search(server):
+def test_the_log_page_is_events_with_copyable_metadata_and_a_search(server):
     from subtitle_guard import logs
-    logs.log("bazarr.hook", "Bazarr downloaded a fr subtitle from opensubtitles", subtitle="/media/Show/Show.S01E01.fr.srt")
-    logs.log("job.failed", "Task 9 failed: OSError: gone", logs.LEVEL["error"], job=9, trace="Traceback: boom")
-    logs.log("reference.extracted", "Read 2 usable subtitle tracks from the video in 0.4 s", logs.LEVEL["debug"], tracks=[{"index": 3, "lines": 512}])
+    logs.log("bazarr.hook-received", "post-processing hook lang=fr provider=opensubtitles id=1 mode=inline", subtitle="/media/Show/Show.S01E01.fr.srt")
+    logs.log("job.failed", "job 9 failed: OSError: gone", logs.LEVEL["error"], job=9, trace="Traceback: boom")
+    logs.log("reference.extracted", "2 candidate tracks extracted in 0.40s", logs.LEVEL["debug"], tracks=[{"index": 3, "lines": 512}])
     status, page, _ = get(server + "/log")
-    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Show.S01E01.fr.srt" in page
-    assert "bazarr.hook" in page and "Task 9 failed" in page and "Traceback: boom" in page and "ERROR" in page and "DEBUG" in page
-    assert "tracks=[{&quot;index&quot;: 3, &quot;lines&quot;: 512}]" in page
-    page = get(server + "/log?q=task+9")[1]
-    assert "Task 9 failed" in page and "Bazarr downloaded" not in page
-    assert [event["job"] for event in json.loads(get(server + "/api/log?q=task+9")[1])] == [9]
+    assert status == 200 and "<b class=\"event\">bazarr.hook-received</b>" in page and "job 9 failed: OSError: gone" in page
+    assert "ERROR" in page and "DEBUG" in page and "Traceback: boom" in page and "Show.S01E01.fr.srt" in page
+    assert '<button class="small copy" type="button">Copy</button><pre>{' in page and "&quot;lines&quot;: 512" in page
+    page = get(server + "/log?q=job+9")[1]
+    assert "job 9 failed" in page and "bazarr.hook-received" not in page
+    assert [event["job"] for event in json.loads(get(server + "/api/log?q=job+9")[1])] == [9]
     assert '"event": "reference.extracted"' in get(server + "/log.jsonl")[1]
 
 
