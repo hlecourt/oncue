@@ -63,12 +63,6 @@ def recent_events():
     return events
 
 
-def event_area(event):
-    if "." in event["event"]:
-        return event["event"].split(".")[0]
-    return LEGACY_EVENTS.get(event["event"], ("other",))[0]
-
-
 def event_level(event):
     return event.get("level") or LEGACY_EVENTS.get(event["event"], ("other", LEVEL["info"]))[1]
 

@@ -112,10 +112,8 @@ def last_fix(video, subtitle):
     shifts = [new_start - old_start for (new_start, _, _), (old_start, _, _) in zip(new, old)]
     if len(old) != len(new) or max((abs(shift) for shift in shifts), default=0) < NOTICEABLE_SHIFT_SECONDS:
         return None
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(old))
-    starts = numpy.array([start for start, _, _ in old])
-    minutes = minute_states(starts, numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS, False) if reference is not None else []
-    return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "minutes": minutes, "parts": out_of_sync_parts(old, shifts)}
+    moved_minutes = sorted({int(start // 60) for (start, _, _), shift in zip(new, shifts) if abs(shift) >= NOTICEABLE_SHIFT_SECONDS})
+    return {"time": os.path.basename(os.path.dirname(before)), "shifts": shifts, "moved_minutes": moved_minutes, "parts": out_of_sync_parts(old, shifts)}
 
 
 def diagnose(video, subtitle):

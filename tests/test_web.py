@@ -121,22 +121,19 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     assert "This subtitle is in sync with the video." in page
 
 
-def test_the_log_page_shows_everything_and_filters_it(server):
+def test_the_log_page_is_technical_lines_with_a_search(server):
     from subtitle_guard import logs
     logs.log("bazarr.hook", "Bazarr downloaded a fr subtitle from opensubtitles", subtitle="/media/Show/Show.S01E01.fr.srt")
-    logs.log("job.failed", "Task 9 failed: OSError: gone", logs.LEVEL["error"], job=9)
-    status, page, _ = get(server + "/log")
-    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Task 9 failed" in page and "Show.S01E01.fr.srt" in page
-    page = get(server + "/log?level=errors")[1]
-    assert "Task 9 failed" in page and "Bazarr downloaded" not in page
-    page = get(server + "/log?area=bazarr")[1]
-    assert "Bazarr downloaded" in page and "Task 9 failed" not in page
-    assert [event["job"] for event in json.loads(get(server + "/api/log?q=task+9")[1])] == [9]
+    logs.log("job.failed", "Task 9 failed: OSError: gone", logs.LEVEL["error"], job=9, trace="Traceback: boom")
     logs.log("reference.extracted", "Read 2 usable subtitle tracks from the video in 0.4 s", logs.LEVEL["debug"], tracks=[{"index": 3, "lines": 512}])
-    assert "Read 2 usable subtitle tracks" not in get(server + "/log")[1]
-    page = get(server + "/log?view=technical")[1]
-    assert "Read 2 usable subtitle tracks" in page and "reference.extracted" in page and "tracks=[{&quot;index&quot;: 3, &quot;lines&quot;: 512}]" in page
-    assert "DEBUG" in page and "ERROR" in page and '"event": "reference.extracted"' in get(server + "/log.jsonl")[1]
+    status, page, _ = get(server + "/log")
+    assert status == 200 and "Bazarr downloaded a fr subtitle from opensubtitles" in page and "Show.S01E01.fr.srt" in page
+    assert "bazarr.hook" in page and "Task 9 failed" in page and "Traceback: boom" in page and "ERROR" in page and "DEBUG" in page
+    assert "tracks=[{&quot;index&quot;: 3, &quot;lines&quot;: 512}]" in page
+    page = get(server + "/log?q=task+9")[1]
+    assert "Task 9 failed" in page and "Bazarr downloaded" not in page
+    assert [event["job"] for event in json.loads(get(server + "/api/log?q=task+9")[1])] == [9]
+    assert '"event": "reference.extracted"' in get(server + "/log.jsonl")[1]
 
 
 def review_part(video, subtitle):
@@ -191,4 +188,5 @@ def test_a_fixed_subtitle_shows_what_was_changed_before_and_after(server, tmp_pa
     page = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))[1]
     assert "This subtitle is in sync with the video." in page and "What was changed is shown below." in page
     assert "What was changed" in page and "started by Bazarr, from opensubtitles, confidence" in page and "s earlier</div>" in page
-    assert "Before the fix" in page and "Now</p>" in page and ("moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page)
+    assert "fixed by the guard, now on time" in page and 'class="fixed' in page
+    assert "moved 2.9 s earlier</div>" in page or "moved 3.0 s earlier</div>" in page

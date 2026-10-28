@@ -32,9 +32,7 @@ def load_tracks(video):
     cache_file = state_path("references", f"{cache_key}.json")
     if os.path.exists(cache_file):
         try:
-            tracks = json.load(open(cache_file))
-            log("reference.cached", f"Used the subtitle tracks of the video read earlier ({len(tracks)} usable)", LEVEL["debug"], video=video, cache=cache_file)
-            return tracks
+            return json.load(open(cache_file))
         except ValueError as error:
             log("reference.cache-unreadable", f"The saved subtitle tracks of the video could not be read, reading the video again: {error}", LEVEL["warning"],
                 video=video, cache=cache_file)

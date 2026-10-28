@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import jobs, review
 from .library import SUBTITLE_EXTENSIONS
-from .logs import LEVEL, event_area, event_level, event_message, log, log_file, recent_events, settings
+from .logs import LEVEL, event_level, event_message, log, log_file, recent_events, settings
 from .outcome import DECISION, DECISION_WORDS
 from .storage import latest_reports, report_history
 
@@ -21,9 +21,6 @@ WINDOW_SECONDS = 60
 NOTICEABLE_SECONDS = 0.5
 FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f5fd0'/%3E"
            "%3Crect x='3' y='9' width='10' height='2' fill='white'/%3E%3Crect x='3' y='12' width='6' height='2' fill='white'/%3E%3C/svg%3E")
-LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "reference": "Video tracks", "audio": "Audio sync", "job": "Tasks", "review": "By hand", "watch": "Folder watch",
-             "worker": "Workers", "web": "Web UI"}
-LOG_LEVELS = {"problems": ("Only problems", ("warning", "error")), "errors": ("Only errors", ("error",))}
 LOG_LIMIT = 300
 TECHNICAL_HEADER = ("time", "level", "source", "event", "message", "trace")
 HISTORY_LIMIT = 300
@@ -90,7 +87,6 @@ table.history td.actions { width: 1%; white-space: nowrap; text-align: right; }
 .badge { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 13px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .badge.good { color: var(--good); border-color: var(--good); } .badge.warn { color: var(--medium); border-color: var(--medium); }
 .badge.bad { color: var(--bad); border-color: var(--bad); }
-.tag { font-size: 12px; color: var(--muted); background: var(--raised); border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .tab { padding: 5px 12px; border: 1px solid var(--line); border-radius: 16px; color: var(--muted); font-size: 14px; }
 .tab:hover { text-decoration: none; color: var(--text); }
@@ -104,11 +100,9 @@ table.history td.actions { width: 1%; white-space: nowrap; text-align: right; }
 .technical-log .debug .level { color: var(--muted); } .technical-log .warning .level { color: var(--medium); }
 .technical-log .error .level, .technical-log .trace { color: var(--bad); }
 .technical-log .trace { white-space: pre; overflow-x: auto; margin: 2px 0 0 2ch; }
-details.raw { background: none; border: 0; padding: 0; margin: 4px 0 0; font-size: 12px; }
-details.raw pre { white-space: pre-wrap; word-break: break-all; color: var(--muted); margin: 6px 0 0; }
 form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--background); color: var(--text); font: inherit; }
-form.filters input[type=text] { width: 220px; }
+form.filters input[type=text] { flex: 1 1 320px; max-width: 560px; width: auto; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
@@ -124,9 +118,8 @@ td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { backg
 .minutes a { flex: 1 1 0; min-width: 0; display: block; opacity: 0.85; }
 .minutes a:hover { opacity: 1; filter: brightness(1.2); }
 .minutes .good, .legend .good { background: var(--good); } .minutes .medium, .legend .medium { background: var(--medium); }
-.minutes .bad, .legend .bad { background: var(--bad); } .minutes .quiet, .legend .quiet { background: var(--line); }
+.minutes .bad, .legend .bad { background: var(--bad); } .minutes .fixed, .legend .fixed { background: var(--accent); } .minutes .quiet, .legend .quiet { background: var(--line); }
 .minutes a.current { box-shadow: inset 0 0 0 2px var(--text); opacity: 1; min-width: 4px; }
-.strip-label { margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
 .changes { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--good); border-radius: 8px; padding: 10px 14px; }
 .ticks { position: relative; height: 20px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ticks span { position: absolute; top: 3px; padding-left: 3px; border-left: 1px solid var(--line); white-space: nowrap; }
@@ -475,49 +468,22 @@ def subtitle_cell(path):
 
 
 def log_page(query):
-    technical = query.get("view") == "technical"
-    events = [event for event in recent_events() if technical or event_level(event) != LEVEL["debug"]]
-    level = query.get("level") if query.get("level") in LOG_LEVELS else None
-    area = query.get("area") if query.get("area") in LOG_AREAS else None
-    keep = {key: value for key, value in (("view", "technical" if technical else None), ("level", level), ("area", area), ("q", query.get("q"))) if value}
-    views = [(None, "Plain words", None), ("technical", "Technical", None)]
-    levels = [(None, "Everything", len(events))] + [(key, label, sum(event_level(event) in LOG_LEVELS[key][1] for event in events)) for key, (label, _) in LOG_LEVELS.items()]
-    areas = [(None, "Every part", None)] + [(key, label, sum(event_area(event) == key for event in events)) for key, label in LOG_AREAS.items()]
-    hidden = "".join(f'<input type="hidden" name="{key}" value="{escape(value)}">' for key, value in keep.items() if key != "q")
-    search = f'<form class="filters">{hidden}<input type="text" name="q" placeholder="Search a file, a word..." value="{escape(query.get("q", ""))}"><button>Search</button></form>'
-    shown = filtered_events(events, query)[:LOG_LIMIT]
-    body = ('<p class="subtle words">Everything subtitle-guard did, newest first: what Bazarr sent, every request to Bazarr, every check, '
-            'every file it changed and every action taken here. Problems and errors are marked in colour. The technical view adds the internal details '
-            'and every field of each event.</p>' + tab_links("/log", "view", "technical" if technical else None, views, keep)
-            + tab_links("/log", "level", level, levels, keep) + tab_links("/log", "area", area, areas, keep) + search
-            + (technical_log(shown) if technical else log_table(shown)))
+    search = (f'<form class="filters"><input type="text" name="q" placeholder="Search a file, an event, a word..." value="{escape(query.get("q", ""))}">'
+              '<button>Search</button></form>')
+    body = search + technical_log(filtered_events(recent_events(), query)[:LOG_LIMIT])
     return 200, layout("Log", body, refresh=None if query else 15, page="log"), "text/html; charset=utf-8"
 
 
 def filtered_events(events, query):
-    levels = LOG_LEVELS[query["level"]][1] if query.get("level") in LOG_LEVELS else None
-    area, text = query.get("area"), query.get("q", "").lower()
-    return [event for event in events if (not levels or event_level(event) in levels) and (not area or event_area(event) == area)
-            and (not text or text in json.dumps(event, ensure_ascii=False).lower())]
-
-
-def log_table(events):
-    if not events:
-        return '<p class="muted">Nothing logged.</p>'
-    body, day = "", None
-    for event in events:
-        if day_label(event["time"]) != day:
-            day = day_label(event["time"])
-            body += f'<tr class="day"><td colspan="3">{day}</td></tr>'
-        body += log_row(event)
-    return f'<table class="history">{columns(10, 12, 78)}<tr><th>Time</th><th>Part</th><th>What happened</th></tr>{body}</table>'
+    text = query.get("q", "").lower()
+    return [event for event in events if not text or text in json.dumps(event, ensure_ascii=False).lower()]
 
 
 def technical_log(events):
     if not events:
         return '<p class="muted">Nothing logged.</p>'
     lines = "".join(technical_line(event) for event in events)
-    return f'<p class="subtle words">Newest first. <a href="/log.jsonl">Download the raw log</a> (one JSON event per line).</p><div class="technical-log">{lines}</div>'
+    return f'<p class="subtle words">Newest first. <a href="/log.jsonl">Download the raw log</a>.</p><div class="technical-log">{lines}</div>'
 
 
 def technical_line(event):
@@ -532,14 +498,6 @@ def technical_line(event):
 
 def raw_log(query):
     return 200, open(log_file()).read() if os.path.exists(log_file()) else "", "text/plain; charset=utf-8"
-
-
-def log_row(event):
-    badge = {"warning": '<span class="badge warn">Problem</span> ', "error": '<span class="badge bad">Error</span> '}.get(event_level(event), "")
-    subtitle = f'<div>{subtitle_cell(event["subtitle"])}</div>' if event.get("subtitle") else ""
-    raw = f'<details class="raw"><summary>Technical details</summary><pre>{escape(json.dumps(event, ensure_ascii=False, indent=1))}</pre></details>'
-    return (f'<tr><td class="time">{event["time"][11:19]}</td><td><span class="tag">{LOG_AREAS.get(event_area(event), "Other")}</span></td>'
-            f'<td>{badge}{escape(event_message(event))}{subtitle}{raw}</td></tr>')
 
 
 def tab_links(base, key, current, options, keep=None):
@@ -647,12 +605,12 @@ def parts_list(path, diagnosis, hidden):
 def timeline(path, view, minute, fix):
     if not view["minutes"]:
         return ""
-    legend = ('<p class="legend"><span><i class="good"></i>all lines on time</span><span><i class="medium"></i>some lines off</span>'
-              '<span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span><span>Click anywhere to read that minute.</span></p>')
-    if not fix or not fix["minutes"]:
-        return f'<h2>The whole video ({duration_label(len(view["minutes"]))})</h2>{legend}{strip(path, view["minutes"], minute)}'
-    return (f'<h2>The whole video ({duration_label(len(view["minutes"]))}), before and after the fix</h2>{legend}'
-            f'<p class="strip-label">Before the fix</p>{strip(path, fix["minutes"], minute)}<p class="strip-label">Now</p>{strip(path, view["minutes"], minute)}')
+    fixed = set(fix["moved_minutes"]) if fix else set()
+    minutes = [(number, share, "fixed" if state == "good" and number in fixed else state) for number, share, state in view["minutes"]]
+    legend = ('<p class="legend"><span><i class="good"></i>on time</span>' + ('<span><i class="fixed"></i>fixed by the guard, now on time</span>' if fixed else "")
+              + '<span><i class="medium"></i>some lines off</span><span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span>'
+              '<span>Click anywhere to read that minute.</span></p>')
+    return f'<h2>The whole video ({duration_label(len(minutes))})</h2>{legend}{strip(path, minutes, minute)}'
 
 
 def strip(path, minutes, minute):
