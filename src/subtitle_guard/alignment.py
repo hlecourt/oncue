@@ -1,5 +1,7 @@
 """Score a subtitle against a reference, realign it piecewise and decide whether the result can be trusted."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy
 
 from .outcome import DECISION
@@ -52,10 +54,12 @@ def assess(cues, reference, wide_retry=True):
 
 
 def assess_on_grid(cues, reference, grid):
-    aligned = align(cues, reference, grid)
-    aligned_score = score(numpy.array([start for start, _, _ in aligned["timings"]]), reference["starts"])
     mirrored = mirror(reference)
-    null = align(cues, mirrored, grid)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        null_alignment = pool.submit(align, cues, mirrored, grid)
+        aligned = align(cues, reference, grid)
+        null = null_alignment.result()
+    aligned_score = score(numpy.array([start for start, _, _ in aligned["timings"]]), reference["starts"])
     null_score = score(numpy.array([start for start, _, _ in null["timings"]]), mirrored["starts"])
     fixed = (aligned_score is not None and aligned_score["passed"] and aligned["objective"] >= null["objective"] + OBJECTIVE_MARGIN
              and aligned["unsupported_share"] <= MAX_UNSUPPORTED_SHARE)
