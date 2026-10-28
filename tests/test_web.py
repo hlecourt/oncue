@@ -124,3 +124,19 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
 def review_part(video, subtitle):
     from subtitle_guard import review
     return review.diagnose(video, subtitle)["parts"][0]
+
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
+def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
+    video, starts, ends = video_with_reference(tmp_path)
+    subtitle = video.with_suffix(".fr.srt")
+    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    storage.report(str(subtitle), "manual", {"decision": "manual", "weak_minutes": [2], "confidence": 55, "confidence_band": "low"})
+    get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
+    status, page, _ = get(server + "/review")
+    assert "Fix it</button>" in page
+    code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
+    assert location.startswith("/review?") and "back in sync" in urllib.parse.unquote_plus(location)
+    storage.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
+    assert "Move it to S01E03</button>" in get(server + "/review")[1]

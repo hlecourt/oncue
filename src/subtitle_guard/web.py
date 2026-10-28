@@ -222,10 +222,12 @@ def perform(form):
         if moved is None:
             message = "That episode was not found next to this one, nothing was changed."
         else:
-            return subtitle_link(moved[0], message=f"Moved to {form['episode']}. It will be checked there.")
+            path, message = moved[0], f"Moved to {form['episode']}. It will be checked there."
     else:
         message = "Nothing was changed."
-    return subtitle_link(path, form.get("minute", "0"), message)
+    if form.get("back") == "review":
+        return "/review?" + urllib.parse.urlencode({"message": f"{os.path.basename(path)}: {message}"})
+    return subtitle_link(path, None if action == "move" else form.get("minute", "0"), message)
 
 
 def known_subtitle(path):
@@ -254,10 +256,23 @@ def review_page(query):
                                                                   "</span></div>", page="review"), "text/html; charset=utf-8"
     rows = "".join(f'<tr><td><span class="dot {tone(item)}"></span></td><td><a href="{subtitle_link(item["subtitle"])}">'
                    f'{escape(os.path.basename(item["subtitle"]))}</a><div class="muted">{escape(where(item["subtitle"]))}</div></td>'
-                   f'<td>{escape(reason(item))}</td><td class="time">{escape(readable(item["time"]))}</td></tr>' for item in items)
-    body = (message_box(query) + "<p class=\"subtle\">The guard was not sure about these subtitles. Open one to see what is wrong.</p>"
-            + f"<table><tr><th></th><th>Subtitle</th><th>What happened</th><th>Checked</th></tr>{rows}</table>" + keys_help())
+                   f'<td>{escape(reason(item))}</td><td>{quick_fix(item)}</td><td class="time">{escape(readable(item["time"]))}</td></tr>' for item in items)
+    body = (message_box(query) + "<p class=\"subtle words\">The guard was not sure about these subtitles. Use the button when there is one, "
+            "or open the subtitle to see what is wrong.</p>"
+            + f"<table><tr><th></th><th>Subtitle</th><th>What happened</th><th></th><th>Checked</th></tr>{rows}</table>" + keys_help())
     return 200, layout("Needs a look", body, page="review"), "text/html; charset=utf-8"
+
+
+def quick_fix(item):
+    hidden = f'<input type="hidden" name="path" value="{escape(item["subtitle"])}"><input type="hidden" name="back" value="review">'
+    if item["decision"] == "wrong-episode" and item["note"]:
+        return (f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="move">'
+                f'<input type="hidden" name="episode" value="{escape(item["note"])}"><button class="small primary">Move it to {escape(item["note"])}</button></form>')
+    video = review.video_for(item["subtitle"])
+    diagnosis = review.known_diagnosis(video, item["subtitle"]) if video else None
+    if not diagnosis or not diagnosis["fixable"]:
+        return ""
+    return f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="fix-all"><button class="small primary">Fix it</button></form>'
 
 
 def jobs_page(query):

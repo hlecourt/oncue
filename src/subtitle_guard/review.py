@@ -84,8 +84,7 @@ def nearest_position(starts, value):
 
 
 def diagnose(video, subtitle):
-    key = hashlib.sha1(f"{DIAGNOSIS_CACHE_VERSION}|{subtitle}|{file_signature(subtitle)}|{video}|{file_signature(video)}".encode()).hexdigest()
-    cache_file = state_path("diagnoses", key + ".json")
+    cache_file = diagnosis_file(video, subtitle)
     if os.path.exists(cache_file):
         return json.load(open(cache_file))
     cues = parse_subtitle(subtitle)["cues"]
@@ -98,6 +97,16 @@ def diagnose(video, subtitle):
         diagnosis = diagnosis_from(cues, *judge(cues, reference))
     write_json(cache_file, diagnosis)
     return diagnosis
+
+
+def known_diagnosis(video, subtitle):
+    cache_file = diagnosis_file(video, subtitle)
+    return json.load(open(cache_file)) if os.path.exists(cache_file) else None
+
+
+def diagnosis_file(video, subtitle):
+    key = hashlib.sha1(f"{DIAGNOSIS_CACHE_VERSION}|{subtitle}|{file_signature(subtitle)}|{video}|{file_signature(video)}".encode()).hexdigest()
+    return state_path("diagnoses", key + ".json")
 
 
 def diagnosis_from(cues, decision, original, weak, attempt):
