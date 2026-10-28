@@ -9,7 +9,7 @@ Status: alpha. It runs on one home server as a [Bazarr](https://www.bazarr.media
 Subtitles found online are often made for another release: a streaming cut instead of the Blu-ray, a 25 fps PAL master instead of 23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync apply a single offset and framerate, which cannot fix a different cut, and they sometimes report success on a wrong result. subtitle-guard instead:
 
 - reads the timing of a subtitle track already embedded in the video (text or image, any language, forced and commentary tracks excluded) from the Matroska Cues index in well under a second, with a full read as fallback;
-- realigns the downloaded subtitle piecewise with an exact dynamic programming search over offsets (0.05 s steps, ±400 s), using line starts and ends, after picking the framerate ratio;
+- realigns the downloaded subtitle piecewise with an exact dynamic programming search over offsets (0.05 s steps, ±400 s, then ±1200 s at 0.1 s steps when that fails), using line starts and ends, after picking the framerate ratio;
 - accepts the result only if it clearly beats the same search run against a time-mirrored reference (a null that has the same density but no relation to the subtitle), and only if every part of the result is supported by the reference;
 - otherwise leaves the file untouched, flags a subtitle that matches a neighbouring episode, or asks Bazarr for another subtitle.
 
@@ -110,11 +110,11 @@ Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up),
 
 ## Accuracy
 
-`benchmarks/torture.py` misaligns known-good tracks in 42 ways and measures every line against its true time. On 12 tracks of 420 to 720 lines (French, Japanese and German, one dialogue-heavy series), 502 of 504 runs end as expected, with 97 to 100% of lines within one second when fixed, including different cuts, ad breaks, framerate and speed errors up to 5%, sloppy timing, merged or split lines, and dense stretches. Wrong-episode subtitles and offsets beyond the search range are rejected. The two misses are fragmented dense stretches that are realigned correctly but rejected as a precaution. `benchmarks/tears_of_steel.py` builds a public corpus from the Blender open movie Tears of Steel.
+`benchmarks/torture.py` misaligns known-good tracks in 42 ways and measures every line against its true time. On 12 tracks of 420 to 720 lines (French, Japanese and German, one dialogue-heavy series), 502 of 504 runs end as expected, with 97 to 100% of lines within one second when fixed, including different cuts, ad breaks adding up to 600 s, offsets up to 600 s, framerate and speed errors up to 5%, sloppy timing, merged or split lines, and dense stretches. Wrong-episode subtitles, random timings and offsets beyond ±1200 s are rejected. The two misses are fragmented dense stretches that are realigned correctly but rejected as a precaution. `benchmarks/tears_of_steel.py` builds a public corpus from the Blender open movie Tears of Steel.
 
 ## Limits
 
-- Cumulative offsets beyond ±400 s (long TV recordings with many ad breaks) are rejected, not fixed.
+- Cumulative offsets beyond ±1200 s are rejected, not fixed; between ±400 s and ±1200 s a rejection costs a second, wider search (about 7 s instead of 2.5 s on a 4-core home server).
 - Lines of a scene that exists in the subtitle but not in the video are placed as well as possible, not removed.
 - Without any embedded subtitle track, timing cannot be verified; the ffsubsync fallback cannot fix a different cut.
 
@@ -122,7 +122,7 @@ Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up),
 
 Done: package and tests, job queue with parallel workers, structured logs, confidence score, standalone mode, web UI.
 
-Next: a reference from an OpenSubtitles hash match for videos without any embedded track; a larger search range for long TV recordings; a published image.
+Next: a reference from an OpenSubtitles hash match for videos without any embedded track; a published image.
 
 ## Development
 

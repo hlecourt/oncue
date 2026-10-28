@@ -20,6 +20,8 @@ SCALES = (1.0, 25 / 23.976, 23.976 / 25)
 SCALE_CHUNK_CUES = 30
 GRID_STEP_SECONDS = 0.05
 MAX_OFFSET_SECONDS = 400.0
+WIDE_MAX_OFFSET_SECONDS = 1200.0
+WIDE_GRID_STEP_SECONDS = 0.1
 SWITCH_PENALTY = 2.5
 ORDER_SLACK_SECONDS = 0.5
 CENTRING_NEIGHBOURS = 10
@@ -42,11 +44,18 @@ def judge(cues, reference):
     return (DECISION["fixed"] if attempt["fixed"] else DECISION["rejected"]), original, weak, attempt
 
 
-def assess(cues, reference):
-    aligned = align(cues, reference)
+def assess(cues, reference, wide_retry=True):
+    attempt = assess_on_grid(cues, reference, offset_grid())
+    if attempt["fixed"] or not wide_retry:
+        return attempt
+    return {**assess_on_grid(cues, reference, offset_grid(WIDE_MAX_OFFSET_SECONDS, WIDE_GRID_STEP_SECONDS)), "wide_search": True}
+
+
+def assess_on_grid(cues, reference, grid):
+    aligned = align(cues, reference, grid)
     aligned_score = score(numpy.array([start for start, _, _ in aligned["timings"]]), reference["starts"])
     mirrored = mirror(reference)
-    null = align(cues, mirrored)
+    null = align(cues, mirrored, grid)
     null_score = score(numpy.array([start for start, _, _ in null["timings"]]), mirrored["starts"])
     fixed = (aligned_score is not None and aligned_score["passed"] and aligned["objective"] >= null["objective"] + OBJECTIVE_MARGIN
              and aligned["unsupported_share"] <= MAX_UNSUPPORTED_SHARE)
@@ -104,12 +113,13 @@ def align_piecewise(cues, reference):
     return align(cues, reference)["timings"]
 
 
-def align(cues, reference):
+def align(cues, reference, grid=None):
+    grid = offset_grid() if grid is None else grid
     order = numpy.argsort([start for start, _, _ in cues], kind="stable")
     starts = numpy.array([cues[index][0] for index in order])
     ends = numpy.array([cues[index][1] for index in order])
-    scale = choose_scale(starts, reference["starts"])
-    offsets, objective, lengths = best_offsets(starts * scale, ends * scale, reference)
+    scale = choose_scale(starts, reference["starts"], grid)
+    offsets, objective, lengths = best_offsets(starts * scale, ends * scale, reference, grid)
     timings = [None] * len(cues)
     for rank, index in enumerate(order):
         timings[index] = (starts[rank] * scale + offsets[rank], ends[rank] * scale + offsets[rank], cues[index][2])
@@ -123,9 +133,7 @@ def align(cues, reference):
             "unsupported_share": float(unsupported / len(cues))}
 
 
-def choose_scale(starts, reference):
-    grid = offset_grid()
-
+def choose_scale(starts, reference, grid):
     def support(scale):
         total = 0
         for chunk_start in range(0, len(starts), SCALE_CHUNK_CUES):
@@ -136,8 +144,8 @@ def choose_scale(starts, reference):
     return max(SCALES, key=support)
 
 
-def best_offsets(starts, ends, reference):
-    grid = offset_grid()
+def best_offsets(starts, ends, reference, grid):
+    step = float(grid[1] - grid[0])
     positions = numpy.arange(len(grid))
     use_ends = len(reference["ends"]) >= MIN_CUES
 
@@ -148,11 +156,11 @@ def best_offsets(starts, ends, reference):
         return hits - BEFORE_VIDEO_PENALTY * (starts[index] + grid < 0)
 
     best = gains(0)
-    origins = numpy.zeros((len(starts), len(grid)), dtype=numpy.int16)
+    origins = numpy.zeros((len(starts), len(grid)), dtype=numpy.uint16)
     for index in range(1, len(starts)):
         running_best = numpy.maximum.accumulate(best)
         running_origin = numpy.maximum.accumulate(numpy.where(best == running_best, positions, 0))
-        reach = numpy.clip(positions + int((starts[index] - starts[index - 1] + ORDER_SLACK_SECONDS) // GRID_STEP_SECONDS), 0, len(grid) - 1)
+        reach = numpy.clip(positions + int((starts[index] - starts[index - 1] + ORDER_SLACK_SECONDS) // step), 0, len(grid) - 1)
         switch = running_best[reach] - SWITCH_PENALTY
         stays = best >= switch
         origins[index] = numpy.where(stays, positions, running_origin[reach])
@@ -165,14 +173,15 @@ def best_offsets(starts, ends, reference):
     return center_segments(starts, reference["starts"], offsets), float(best.max()), lengths
 
 
-def offset_grid():
-    return numpy.arange(-MAX_OFFSET_SECONDS, MAX_OFFSET_SECONDS + GRID_STEP_SECONDS / 2, GRID_STEP_SECONDS)
+def offset_grid(max_offset=MAX_OFFSET_SECONDS, step=GRID_STEP_SECONDS):
+    return numpy.arange(-max_offset, max_offset + step / 2, step)
 
 
 def offset_hits(start, reference, grid):
-    tolerance_bins = int(round(TOLERANCE_SECONDS / GRID_STEP_SECONDS))
+    step = float(grid[1] - grid[0])
+    tolerance_bins = int(round(TOLERANCE_SECONDS / step))
     first, last = numpy.searchsorted(reference, [start + grid[0] - TOLERANCE_SECONDS, start + grid[-1] + TOLERANCE_SECONDS])
-    centres = numpy.rint((reference[first:last] - start - grid[0]) / GRID_STEP_SECONDS).astype(int)
+    centres = numpy.rint((reference[first:last] - start - grid[0]) / step).astype(int)
     marks = numpy.zeros(len(grid) + 1, dtype=numpy.int16)
     numpy.add.at(marks, numpy.clip(centres - tolerance_bins, 0, len(grid)), 1)
     numpy.add.at(marks, numpy.clip(centres + tolerance_bins + 1, 0, len(grid)), -1)
