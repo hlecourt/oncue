@@ -52,11 +52,30 @@ def side_by_side(video, subtitle, first, last, shifts=None):
     matched = numpy.abs(nearest_gap(starts, reference["starts"])) <= TOLERANCE_SECONDS if len(starts) else numpy.array([], dtype=bool)
     lines = [(start, "reference", clean(text), None, None) for start, _, text in texts if first <= start < last]
     lines += [(start, "subtitle", clean(text), bool(hit), index) for index, ((start, _, text), hit) in enumerate(zip(cues, matched)) if first <= start < last]
-    minutes = [(minute, float(matched[(starts >= minute * 60) & (starts < minute * 60 + 60)].mean()))
-               for minute in range(int(starts.max() // 60) + 1) if ((starts >= minute * 60) & (starts < minute * 60 + 60)).sum() >= 3] if len(starts) else []
-    targets = starts + numpy.array(shifts) if shifts and len(shifts) == len(cues) else starts
-    return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minutes,
+    shifted = bool(shifts) and len(shifts) == len(cues)
+    targets = starts + numpy.array(shifts) if shifted else starts
+    on_time = numpy.abs(targets - starts) < NOTICEABLE_SHIFT_SECONDS if shifted else matched
+    return {"reference": reference["kind"], "lines": sorted(lines, key=lambda line: (line[0], line[1] == "subtitle")), "minutes": minute_states(starts, on_time, shifted),
             "moments": pair_moments(cues, texts, targets, first, last), "measure": measure(cues, reference)}
+
+
+def minute_states(starts, on_time, shifted):
+    states = []
+    for minute in range(int(starts.max() // 60) + 1 if len(starts) else 0):
+        inside = (starts >= minute * 60) & (starts < minute * 60 + 60)
+        if inside.sum() < MIN_PART_LINES:
+            states.append((minute, None, "quiet"))
+            continue
+        share = float(on_time[inside].mean())
+        states.append((minute, share, minute_state(share, shifted)))
+    return states
+
+
+def minute_state(share, shifted):
+    good, bad = (1.0, 0.5) if shifted else (0.55, 0.35)
+    if share >= good:
+        return "good"
+    return "bad" if share < bad else "medium"
 
 
 def pair_moments(cues, texts, targets, first, last):

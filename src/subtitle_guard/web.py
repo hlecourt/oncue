@@ -80,11 +80,12 @@ table.reading td.video, table.reading td.yours { width: 40%; }
 table.reading td.video { background: var(--reference); }
 table.reading tr.late td.yours { color: #f3b4af; }
 td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { background: var(--raised); }
-.minutes { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 6px; }
-.minutes a { width: 14px; height: 26px; border-radius: 7px; display: block; opacity: 0.85; }
+.minutes { display: flex; gap: 2px; margin: 4px 0 4px; }
+.minutes a { flex: 1 1 0; min-width: 3px; height: 30px; border-radius: 3px; display: block; opacity: 0.85; }
 .minutes a:hover { opacity: 1; }
-.minutes a.good { background: var(--good); } .minutes a.medium { background: var(--medium); } .minutes a.bad { background: var(--bad); }
+.good { background: var(--good); } .medium { background: var(--medium); } .bad { background: var(--bad); } .quiet { background: var(--line); }
 .minutes a.current { outline: 2px solid var(--text); outline-offset: 1px; opacity: 1; }
+.ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .legend { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
@@ -358,11 +359,16 @@ def parts_list(path, diagnosis, hidden):
 def timeline(path, view, minute):
     if not view["minutes"]:
         return ""
-    bars = "".join(f'<a class="{share_class(share)}{" current" if number == minute else ""}" title="minute {number}: {share:.0%} of lines in sync" '
-                   f'href="{subtitle_link(path, number)}"></a>' for number, share in view["minutes"])
-    return ('<h2>Timeline, one bar per minute</h2><p class="legend"><span><i style="background:var(--good)"></i>in sync</span>'
-            '<span><i style="background:var(--medium)"></i>partly off</span><span><i style="background:var(--bad)"></i>out of sync</span>'
-            f'<span>Click a bar to read that minute.</span></p><div class="minutes">{bars}</div>')
+    bars = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{minute_title(number, share)}" href="{subtitle_link(path, number)}"></a>'
+                   for number, share, state in view["minutes"])
+    length = len(view["minutes"])
+    return (f'<h2>The whole video, minute by minute ({length} min)</h2><p class="legend"><span><i class="good"></i>all lines on time</span>'
+            '<span><i class="medium"></i>some lines off</span><span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span>'
+            f'<span>Click a bar to read that minute.</span></p><div class="minutes">{bars}</div><div class="ends"><span>0:00</span><span>{length}:00</span></div>')
+
+
+def minute_title(number, share):
+    return f"minute {number}: almost no lines" if share is None else f"minute {number}: {share:.0%} of lines on time"
 
 
 def reading(view, diagnosis, minute):
@@ -409,7 +415,7 @@ def technical(path, video, view, latest):
 
 
 def navigation(path, view, minute):
-    known = [number for number, _ in view["minutes"]]
+    known = [number for number, _, state in view["minutes"] if state != "quiet"]
     links = ""
     earlier, later = [number for number in known if number < minute], [number for number in known if number > minute]
     if earlier:
@@ -517,10 +523,6 @@ def keys_help():
 
 def message_box(query):
     return f'<div class="message">{escape(query["message"])}</div>' if query.get("message") else ""
-
-
-def share_class(share):
-    return "good" if share >= 0.55 else ("medium" if share >= 0.35 else "bad")
 
 
 def readable(moment):
