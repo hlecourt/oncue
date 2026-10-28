@@ -1,11 +1,9 @@
 """Review tools behind the web UI: side-by-side reading, manual shifts, revert, accept, recheck and asking for another subtitle."""
 
-import glob
 import hashlib
 import json
 import os
 import re
-import shutil
 
 import numpy
 
@@ -14,7 +12,7 @@ from .errors import MatroskaError, ToolError, UnsafePathError
 from .tools import EXTRACT_SECONDS, PROBE_SECONDS, run_tool
 from .alignment import MAX_WRONG_END_SHARE, MIN_CUES, wrong_end_share, NOTICEABLE_SHIFT_SECONDS, TOLERANCE_SECONDS, describe_changes, judge, nearest_gap, out_of_sync_parts, score, weak_minutes
 from .bazarr import request_another
-from .worker import worker_health
+from .heartbeats import worker_health
 from .confidence import confidence
 from .guard import evaluate_and_fix
 from .library import VIDEO_EXTENSIONS, folder_neighbours

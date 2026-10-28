@@ -1,7 +1,6 @@
 """Run queued jobs in a few parallel worker processes; full file reads and audio decoding take turns through a lock."""
 
 import fcntl
-import json
 import multiprocessing
 import os
 import signal
@@ -11,9 +10,15 @@ import time
 import traceback
 
 from . import jobs
-from .bazarr import RETRY_WAIT_SECONDS, blacklist_for_retry, finish_retry, handle_download
+from .bazarr import (
+    RETRY_WAIT_SECONDS,
+    blacklist_for_retry,
+    finish_retry,
+    handle_download,
+)
 from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
+from .heartbeats import HEARTBEAT_SECONDS
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
 from .outcome import describe
@@ -25,8 +30,6 @@ POLL_SECONDS = 2.0
 SUPERVISION_SECONDS = 5.0
 STOP_SECONDS = 10
 MAX_ATTEMPTS = 3
-HEARTBEAT_SECONDS = 10
-HEARTBEAT_STALE_SECONDS = 60
 
 
 def run_workers(count=WORKERS):
@@ -128,35 +131,6 @@ def beat(number):
         with open(path, "w") as handle:
             handle.write(str(os.getpid()))
         time.sleep(HEARTBEAT_SECONDS)
-
-
-def worker_health():
-    supervisor = load_json(state_path("supervisor.json"))
-    if not supervisor or not process_alive(supervisor["pid"]):
-        return {}
-    return {name: heartbeat_age(name) is not None and heartbeat_age(name) < HEARTBEAT_STALE_SECONDS for name in supervisor["workers"]}
-
-
-def heartbeat_age(name):
-    path = state_path("heartbeats", name)
-    return time.time() - os.path.getmtime(path) if os.path.exists(path) else None
-
-
-def process_alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def load_json(path):
-    if not os.path.exists(path):
-        return None
-    with open(path) as handle:
-        return json.load(handle)
 
 
 def work_once(number):

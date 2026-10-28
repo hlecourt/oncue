@@ -8,7 +8,9 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-from subtitle_guard import jobs, reports, storage, web
+from subtitle_guard import jobs, reports, storage
+from subtitle_guard.web import actions, context, parts
+from subtitle_guard.web import server as web_server
 from subtitle_guard.subtitles import parse_subtitle
 from media import video_with_reference, write_subtitle_file
 
@@ -20,7 +22,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 @pytest.fixture
 def server():
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), web_server.Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -37,7 +39,7 @@ def get(url, headers=None):
 
 def post(url, form, headers=None, csrf="test-csrf"):
     opener = urllib.request.build_opener(NoRedirect)
-    cookie = "; ".join(filter(None, [f"{web.CSRF_COOKIE}={csrf}", (headers or {}).get("Cookie")]))
+    cookie = "; ".join(filter(None, [f"{web_server.CSRF_COOKIE}={csrf}", (headers or {}).get("Cookie")]))
     data = urllib.parse.urlencode({**form, "csrf": csrf} if csrf else form).encode()
     request = urllib.request.Request(url, data=data, headers={**(headers or {}), "Cookie": cookie}, method="POST")
     try:
@@ -49,7 +51,7 @@ def post(url, form, headers=None, csrf="test-csrf"):
 
 def notice_text(location):
     key = urllib.parse.parse_qs(urllib.parse.urlparse(location).query).get("notice", [""])[0]
-    return web.NOTICES.get(key, "")
+    return context.NOTICES.get(key, "")
 
 
 def test_dashboard_jobs_and_api(server):
@@ -93,7 +95,7 @@ def test_review_page_and_manual_shift(server, tmp_path):
 
 
 def test_token_protects_the_ui(server, monkeypatch):
-    monkeypatch.setitem(web.AUTH, "token", "secret")
+    monkeypatch.setitem(context.AUTH, "token", "secret")
     reports.report("/media/Private.Name.fr.srt", "scan", {"decision": "rejected"})
     status, page, _ = get(server + "/")
     assert status == 401 and "Needs a look" not in page and "Private.Name" not in page and 'action="/login"' in page
@@ -102,11 +104,11 @@ def test_token_protects_the_ui(server, monkeypatch):
     assert post(server + "/login", {"token": "wrong"}, csrf=None) == (401, "")
     code, _ = post(server + "/login", {"token": "secret"}, csrf=None)
     assert code == 303
-    session = next(iter(web.SESSIONS))
-    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 200
+    session = next(iter(context.SESSIONS))
+    assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 200
     assert post(server + "/", {"action": "retry-job", "job": "1"})[0] == 401
-    assert post(server + "/logout", {}, {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 303
-    assert get(server + "/", {"Cookie": f"{web.SESSION_COOKIE}={session}"})[0] == 401
+    assert post(server + "/logout", {}, {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 303
+    assert get(server + "/", {"Cookie": f"{web_server.SESSION_COOKIE}={session}"})[0] == 401
 
 
 def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
@@ -228,5 +230,5 @@ def test_subtitles_outside_the_roots_or_symlinked_are_unknown(tmp_path, monkeypa
     link = tmp_path / "media" / "c.fr.srt"
     link.symlink_to(outside)
     reports.report(str(link), "scan", {"decision": "kept"})
-    monkeypatch.setattr(web, "ROOTS", [str((tmp_path / "media").resolve())])
-    assert web.known_subtitle(str(inside)) and not web.known_subtitle(str(outside)) and not web.known_subtitle(str(link))
+    monkeypatch.setattr(actions, "ROOTS", [str((tmp_path / "media").resolve())])
+    assert actions.known_subtitle(str(inside)) and not actions.known_subtitle(str(outside)) and not actions.known_subtitle(str(link))

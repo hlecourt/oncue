@@ -3,7 +3,7 @@ import os
 import signal
 import time
 
-from subtitle_guard import logs, storage, worker
+from subtitle_guard import heartbeats, logs, storage, worker
 
 
 def report_signal_handlers(path):
@@ -35,9 +35,9 @@ def test_worker_health_reads_fresh_heartbeats_of_a_live_supervisor():
     stale = storage.state_path("heartbeats", "worker-2")
     open(stale, "w").close()
     os.utime(stale, (time.time() - 3600, time.time() - 3600))
-    assert worker.worker_health() == {"worker-1": True, "worker-2": False}
+    assert heartbeats.worker_health() == {"worker-1": True, "worker-2": False}
     storage.write_json(storage.state_path("supervisor.json"), {"pid": 999999, "workers": ["worker-1"]})
-    assert worker.worker_health() == {}
+    assert heartbeats.worker_health() == {}
 
 
 def test_a_log_write_failure_never_raises(monkeypatch, tmp_path, capsys):
