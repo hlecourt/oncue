@@ -122,6 +122,22 @@ def recheck(video, subtitle):
     return jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": True, "neighbours": folder_neighbours(folder, name, videos)})
 
 
+def move_to_episode(video, subtitle, label):
+    folder, name = os.path.split(video)
+    videos = sorted(entry for entry in os.listdir(folder) if entry.lower().endswith(VIDEO_EXTENSIONS))
+    target_video = next((path for neighbour, path in folder_neighbours(folder, name, videos) if neighbour == label), None)
+    if target_video is None:
+        return None
+    suffix = os.path.basename(subtitle)[len(os.path.splitext(name)[0]):]
+    target = os.path.splitext(target_video)[0] + suffix
+    if os.path.exists(target):
+        keep_current(target, "before-move")
+    keep_current(subtitle, "moved-away")
+    os.replace(subtitle, target)
+    log("moved-to-episode", subtitle=subtitle, target=target, episode=label)
+    return target, recheck(target_video, target)
+
+
 def ask_for_another(video, subtitle):
     state = load_state(video, subtitle)
     last = next((attempt for attempt in reversed(state.get("attempts", [])) if attempt.get("media_id") and attempt.get("provider")), None)

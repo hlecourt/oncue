@@ -7,7 +7,7 @@ from subtitle_guard import jobs, review, storage
 from subtitle_guard.guard import evaluate_and_fix
 from media import video_with_reference, write_subtitle_file
 
-pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
+needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
 
 @pytest.fixture
@@ -17,6 +17,7 @@ def movie(tmp_path):
     return video, subtitle, starts, ends
 
 
+@needs_ffmpeg
 def test_side_by_side_shows_reference_text_and_matches(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
@@ -31,6 +32,7 @@ def test_side_by_side_shows_reference_text_and_matches(movie):
     assert 2 in view["measure"]["weak_minutes"]
 
 
+@needs_ffmpeg
 def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
@@ -40,6 +42,7 @@ def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
     assert storage.latest_reports()[0]["decision"] == "manual"
 
 
+@needs_ffmpeg
 def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
@@ -52,6 +55,7 @@ def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
     assert [item["subtitle"] for item in review.review_items()] == [str(subtitle)]
 
 
+@needs_ffmpeg
 def test_revert_restores_the_provider_file(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 9)
@@ -63,6 +67,7 @@ def test_revert_restores_the_provider_file(movie):
     assert storage.latest_reports()[0]["decision"] == "reverted"
 
 
+@needs_ffmpeg
 def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value)
@@ -73,3 +78,20 @@ def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
     assert review.ask_for_another(str(video), str(subtitle))
     assert jobs.recent()[0]["kind"] == "blacklist"
     assert storage.load_state(str(video), str(subtitle))["pending_retry"]["media_type"] == "movie"
+
+
+def test_a_wrong_episode_subtitle_moves_to_the_episode_it_matches(tmp_path):
+    season = tmp_path / "Show" / "Season 1"
+    season.mkdir(parents=True)
+    for number in range(1, 5):
+        (season / f"Show.S01E{number:02d}.mkv").write_text("")
+    wrong = season / "Show.S01E02.fr.srt"
+    wrong.write_text("1\n00:00:01,000 --> 00:00:02,000\nBonjour\n")
+    existing = season / "Show.S01E03.fr.srt"
+    existing.write_text("old")
+    target, job_id = review.move_to_episode(str(season / "Show.S01E02.mkv"), str(wrong), "S01E03")
+    assert target == str(existing) and existing.read_text().startswith("1\n") and not wrong.exists()
+    assert jobs.job(job_id)["arguments"]["video"] == str(season / "Show.S01E03.mkv")
+    saved = [name for _, _, names in os.walk(storage.backup_root(str(existing))) for name in names]
+    assert saved == ["before-move.srt"]
+    assert review.move_to_episode(str(season / "Show.S01E02.mkv"), str(existing), "S01E09") is None

@@ -150,6 +150,12 @@ def perform(form):
         message = "Accepted. It leaves the review list until the file changes."
     elif action == "recheck" and video:
         message = f"Queued check job {review.recheck(video, path)}. A worker must be running."
+    elif action == "move" and video:
+        moved = review.move_to_episode(video, path, form.get("episode", ""))
+        if moved is None:
+            message = "That episode was not found next to this one."
+        else:
+            return "/subtitle?" + urllib.parse.urlencode({"path": moved[0], "message": f"Moved to {form['episode']}, check job {moved[1]} queued."})
     elif action == "another" and video:
         message = "Asked Bazarr for another subtitle." if review.ask_for_another(video, path) else "No Bazarr download recorded for this subtitle."
     else:
@@ -210,6 +216,10 @@ def subtitle_page(query):
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
     actions = "".join(f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="{action}"><button>{label}</button></form>'
                       for action, label in (("accept", "Accept as is"), ("recheck", "Check again"), ("revert", "Restore the original"), ("another", "Ask Bazarr for another")))
+    latest = next((row for row in latest_reports() if row["subtitle"] == path), None)
+    if latest and latest["decision"] == "wrong-episode" and latest["note"]:
+        actions += (f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="move">'
+                    f'<input type="hidden" name="episode" value="{escape(latest["note"])}"><button class="primary">Move to {escape(latest["note"])}</button></form>')
     shift = (f'<div class="panel"><form method="post">{hidden}<input type="hidden" name="action" value="shift">'
              f'<label>From <input type="text" id="first" name="first" value="{clock(minute * 60)}"></label>'
              f'<label>To <input type="text" id="last" name="last" value="{clock(minute * 60 + WINDOW_SECONDS)}"></label>'
