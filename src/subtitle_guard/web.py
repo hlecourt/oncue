@@ -25,6 +25,7 @@ LOG_AREAS = {"bazarr": "Bazarr", "guard": "Checks", "audio": "Audio sync", "job"
 LOG_LEVELS = {"": "Everything", "problems": "Warnings and errors", "errors": "Errors only"}
 LOG_TONES = {"info": "neutral", "warning": "warn", "error": "bad"}
 LOG_LIMIT = 300
+TICK_MINUTES = (1, 2, 5, 10, 15, 30, 60)
 JOB_WORDS = {"queued": "waiting", "running": "working on it", "done": "done", "failed": "error"}
 STYLE = """
 :root { --background: #1a1c1e; --sidebar: #141517; --surface: #222528; --raised: #2a2e32; --text: #e4e5e7; --muted: #8d939a; --line: #33383d;
@@ -64,11 +65,12 @@ h2 { font-size: 16px; margin: 28px 0 10px; }
 .card:hover { border-color: var(--accent); text-decoration: none; }
 .card b { display: block; font-size: 26px; font-weight: 650; }
 .card span { color: var(--muted); font-size: 13px; }
-.parts { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.parts li { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--bad); border-radius: 8px; padding: 10px 14px;
-            display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.parts li .what { flex: 1 1 260px; }
-.parts li b { font-variant-numeric: tabular-nums; }
+table.parts td { vertical-align: middle; }
+table.parts tr td:first-child { border-left: 4px solid var(--bad); color: var(--text); }
+table.parts td.actions { text-align: right; white-space: nowrap; width: 1%; }
+table.parts td.actions a { margin-right: 12px; }
+.reading-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.minute-links a { margin-left: 16px; font-size: 14px; }
 .activity { list-style: none; padding: 0; margin: 0; }
 .activity li { padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .activity li .when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 140px; }
@@ -92,12 +94,14 @@ table.reading td.video, table.reading td.yours { width: 40%; }
 table.reading td.video { background: var(--reference); }
 table.reading tr.late td.yours { color: #f3b4af; }
 td.pickable[data-time] { cursor: pointer; } td.pickable[data-time]:hover { background: var(--raised); }
-.minutes { display: flex; gap: 2px; margin: 4px 0 4px; }
-.minutes a { flex: 1 1 0; min-width: 3px; height: 30px; border-radius: 3px; display: block; opacity: 0.85; }
-.minutes a:hover { opacity: 1; }
+.minutes { display: flex; height: 34px; border-radius: 6px; overflow: hidden; margin: 4px 0 0; background: var(--line); }
+.minutes a { flex: 1 1 0; min-width: 0; display: block; opacity: 0.85; }
+.minutes a:hover { opacity: 1; filter: brightness(1.2); }
 .good { background: var(--good); } .medium { background: var(--medium); } .bad { background: var(--bad); } .quiet { background: var(--line); }
-.minutes a.current { outline: 2px solid var(--text); outline-offset: 1px; opacity: 1; }
-.ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.minutes a.current { box-shadow: inset 0 0 0 2px var(--text); opacity: 1; min-width: 4px; }
+.ticks { position: relative; height: 20px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ticks span { position: absolute; top: 3px; padding-left: 3px; border-left: 1px solid var(--line); white-space: nowrap; }
+.ticks span.end { right: 0; border-left: 0; padding-left: 0; }
 .legend { color: var(--muted); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
@@ -132,7 +136,11 @@ document.addEventListener('keydown', event => {
 """
 PICKER = """
 let picked = null;
-const clock = value => `${Math.floor(value / 60)}:${(value % 60).toFixed(2).padStart(5, '0')}`;
+const clock = value => {
+  const seconds = (value % 60).toFixed(2).padStart(5, '0');
+  const hours = Math.floor(value / 3600);
+  return hours ? `${hours}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${seconds}` : `${Math.floor(value / 60)}:${seconds}`;
+};
 document.querySelectorAll('td.pickable[data-time]').forEach(cell => cell.addEventListener('click', () => {
   const time = parseFloat(cell.dataset.time);
   document.getElementById('by-hand').open = true;
@@ -342,8 +350,8 @@ def subtitle_page(query):
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
     body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest)
             + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden)
-            + timeline(path, view, minute) + reading(view, diagnosis, minute) + by_hand(hidden, minute)
-            + technical(path, video, view, latest) + navigation(path, view, minute) + keys_help() + f"<script>{PICKER}</script>")
+            + timeline(path, view, minute) + reading(path, view, diagnosis, minute) + by_hand(hidden, minute)
+            + technical(path, video, view, latest) + queue_links(path) + keys_help() + f"<script>{PICKER}</script>")
     return 200, layout(os.path.basename(path), body, current=path), "text/html; charset=utf-8"
 
 
@@ -389,41 +397,55 @@ def actions(video, path, diagnosis, latest, hidden):
 def parts_list(path, diagnosis, hidden):
     if not diagnosis["parts"]:
         return ""
-    items = ""
+    rows = ""
     for part in diagnosis["parts"]:
         direction = "too late" if part["shift"] < 0 else "too early"
         fields = (f'<input type="hidden" name="first" value="{part["first"]:.3f}"><input type="hidden" name="last" value="{part["last"]:.3f}">'
                   f'<input type="hidden" name="offset" value="{part["shift"]:.2f}">')
-        items += (f'<li><span class="what"><b>{short_clock(part["first"])} to {short_clock(part["last"])}</b>: {part["lines"]} lines appear '
-                  f'{abs(part["shift"]):.1f} s {direction}.</span>'
-                  f'<form class="inline" method="post">{hidden}{fields}<input type="hidden" name="action" value="fix-part"><button class="small">Fix this part</button></form>'
-                  f'<a href="{subtitle_link(path, int(part["first"] // 60))}">Show</a></li>')
-    return f'<h2>What is wrong</h2><ul class="parts">{items}</ul>'
+        rows += (f'<tr><td class="time">{short_clock(part["first"])} to {short_clock(part["last"])}</td>'
+                 f'<td>{part["lines"]} lines appear <b>{abs(part["shift"]):.1f} s {direction}</b></td>'
+                 f'<td class="actions"><a href="{subtitle_link(path, int(part["first"] // 60))}">Show</a>'
+                 f'<form class="inline" method="post">{hidden}{fields}<input type="hidden" name="action" value="fix-part"><button class="small">Fix this part</button></form></td></tr>')
+    count = len(diagnosis["parts"])
+    return f'<h2>What is wrong ({count} part{"s" if count != 1 else ""})</h2><table class="parts">{rows}</table>'
 
 
 def timeline(path, view, minute):
     if not view["minutes"]:
         return ""
-    bars = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{minute_title(number, share)}" href="{subtitle_link(path, number)}"></a>'
-                   for number, share, state in view["minutes"])
     length = len(view["minutes"])
-    return (f'<h2>The whole video, minute by minute ({length} min)</h2><p class="legend"><span><i class="good"></i>all lines on time</span>'
+    segments = "".join(f'<a class="{state}{" current" if number == minute else ""}" title="{minute_title(number, share)}" href="{subtitle_link(path, number)}"></a>'
+                       for number, share, state in view["minutes"])
+    step = next((step for step in TICK_MINUTES if length / step <= 10), TICK_MINUTES[-1])
+    ticks = "".join(f'<span style="left: {100 * number / length:.2f}%">{duration_label(number)}</span>' for number in range(0, length - step // 2, step))
+    return (f'<h2>The whole video ({duration_label(length)})</h2><p class="legend"><span><i class="good"></i>all lines on time</span>'
             '<span><i class="medium"></i>some lines off</span><span><i class="bad"></i>most lines off</span><span><i class="quiet"></i>almost no lines</span>'
-            f'<span>Click a bar to read that minute.</span></p><div class="minutes">{bars}</div><div class="ends"><span>0:00</span><span>{length}:00</span></div>')
+            f'<span>Click anywhere to read that minute.</span></p><div class="minutes">{segments}</div><div class="ticks">{ticks}'
+            f'<span class="end">{duration_label(length)}</span></div>')
 
 
 def minute_title(number, share):
-    return f"minute {number}: almost no lines" if share is None else f"minute {number}: {share:.0%} of lines on time"
+    moment = f"{short_clock(number * 60)} to {short_clock(number * 60 + 60)}"
+    return f"{moment}: almost no lines" if share is None else f"{moment}: {share:.0%} of lines on time"
 
 
-def reading(view, diagnosis, minute):
+def reading(path, view, diagnosis, minute):
     rows = "".join(moment_row(moment, diagnosis) for moment in view["moments"])
     if not rows:
         return ""
     left = "what the subtitles built into the video say" if view["reference"] else "nothing to compare with"
-    return (f"<h2>Minute {minute}, line by line</h2><p class=\"subtle words\">Each row is one moment of the video. On the left, {left}. "
+    return (f'<div class="reading-head"><h2>{short_clock(minute * 60)} to {short_clock(minute * 60 + 60)}, line by line</h2>{minute_links(path, view, minute)}</div>'
+            f'<p class="subtle words">Each row is one moment of the video. On the left, {left}. '
             "On the right, the line of your subtitle that goes with it, and whether it shows on time.</p>"
             f'<table class="reading"><tr><th>Time</th><th>In the video</th><th>Your subtitle</th><th>On time?</th></tr>{rows}</table>')
+
+
+def minute_links(path, view, minute):
+    known = [number for number, _, state in view["minutes"] if state != "quiet"]
+    earlier, later = [number for number in known if number < minute], [number for number in known if number > minute]
+    links = f'<a id="previous-minute" href="{subtitle_link(path, earlier[-1])}">Previous minute</a>' if earlier else ""
+    links += f'<a id="next-minute" href="{subtitle_link(path, later[0])}">Next minute</a>' if later else ""
+    return f'<span class="minute-links">{links}</span>'
 
 
 def moment_row(moment, diagnosis):
@@ -459,14 +481,8 @@ def technical(path, video, view, latest):
     return f'<details><summary>Technical details</summary><table>{rows}</table><h2>History</h2>{activity(jobs.for_subtitle(path))}</details>'
 
 
-def navigation(path, view, minute):
-    known = [number for number, _, state in view["minutes"] if state != "quiet"]
+def queue_links(path):
     links = ""
-    earlier, later = [number for number in known if number < minute], [number for number in known if number > minute]
-    if earlier:
-        links += f'<a id="previous-minute" href="{subtitle_link(path, earlier[-1])}" hidden></a>'
-    if later:
-        links += f'<a id="next-minute" href="{subtitle_link(path, later[0])}" hidden></a>'
     queue = [item["subtitle"] for item in review.review_items()]
     if path in queue and queue.index(path) > 0:
         links += f'<a id="previous-item" href="{subtitle_link(queue[queue.index(path) - 1])}" hidden></a>'
@@ -535,7 +551,7 @@ def reason(item):
     if item["decision"] == "wrong-episode" and item["note"]:
         return f"Belongs to {item['note']}"
     if item["weak_minutes"]:
-        return f"Out of sync around {item['weak_minutes'].split(',')[0]}:00"
+        return f"Out of sync around {short_clock(int(item['weak_minutes'].split(',')[0]) * 60)}"
     if item["decision"] == "fixed" and item["band"] == "low":
         return "Fixed, but not sure"
     if item["decision"] == "rejected":
@@ -580,11 +596,20 @@ def readable(moment):
 
 
 def clock(value):
-    return f"{int(value // 60)}:{value % 60:05.2f}"
+    hours, rest = divmod(value, 3600)
+    return f"{int(hours)}:{int(rest // 60):02d}:{rest % 60:05.2f}" if hours >= 1 else f"{int(rest // 60)}:{rest % 60:05.2f}"
 
 
 def short_clock(value):
-    return f"{int(value // 60)}:{int(value % 60):02d}"
+    hours, rest = divmod(int(value), 3600)
+    return f"{hours}:{rest // 60:02d}:{rest % 60:02d}" if hours else f"{rest // 60}:{rest % 60:02d}"
+
+
+def duration_label(minutes):
+    hours, rest = divmod(minutes, 60)
+    if not hours:
+        return f"{rest} min"
+    return f"{hours}h{rest:02d}" if rest else f"{hours}h"
 
 
 def seconds(value):

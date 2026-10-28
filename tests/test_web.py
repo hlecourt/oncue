@@ -76,7 +76,7 @@ def test_review_page_and_manual_shift(server, tmp_path):
     assert status == 200 and "Movie.2020.fr.srt" in page
     status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle), "minute": 2}))
     assert status == 200 and "line " in page and "ligne " in page and "s too late<div class=\"muted\">shows at" in page and "on time" in page
-    assert "1 part of this subtitle is out of sync." in page and "What is wrong" in page and "s too late." in page and "Fix this part" in page
+    assert "1 part of this subtitle is out of sync." in page and "What is wrong (1 part)" in page and "s too late</b>" in page and "Fix this part" in page
     assert "Fix everything" in page and "Try another subtitle" not in page
     code, location = post(server + "/", {"action": "shift", "path": str(subtitle), "minute": "2", "first": "2:03", "last": "3:03", "offset": "-3"})
     assert code == 303 and "Done. The lines from 2:03 to 3:03 now appear 3.0 s earlier." in urllib.parse.unquote_plus(location)
