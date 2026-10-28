@@ -33,7 +33,8 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     media_number = int(media_id) if media_id.isdigit() else None
     neighbours = series_neighbours(series_number, video) if series_number else ()
     outcome = evaluate_and_fix(video, subtitle, apply=True, neighbours=neighbours)
-    state["attempts"].append({"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, **outcome})
+    state["attempts"].append({"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, "language": language,
+                              "media_id": media_number, "series_id": series_number, **outcome})
     save_state(video, subtitle, state)
     report(subtitle, provider, outcome)
     if outcome["decision"] != DECISION["rejected"] or media_number is None:

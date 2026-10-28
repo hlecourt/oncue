@@ -8,7 +8,7 @@ from . import jobs
 from .guard import evaluate_and_fix
 from .logs import log
 from .outcome import describe
-from .storage import report
+from .storage import file_signature, report
 
 VIDEO_EXTENSIONS = (".mkv", ".mp4", ".m4v", ".avi", ".mov", ".ts", ".webm")
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa", ".vtt")
@@ -42,8 +42,7 @@ def watch(roots, apply):
         queued = 0
         for root in roots:
             for video, subtitle, neighbours in library_items(root):
-                status = os.stat(subtitle)
-                signature = f"{status.st_size}:{int(status.st_mtime)}"
+                signature = file_signature(subtitle)
                 if jobs.seen(subtitle) == signature:
                     continue
                 jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": apply, "neighbours": neighbours})
