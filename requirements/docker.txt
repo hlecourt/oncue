@@ -225,11 +225,7 @@ charset-normalizer==3.5.2 \
     --hash=sha256:fd1fbe0f116b6e55da77aca2c6ddcddcfac2186cbf78bdebf40fc156efca389d \
     --hash=sha256:fe9753dfee015c570d73df76f899f18444d41388bffcde097deba51c4fadbb9f
     # via ffsubsync
-colorama==0.4.6 ; sys_platform == 'win32' \
-    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
-    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
-    # via tqdm
-faust-cchardet==3.2.0 ; python_full_version < '3.13' \
+faust-cchardet==3.2.0 \
     --hash=sha256:0347212f6a6d617548e16363b5d677d52ea1e27bf6aaf080c98ec8e385f85fbd \
     --hash=sha256:0595f70556a33ab67e5b19ed51fbf81e547e1acd01ee44da4e095351bbace958 \
     --hash=sha256:068c0387ad308182fd6392ca6df45fe26f47ac53c313a5333288a3aaed9b77ca \
@@ -278,10 +274,10 @@ ffmpeg-python==0.2.0 \
     --hash=sha256:65225db34627c578ef0e11c8b1eb528bb35e024752f6f10b78c011f6f64c4127 \
     --hash=sha256:ac441a0404e053f8b6a1113a77c0f452f1cfc62f6344a769475ffdc0f56c23c5
     # via ffsubsync
-ffsubsync==0.4.32 \
-    --hash=sha256:1748f896c62c4a22f388aa81b5ded111cd46cd485347207c739a9217133d617d \
-    --hash=sha256:78d340f24cca3169dfaf32e3c7d6d691ea8c256d07f46150bb6ee9684a01f2b3
-    # via -r requirements/docker.in
+ffsubsync==0.5.1 \
+    --hash=sha256:91a57724d95839f2e861758852e320789fb003c4f8c3432b3ecd928d9df65eb5 \
+    --hash=sha256:a312ea5d3c7e3e15a13565b2327022e2568ed6f12104b3ecf940ec4566d9ab4e
+    # via -r docker.in
 future==1.0.0 \
     --hash=sha256:929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216 \
     --hash=sha256:bd2968309307861edae1458a4f8a4f3598c03be43b97521076aebf5d94c07b05
@@ -289,7 +285,7 @@ future==1.0.0 \
 hatchling==1.33.0 \
     --hash=sha256:415290b84f464d2884303fca8974d38e7b85579069fab02a15db0828fbb1446d \
     --hash=sha256:4c422bd4d554fcff5de5b73e9596f85e41e9f97f7e553d8f7595ecb31a627bef
-    # via -r requirements/docker.in
+    # via -r docker.in
 markdown-it-py==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
@@ -366,7 +362,7 @@ numpy==2.5.4 \
     --hash=sha256:fe4d21ab149f15e4e6043dfb0de87e6e5f34ac176cde83060e9802981fca2ac2 \
     --hash=sha256:ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076
     # via
-    #   -r requirements/docker.in
+    #   -r docker.in
     #   ffsubsync
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
