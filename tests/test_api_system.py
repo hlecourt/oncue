@@ -31,12 +31,16 @@ def client():
     ({"subsync": {"use_subsync": True}}, ["bazarr_sync_on"]),
 ])
 def test_the_bazarr_setup_check_names_each_setting_that_keeps_subtitles_from_the_guard(client, monkeypatch, change, codes):
+    monkeypatch.setenv("BAZARR_API_KEY", "key")
     monkeypatch.setattr(bazarr, "bazarr_get", lambda path: {**GOOD_SETTINGS, **change})
     answer = client.get("/api/system/bazarr").json()
     assert answer["reachable"] is True and [warning["code"] for warning in answer["warnings"]] == codes
 
 
-def test_an_unreachable_bazarr_is_said_plainly(client, monkeypatch):
+def test_an_unreachable_or_absent_bazarr_is_said_plainly(client, monkeypatch):
+    assert client.get("/api/system/bazarr").json()["warnings"][0]["code"] == "not_set_up"
+    monkeypatch.setenv("BAZARR_API_KEY", "key")
+
     def refuse(path):
         raise OSError("connection refused")
     monkeypatch.setattr(bazarr, "bazarr_get", refuse)
