@@ -135,16 +135,24 @@ The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scrip
 
 ## Security
 
-- On loopback the UI needs no login. Anywhere else it needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
+- Listening on loopback, the UI needs no login, and it then only answers requests made from the same machine to a loopback name,
+  without proxy headers. A reverse proxy in front of it must forward `X-Forwarded-For`, or set a password. Anywhere else it
+  needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
   `SUBTITLE_GUARD_UI_PASSWORD`, or an account set with `subtitle-guard set-password` (stored as a scrypt hash with mode 600), or on
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
   opening it. Five wrong attempts lock a client out for 10 minutes. Logging in opens a session that expires on the server after
   30 days (HttpOnly, SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`); logging out ends it.
-- Every change is a JSON request carrying the session's CSRF token in a header, or the API key, from the same origin; without a
-  login only loopback host names are accepted. Pages send a strict Content-Security-Policy with no inline script and refuse to be
-  framed. Requests are size- and time-limited, and proxy headers are ignored.
-- The UI only acts on subtitles the guard already checked, never through a symlink, and only under `SUBTITLE_GUARD_ROOTS` (or the
-  watched folders) when set.
+- Login modes (`SUBTITLE_GUARD_AUTH`): `local` skips the login only for a client with a private address that opens the UI by an IP
+  address or a local name (`nas`, `nas.local`, `.lan`, `.home.arpa`, `.internal`), so a public name pointed at your network
+  gets the login. `external` skips it only for requests from `SUBTITLE_GUARD_TRUSTED_PROXIES`; anyone else gets the login. Proxy
+  headers are ignored unless they come from a trusted proxy, whose `X-Forwarded-For` then names the client for these rules and
+  for the lockout.
+- Every change is a JSON request with a `Content-Length`, carrying a CSRF token held by the server (the session's, or one kept
+  for clients that need no login) in a header, or the API key, from the same origin. Pages send a strict
+  Content-Security-Policy with no inline script and refuse to be framed. Requests are size- and time-limited.
+- The UI only acts on subtitles the guard already checked, never through a symlink at any level of the path, and changes files
+  only when `SUBTITLE_GUARD_ROOTS` is set, under those folders. Changing Bazarr's address asks for its API key again, so the key
+  is never sent to a new address.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 ## Running as a service
@@ -193,12 +201,13 @@ wins and shows as locked there.
 | `SUBTITLE_GUARD_WEBHOOK_URL` / `SUBTITLE_GUARD_WEBHOOK_MINUTES` | unset / `15`: a digest of what reached Review, at most once per interval |
 | `SUBTITLE_GUARD_URL_BASE` | unset; for example `/subtitle-guard` behind a reverse proxy, applied on restart |
 | `SUBTITLE_GUARD_AUTH` | `forms`; `local` skips the login from private addresses, `external` trusts a reverse proxy that authenticates |
+| `SUBTITLE_GUARD_TRUSTED_PROXIES` | unset; reverse proxies whose `X-Forwarded-For` is believed, as addresses or networks separated by commas (`172.18.0.0/16`) |
 | `SUBTITLE_GUARD_AUDIO_CACHE_MB` | `2048`: light audio copies the editor plays, least recently played removed first |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
 | `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
-| `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only acts on subtitles under these folders |
+| `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only changes subtitles under these folders, and none when unset |
 | `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` (`0.0.0.0` in the image) |
 | `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / unset; beyond loopback a password is required, generated once when unset |
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs`, where the linuxserver.io Bazarr image keeps ffsubsync; empty in the image, which installs it |

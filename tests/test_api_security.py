@@ -19,7 +19,7 @@ PASSWORD = "a long enough password"
 
 @pytest.fixture
 def local():
-    return TestClient(create_app("127.0.0.1"), base_url=LOCAL)
+    return TestClient(create_app("127.0.0.1"), base_url=LOCAL, client=("127.0.0.1", 50000))
 
 
 @pytest.fixture
@@ -39,6 +39,11 @@ def test_loopback_without_a_password_works_only_for_loopback_hosts_without_proxy
     assert local.get("/api/status", headers={"host": "guard.example"}).status_code == 400
     assert local.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 400
     assert local.get("/health").text == "ok" and local.get("/health", headers={"host": "anything"}).status_code == 200
+
+
+def test_without_a_password_a_proxy_that_rewrites_the_host_gets_nothing():
+    remote = TestClient(create_app("127.0.0.1"), base_url=LOCAL, client=("192.168.1.30", 50000))
+    assert remote.get("/api/session").status_code == 400 and remote.get("/api/settings/api-key").status_code == 400
 
 
 def test_a_password_protects_every_route_and_the_session_carries_the_csrf_token(protected):
@@ -110,3 +115,30 @@ def test_a_first_start_off_loopback_generates_a_password_once(capsys):
     assert auth.verify("admin", password) and oct(os.stat(storage.state_path(auth.CREDENTIALS_FILE)).st_mode & 0o777) == "0o600"
     assert create_app("0.0.0.0").state.login_required is True and "with the password" not in capsys.readouterr().out
     assert create_app("127.0.0.1").state.login_required is True
+
+
+def test_a_streamed_body_without_a_length_is_refused_before_it_is_read(protected):
+    answer = protected.post("/api/session", content=iter([b"{", b"}"]), headers={"content-type": "application/json"})
+    assert answer.status_code == 411 and answer.json()["code"] == "length_required"
+
+
+def test_a_key_or_token_that_is_not_ascii_is_refused_not_a_crash(protected):
+    assert protected.get("/api/status", headers={"X-Api-Key": "cl\u00e9".encode()}).status_code == 401
+    log_in(protected)
+    assert protected.delete("/api/session", headers={CSRF_HEADER: "jet\u00f3n".encode()}).status_code == 403
+
+
+def test_the_lockout_table_stays_bounded(monkeypatch):
+    monkeypatch.setattr(auth, "MAX_TRACKED_CLIENTS", 3)
+    for client in ("a", "b", "c", "d"):
+        auth.record_failure(client)
+    assert list(auth.FAILURES) == ["b", "c", "d"] and not auth.locked_out("a") and "a" not in auth.FAILURES
+
+
+def test_requests_racing_on_a_first_start_all_get_an_answer(local):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from subtitle_guard.api import security
+    with ThreadPoolExecutor(8) as pool:
+        keys = list(pool.map(lambda _: security.regenerate_api_key(), range(16)))
+    assert security.api_key() in keys and len(set(keys)) == 16

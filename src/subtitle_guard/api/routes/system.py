@@ -5,7 +5,7 @@ from contextlib import closing
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ... import __version__, configuration, jobs, storage
+from ... import __version__, configuration, files, jobs, storage
 from ...bazarr import setup_warnings
 from ...errors import ConfigError
 from ...files import clean_up_backups, folder_bytes
@@ -21,6 +21,7 @@ router = APIRouter(tags=["system"])
 @router.get("/system", operation_id="getSystem", dependencies=[Depends(require_user)])
 def get_system() -> SystemView:
     checks = {name: Check(ok=check["ok"], detail=check_detail(check)) for name, check in health_checks().items()}
+    checks["allowed_folders"] = Check(ok=bool(files.ROOTS), detail=", ".join(files.ROOTS) or "Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set")
     return SystemView(version=__version__, checks=checks, workers=worker_health(), backups_bytes=folder_bytes(storage.BACKUP_DIRECTORY),
                       mode=configuration.value("mode"))
 

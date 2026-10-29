@@ -18,7 +18,7 @@ GOOD_SETTINGS = {"general": {"use_postprocessing": True, "postprocessing_cmd": "
 
 @pytest.fixture
 def client():
-    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1")
+    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
     client.headers.update({CSRF_HEADER: client.get("/api/session").json()["csrf"]})
     return client
 

@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ff
 
 @pytest.fixture
 def client():
-    return TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1")
+    return TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
 
 
 @pytest.fixture

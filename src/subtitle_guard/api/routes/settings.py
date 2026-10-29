@@ -25,6 +25,9 @@ def change_settings(body: SettingsChange) -> SettingsView:
     outside = [folder for folder in body.changes.get("watched_folders") or [] if isinstance(folder, str) and not inside_roots(folder)]
     if outside:
         raise HTTPException(422, {"code": "outside_allowed_folders", "message": f"Not inside the allowed folders: {', '.join(outside)}."})
+    if "bazarr_url" in body.changes and body.changes["bazarr_url"] != configuration.value("bazarr_url") and not body.changes.get("bazarr_api_key"):
+        raise HTTPException(422, {"code": "bazarr_key_needed", "message": "Enter Bazarr's API key again with the new address: the key is only sent to "
+                                                                          "the address it was entered for."})
     if body.changes.get("audio_automatic") is True:
         allowed, why = calibration_allows_automatic()
         if not allowed:

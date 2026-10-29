@@ -20,6 +20,7 @@ MINIMUM_PASSWORD_LENGTH = 12
 SESSION_SECONDS = 30 * 24 * 3600
 MAX_SESSIONS = 1000
 MAX_FAILED_LOGINS = 5
+MAX_TRACKED_CLIENTS = 10000
 LOCKOUT_SECONDS = 600
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 ACCOUNT = {}
@@ -101,12 +102,15 @@ def verify(user, password):
 
 
 def locked_out(client):
-    recent = [moment for moment in FAILURES.get(client, []) if time.time() - moment < LOCKOUT_SECONDS]
-    FAILURES[client] = recent
+    recent = [moment for moment in FAILURES.pop(client, []) if time.time() - moment < LOCKOUT_SECONDS]
+    if recent:
+        FAILURES[client] = recent
     return len(recent) >= MAX_FAILED_LOGINS
 
 
 def record_failure(client):
+    if client not in FAILURES and len(FAILURES) >= MAX_TRACKED_CLIENTS:
+        FAILURES.pop(next(iter(FAILURES)))
     FAILURES.setdefault(client, []).append(time.time())
     log("web.login-failed", f"wrong user or password from {client} ({len(FAILURES[client])} in {LOCKOUT_SECONDS // 60} min)", LEVEL["warning"], client=client)
 

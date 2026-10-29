@@ -16,13 +16,13 @@ from ..storage import state_path
 from .auth import LOOPBACK_HOSTS, session_for
 
 SESSION_COOKIE = "subtitle_guard_session"
-CSRF_COOKIE = "subtitle_guard_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 API_KEY_HEADER = "X-Api-Key"
 API_KEY_FILE = "api-key"
 MAX_BODY_BYTES = 64 * 1024
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
+LOCAL_HOST_SUFFIXES = (".local", ".lan", ".home.arpa", ".internal", ".localdomain")
 SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cache-Control": "no-store",
                     "Content-Security-Policy": ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
                                                 "media-src 'self' blob:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
@@ -35,6 +35,8 @@ async def guard(request, call_next):
     if request.method not in SAFE_METHODS:
         if not same_origin(request):
             return refusal(403, "foreign_origin", "Requests from another site are refused.")
+        if "transfer-encoding" in request.headers:
+            return refusal(411, "length_required", "Send the request with a Content-Length.")
         length = request.headers.get("content-length", "0")
         if not (length.isascii() and length.isdigit()) or int(length) > MAX_BODY_BYTES:
             return refusal(413, "too_large", "The request is too large.")
@@ -46,9 +48,10 @@ async def guard(request, call_next):
 
 
 def trusted_host(request):
-    if request.app.state.login_required or request.app.state.auth_mode == AUTH_MODE["external"]:
+    if request.app.state.login_required or (request.app.state.auth_mode == AUTH_MODE["external"] and from_trusted_proxy(request)):
         return True
-    return host_name(request.headers.get("host", "")) in LOOPBACK_HOSTS and not any(request.headers.get(name) for name in PROXY_HEADERS)
+    peer = ip_or_none(request.client.host if request.client else "")
+    return host_name(request.headers.get("host", "")) in LOOPBACK_HOSTS and peer is not None and peer.is_loopback and not forwarded(request)
 
 
 def same_origin(request):
@@ -76,22 +79,64 @@ def current_session(request: Request):
 
 
 def login_needed(request):
-    if not request.app.state.login_required or request.app.state.auth_mode == AUTH_MODE["external"]:
+    if not request.app.state.login_required:
         return False
-    return not (request.app.state.auth_mode == AUTH_MODE["local"] and local_client(request))
+    if request.app.state.auth_mode == AUTH_MODE["external"]:
+        return not from_trusted_proxy(request)
+    if request.app.state.auth_mode == AUTH_MODE["local"]:
+        return not local_client(request)
+    return True
 
 
 def local_client(request):
-    try:
-        address = ipaddress.ip_address(request.client.host if request.client else "")
-    except ValueError:
+    if forwarded(request) and not from_trusted_proxy(request):
         return False
-    return address.is_private or address.is_loopback
+    address = ip_or_none(client_address(request))
+    return address is not None and (address.is_private or address.is_loopback) and local_host(host_name(request.headers.get("host", "")))
+
+
+def local_host(name):
+    if ip_or_none(name) is not None or name in LOOPBACK_HOSTS:
+        return True
+    return "." not in name or name.endswith(LOCAL_HOST_SUFFIXES)
+
+
+def client_address(request):
+    peer = request.client.host if request.client else ""
+    if not from_trusted_proxy(request):
+        return peer
+    hops = [hop.strip() for hop in request.headers.get("x-forwarded-for", "").split(",") if hop.strip()]
+    untrusted = [hop for hop in hops if not trusted_proxy(request, hop)]
+    return untrusted[-1] if untrusted else peer
+
+
+def from_trusted_proxy(request):
+    return trusted_proxy(request, request.client.host if request.client else "")
+
+
+def trusted_proxy(request, address):
+    parsed = ip_or_none(address)
+    return parsed is not None and any(parsed in network for network in request.app.state.trusted_proxies)
+
+
+def forwarded(request):
+    return any(request.headers.get(name) for name in PROXY_HEADERS)
+
+
+def ip_or_none(text):
+    try:
+        return ipaddress.ip_address(text)
+    except ValueError:
+        return None
+
+
+def same_secret(given, expected):
+    return bool(given) and bool(expected) and hmac.compare_digest(given.encode(), expected.encode())
 
 
 def valid_api_key(request):
     given = request.headers.get(API_KEY_HEADER, "")
-    return bool(given) and hmac.compare_digest(given, api_key())
+    return bool(given) and same_secret(given, api_key())
 
 
 def api_key():
@@ -106,10 +151,11 @@ def regenerate_api_key():
     path = state_path(API_KEY_FILE)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     key = secrets.token_hex(16)
-    descriptor = os.open(path + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    temporary = f"{path}.{secrets.token_hex(4)}.new"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w") as handle:
         handle.write(key)
-    os.replace(path + ".new", path)
+    os.replace(temporary, path)
     return key
 
 
@@ -117,7 +163,9 @@ def expected_csrf(request):
     session = current_session(request)
     if session:
         return session["csrf"]
-    return request.cookies.get(CSRF_COOKIE) or ""
+    if login_needed(request):
+        return ""
+    return request.app.state.anonymous_csrf
 
 
 def require_user(request: Request):
@@ -131,9 +179,7 @@ def require_csrf(request: Request):
     require_user(request)
     if valid_api_key(request):
         return
-    expected = expected_csrf(request)
-    given = request.headers.get(CSRF_HEADER, "")
-    if not expected or not given or not hmac.compare_digest(given, expected):
+    if not same_secret(request.headers.get(CSRF_HEADER, ""), expected_csrf(request)):
         raise HTTPException(403, {"code": "csrf", "message": "The page expired, reload it and try again."})
     has_body = request.headers.get("content-length", "0") not in ("", "0")
     if has_body and request.headers.get("content-type", "").split(";")[0].strip() != "application/json":

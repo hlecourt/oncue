@@ -47,4 +47,8 @@ First public version.
 - Web UI login with a user name and a password (scrypt hash, generated on first start beyond loopback, `set-password` to change
   it), expiring server-side sessions, a lockout after failed logins, CSRF tokens bound to the session and sent in a header,
   origin and host checks, a CSP with no inline script and strict security headers, request size and time limits.
+- Login modes that cannot be fooled by a proxy or a rebound DNS name: `local` needs a private client opening the UI by an IP or
+  a local name, `external` trusts only `SUBTITLE_GUARD_TRUSTED_PROXIES`, and the lockout counts the real client behind a
+  trusted proxy. CSRF tokens are always held by the server, bodies need a `Content-Length`, the UI changes files only under
+  `SUBTITLE_GUARD_ROOTS` and through folders opened without following links, and a new Bazarr address needs its key again.
 - Every subtitle read and write is confined to `SUBTITLE_GUARD_ROOTS`, never follows a symlink and only touches regular files.
