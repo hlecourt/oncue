@@ -6,6 +6,7 @@ import { useEffect } from "react"
 
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { api, unwrap } from "@/lib/api/client"
+import { useT } from "@/lib/i18n"
 import { chooseTheme } from "@/lib/theme"
 
 const PAGES = [
@@ -17,6 +18,7 @@ const PAGES = [
 ] as const
 
 export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useT()
   const navigate = useNavigate()
   const review = useQuery({ queryKey: ["review"], queryFn: () => unwrap(api.GET("/api/review")), enabled: open })
 
@@ -37,19 +39,19 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
   }
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title="Search" description="Go to a page or a subtitle">
-      <CommandInput placeholder="Type a page or a subtitle name..." />
+    <CommandDialog open={open} onOpenChange={onOpenChange} title={t("Search")} description={t("Go to a page or a subtitle")}>
+      <CommandInput placeholder={t("Type a page or a subtitle name...")} />
       <CommandList>
-        <CommandEmpty>Nothing matches.</CommandEmpty>
-        <CommandGroup heading="Pages">
+        <CommandEmpty>{t("Nothing matches.")}</CommandEmpty>
+        <CommandGroup heading={t("Pages")}>
           {PAGES.map((page) => (
             <CommandItem key={page.to} onSelect={() => go(() => navigate({ to: page.to }))}>
-              {page.label}
+              {t(page.label)}
             </CommandItem>
           ))}
         </CommandGroup>
         {review.data && review.data.length > 0 && (
-          <CommandGroup heading="In Review">
+          <CommandGroup heading={t("In Review")}>
             {review.data.map((item) => (
               <CommandItem key={item.id} value={`${item.name} ${item.folder}`} onSelect={() => go(() => navigate({ to: "/subtitles/$subtitleId", params: { subtitleId: item.id } }))}>
                 <FileTextIcon />
@@ -59,14 +61,14 @@ export function CommandMenu({ open, onOpenChange }: { open: boolean; onOpenChang
             ))}
           </CommandGroup>
         )}
-        <CommandGroup heading="Theme">
+        <CommandGroup heading={t("Theme")}>
           <CommandItem onSelect={() => go(() => chooseTheme("light"))}>
             <SunIcon />
-            Light theme
+            {t("Light theme")}
           </CommandItem>
           <CommandItem onSelect={() => go(() => chooseTheme("dark"))}>
             <MoonIcon />
-            Dark theme
+            {t("Dark theme")}
           </CommandItem>
         </CommandGroup>
       </CommandList>

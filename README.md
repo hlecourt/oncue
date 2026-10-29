@@ -66,7 +66,7 @@ To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.h
 
 ## The web UI
 
-In plain words, light or dark, on a phone or a large screen.
+In plain words, in English, French or Simplified Chinese, light or dark, on a phone or a large screen.
 
 - **Review**: what waits for a decision, one sentence each, with Keep and Check again for several at once.
 - **Editor**: the video, your lines, and a timeline with your subtitle, the sound and the video's own subtitle. Play, press

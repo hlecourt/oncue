@@ -3,10 +3,12 @@ import { cn } from "cn"
 import { useEffect, useState } from "react"
 
 import { mediaUrl } from "@/lib/api/client"
+import { useT } from "@/lib/i18n"
 
 const FRAME_DELAY_MS = 250
 
 export function Preview({ subtitleId, time, playing, caption, className }: { subtitleId: string; time: number; playing: boolean; caption: string; className?: string }) {
+  const t = useT()
   const [frame, setFrame] = useState<string | null>(null)
 
   useEffect(() => {
@@ -30,8 +32,8 @@ export function Preview({ subtitleId, time, playing, caption, className }: { sub
 
   return (
     <div className={cn("relative aspect-video w-full overflow-hidden rounded-md bg-black", className)}>
-      {frame && <img src={frame} alt="The video at the current time" className="absolute inset-0 size-full object-contain" />}
-      {!frame && <div className="absolute inset-0 flex items-center justify-center text-xs text-white/50">The picture shows when you pause.</div>}
+      {frame && <img src={frame} alt={t("The video at the current time")} className="absolute inset-0 size-full object-contain" />}
+      {!frame && <div className="absolute inset-0 flex items-center justify-center text-xs text-white/50">{t("The picture shows when you pause.")}</div>}
       {caption && (
         <p className="absolute inset-x-[6%] bottom-[7%] text-center text-[clamp(14px,1.6vw,22px)] font-semibold whitespace-pre-line text-white [text-shadow:0_0_4px_#000,0_0_2px_#000]">
           {caption}

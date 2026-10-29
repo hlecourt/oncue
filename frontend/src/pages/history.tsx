@@ -14,19 +14,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { api, unwrap } from "@/lib/api/client"
 import { when } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 
 const PAGE_SIZE = 50
 const JOB_WORDS: Record<string, string> = { hook: "Check a download from Bazarr", check: "Check", blacklist: "Ask Bazarr for another subtitle",
   "retry-check": "Wait for the other subtitle", scan: "List the library", "audio-copy": "Prepare the sound for listening" }
 
 export function HistoryPage() {
+  const t = useT()
   return (
     <>
-      <PageHeader title="History" description="Every check the guard made, newest first: what started it, what it decided, how sure it was and what it changed." />
+      <PageHeader title={t("History")} description={t("Every check the guard made, newest first: what started it, what it decided, how sure it was and what it changed.")} />
       <Tabs defaultValue="checks">
         <TabsList>
-          <TabsTrigger value="checks">Checks</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="checks">{t("Checks")}</TabsTrigger>
+          <TabsTrigger value="tasks">{t("Tasks")}</TabsTrigger>
         </TabsList>
         <TabsContent value="checks" className="mt-4"><Checks /></TabsContent>
         <TabsContent value="tasks" className="mt-4"><Tasks /></TabsContent>
@@ -36,6 +38,7 @@ export function HistoryPage() {
 }
 
 function Checks() {
+  const t = useT()
   const [result, setResult] = useState("all")
   const history = useInfiniteQuery({
     queryKey: ["history", result],
@@ -49,19 +52,19 @@ function Checks() {
 
   return (
     <div className="space-y-3">
-      <ToggleGroup type="single" variant="outline" size="sm" value={result} onValueChange={(value) => value && setResult(value)} aria-label="Filter by result" className="flex-wrap">
-        <ToggleGroupItem value="all">All <Badge variant="secondary" className="ml-1 font-mono">{total}</Badge></ToggleGroupItem>
+      <ToggleGroup type="single" variant="outline" size="sm" value={result} onValueChange={(value) => value && setResult(value)} aria-label={t("Filter by result")} className="flex-wrap">
+        <ToggleGroupItem value="all">{t("All")} <Badge variant="secondary" className="ml-1 font-mono">{total}</Badge></ToggleGroupItem>
         {groups.map((group) => (
           <ToggleGroupItem key={group.key} value={group.key}>{group.label} <Badge variant="secondary" className="ml-1 font-mono">{group.count}</Badge></ToggleGroupItem>
         ))}
       </ToggleGroup>
       {history.isPending && <Skeleton className="h-64 w-full" />}
-      {history.data && rows.length === 0 && <EmptyState icon={<HistoryIcon />} title={result === "all" ? "Nothing checked yet" : "No check with this result"} />}
+      {history.data && rows.length === 0 && <EmptyState icon={<HistoryIcon />} title={result === "all" ? t("Nothing checked yet") : t("No check with this result")} />}
       {rows.length > 0 && (
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader className="bg-muted/50">
-              <TableRow><TableHead>Subtitle</TableHead><TableHead>Result</TableHead><TableHead>What changed</TableHead><TableHead>Confidence</TableHead><TableHead>Checked</TableHead></TableRow>
+              <TableRow><TableHead>{t("Subtitle")}</TableHead><TableHead>{t("Result")}</TableHead><TableHead>{t("What changed")}</TableHead><TableHead>{t("Confidence")}</TableHead><TableHead>{t("Checked")}</TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
@@ -86,12 +89,13 @@ function Checks() {
           </Table>
         </div>
       )}
-      {history.hasNextPage && <Button variant="outline" onClick={() => history.fetchNextPage()} disabled={history.isFetchingNextPage}>Show older checks</Button>}
+      {history.hasNextPage && <Button variant="outline" onClick={() => history.fetchNextPage()} disabled={history.isFetchingNextPage}>{t("Show older checks")}</Button>}
     </div>
   )
 }
 
 function Tasks() {
+  const t = useT()
   const queryClient = useQueryClient()
   const tasks = useQuery({ queryKey: ["jobs"], queryFn: () => unwrap(api.GET("/api/jobs", { params: { query: { limit: 100 } } })), refetchInterval: 5000 })
   const retry = useMutation({
@@ -103,25 +107,25 @@ function Tasks() {
     onError: (error) => toast.error(error.message),
   })
   if (tasks.isPending) return <Skeleton className="h-64 w-full" />
-  if (!tasks.data?.length) return <EmptyState icon={<HistoryIcon />} title="No task yet" />
+  if (!tasks.data?.length) return <EmptyState icon={<HistoryIcon />} title={t("No task yet")} />
   return (
     <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader className="bg-muted/50">
-          <TableRow><TableHead>Task</TableHead><TableHead>Subtitle</TableHead><TableHead>Status</TableHead><TableHead>Updated</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow>
+          <TableRow><TableHead>{t("Task")}</TableHead><TableHead>{t("Subtitle")}</TableHead><TableHead>{t("Status")}</TableHead><TableHead>{t("Updated")}</TableHead><TableHead><span className="sr-only">{t("Action")}</span></TableHead></TableRow>
         </TableHeader>
         <TableBody>
           {tasks.data.map((task) => (
             <TableRow key={task.id}>
-              <TableCell>{JOB_WORDS[task.kind] ?? task.kind}</TableCell>
+              <TableCell>{t(JOB_WORDS[task.kind] ?? task.kind)}</TableCell>
               <TableCell className="max-w-64 truncate text-sm">{task.subtitle ?? "-"}</TableCell>
               <TableCell>
-                <div className="flex items-center gap-2"><ToneDot tone={task.status === "failed" ? "bad" : task.status === "done" ? "good" : "neutral"} />{taskWords(task.status)}</div>
+                <div className="flex items-center gap-2"><ToneDot tone={task.status === "failed" ? "bad" : task.status === "done" ? "good" : "neutral"} />{t(taskWords(task.status))}</div>
                 {task.error && <div className="mt-1 max-w-md truncate text-xs text-destructive" title={task.error}>{task.error}</div>}
               </TableCell>
               <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{when(task.finished ?? task.started ?? task.created)}</TableCell>
               <TableCell className="text-right">
-                {(task.status === "failed" || task.status === "done") && <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(task.id)}>Run again</Button>}
+                {(task.status === "failed" || task.status === "done") && <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(task.id)}>{t("Run again")}</Button>}
               </TableCell>
             </TableRow>
           ))}

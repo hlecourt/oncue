@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import createClient, { type Middleware } from "openapi-fetch"
 
+import { chosenLocale, translate } from "@/lib/i18n"
+
 import type { components, paths } from "./schema"
 
 export type Schemas = components["schemas"]
@@ -14,6 +16,7 @@ export function rememberCsrf(token: string | null | undefined) {
 
 const security: Middleware = {
   onRequest({ request }) {
+    request.headers.set("Accept-Language", chosenLocale())
     if (request.method !== "GET" && session.csrf) request.headers.set("X-CSRF-Token", session.csrf)
     return request
   },
@@ -43,7 +46,7 @@ export async function unwrap<T>(pending: Promise<Answer<T>>): Promise<T> {
   const { data, error, response } = await pending
   if (response.ok) return data as T
   const problem = (error ?? {}) as { code?: string; message?: string }
-  throw new ApiError(problem.message ?? `The server answered ${response.status}.`, problem.code ?? "error", response.status)
+  throw new ApiError(problem.message ?? translate("The server answered {status}.", { status: response.status }), problem.code ?? "error", response.status)
 }
 
 export function mediaUrl(path: string) {

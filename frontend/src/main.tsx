@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ApiError } from "@/lib/api/client"
+import { markDocument } from "@/lib/i18n"
 import { router } from "@/router"
 
 const queryClient = new QueryClient({
@@ -18,6 +19,7 @@ const queryClient = new QueryClient({
   },
 })
 
+markDocument()
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -11,8 +11,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SESSION_KEY } from "@/hooks/use-session"
 import { api, rememberCsrf, unwrap } from "@/lib/api/client"
+import { useT } from "@/lib/i18n"
 
 export function LoginPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const [user, setUser] = useState("admin")
   const [password, setPassword] = useState("")
@@ -39,8 +41,8 @@ export function LoginPage() {
         </div>
         <Card>
           <CardHeader>
-            <h1 className="leading-none font-semibold">Log in</h1>
-            <CardDescription>Use the account of this subtitle-guard.</CardDescription>
+            <h1 className="leading-none font-semibold">{t("Log in")}</h1>
+            <CardDescription>{t("Use the account of this subtitle-guard.")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={submit}>
@@ -50,26 +52,25 @@ export function LoginPage() {
                 </Alert>
               )}
               <div className="space-y-2">
-                <Label htmlFor="user">User name</Label>
+                <Label htmlFor="user">{t("User name")}</Label>
                 <Input id="user" autoComplete="username" value={user} onChange={(event) => setUser(event.target.value)}
                   aria-invalid={Boolean(login.error)} aria-describedby={login.error ? "login-problem" : undefined} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t("Password")}</Label>
                 <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)}
                   aria-invalid={Boolean(login.error)} aria-describedby={login.error ? "login-problem" : undefined} />
               </div>
               <Button type="submit" className="w-full" disabled={login.isPending || !password}>
-                {login.isPending ? "Logging in..." : "Log in"}
+                {login.isPending ? t("Logging in...") : t("Log in")}
               </Button>
             </form>
           </CardContent>
         </Card>
         <Collapsible className="text-center text-sm text-muted-foreground">
-          <CollapsibleTrigger className="underline-offset-4 hover:underline">How do I set the password?</CollapsibleTrigger>
+          <CollapsibleTrigger className="underline-offset-4 hover:underline">{t("How do I set the password?")}</CollapsibleTrigger>
           <CollapsibleContent className="mt-2 text-left">
-            Set SUBTITLE_GUARD_UI_USER and SUBTITLE_GUARD_UI_PASSWORD, or run subtitle-guard set-password. On a first start without one, a password for admin is
-            printed once in the service logs.
+            {t("Set SUBTITLE_GUARD_UI_USER and SUBTITLE_GUARD_UI_PASSWORD, or run subtitle-guard set-password. On a first start without one, a password for admin is printed once in the service logs.")}
           </CollapsibleContent>
         </Collapsible>
       </div>

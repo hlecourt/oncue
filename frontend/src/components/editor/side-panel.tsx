@@ -13,6 +13,7 @@ import type { Change } from "@/lib/retime"
 import { ToneDot, toneOf } from "@/components/status"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
 import { clock, when } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 
 type Props = {
   tab: string
@@ -41,12 +42,13 @@ const VERSION_WORDS: Record<string, string> = { original: "Before a fix", "befor
 const ROW_ESTIMATE = 58
 
 export function SidePanel(props: Props) {
+  const t = useT()
   return (
     <Tabs value={props.tab} onValueChange={props.onTab} className="flex min-h-0 flex-1 flex-col gap-0">
       <TabsList className="h-11 w-full justify-start gap-1 rounded-none border-b bg-transparent px-3 pb-0">
-        <PanelTab value="lines">Lines <span className="text-muted-foreground">{props.lines.length}</span></PanelTab>
-        <PanelTab value="changes">Changes {props.changeCount > 0 && <span className="rounded-full bg-unsaved-soft px-1.5 font-mono text-[11px] text-unsaved-ink">{props.changeCount}</span>}</PanelTab>
-        <PanelTab value="history">History</PanelTab>
+        <PanelTab value="lines">{t("Lines")} <span className="text-muted-foreground">{props.lines.length}</span></PanelTab>
+        <PanelTab value="changes">{t("Changes")} {props.changeCount > 0 && <span className="rounded-full bg-unsaved-soft px-1.5 font-mono text-[11px] text-unsaved-ink">{props.changeCount}</span>}</PanelTab>
+        <PanelTab value="history">{t("History")}</PanelTab>
       </TabsList>
       <TabsContent value="lines" className="min-h-0 flex-1"><Script {...props} /></TabsContent>
       <TabsContent value="changes" className="min-h-0 flex-1 overflow-auto"><Changes {...props} /></TabsContent>
@@ -64,6 +66,7 @@ function PanelTab({ value, children }: { value: string; children: React.ReactNod
 }
 
 function Script({ lines, videoText, moves, current, selection, following, onPick }: Props) {
+  const t = useT()
   const scroller = useRef<HTMLDivElement>(null)
   const virtual = useVirtualizer({ count: lines.length, getScrollElement: () => scroller.current, estimateSize: () => ROW_ESTIMATE, overscan: 10 })
 
@@ -73,7 +76,7 @@ function Script({ lines, videoText, moves, current, selection, following, onPick
 
   return (
     <div ref={scroller} className="h-full overflow-y-auto" tabIndex={-1}>
-      <ol className="relative w-full" style={{ height: virtual.getTotalSize() }} aria-label="Lines of the subtitle">
+      <ol className="relative w-full" style={{ height: virtual.getTotalSize() }} aria-label={t("Lines of the subtitle")}>
         {virtual.getVirtualItems().map((item) => {
           const line = lines[item.index]!
           const move = moves[item.index]!
@@ -105,23 +108,24 @@ function Script({ lines, videoText, moves, current, selection, following, onPick
 }
 
 function Changes({ guard, onGuard, onPart, changes, onRemove, onPick, lines }: Props) {
+  const t = useT()
   const empty = !guard && changes.length === 0
   return (
     <div className="px-4 py-2 text-[13px]">
-      {empty && <p className="py-6 text-center text-muted-foreground">No change yet. Pick a line, listen, then press It starts here.</p>}
+      {empty && <p className="py-6 text-center text-muted-foreground">{t("No change yet. Pick a line, listen, then press It starts here.")}</p>}
       <ul className="divide-y">
         {guard && (
           <li className="py-3">
             <div className="flex items-center gap-2.5">
               <i className="size-2 flex-none rounded-full bg-guard" />
-              <div className="min-w-0 flex-1"><div>The guard's fix</div><div className="text-xs text-muted-foreground">confidence {guard.confidence ?? "-"}, nothing written yet</div></div>
-              <Switch checked={guard.on} onCheckedChange={onGuard} aria-label="Use the guard's fix" className="data-[state=checked]:bg-guard" />
+              <div className="min-w-0 flex-1"><div>{t("The guard's fix")}</div><div className="text-xs text-muted-foreground">{t("confidence {confidence}, nothing written yet", { confidence: guard.confidence ?? "-" })}</div></div>
+              <Switch checked={guard.on} onCheckedChange={onGuard} aria-label={t("Use the guard's fix")} className="data-[state=checked]:bg-guard" />
             </div>
             {guard.parts.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">
                 {guard.parts.map((part) => (
                   <button key={part.first} type="button" onClick={() => onPart(part)} className="rounded-full border px-2 py-0.5 text-xs hover:bg-accent">
-                    {clock(part.first, 0)} to {clock(part.last, 0)} <span className="font-mono text-guard-ink">{part.shift > 0 ? "+" : ""}{part.shift.toFixed(2)} s</span>
+                    {t("{first} to {last}", { first: clock(part.first, 0), last: clock(part.last, 0) })} <span className="font-mono text-guard-ink">{part.shift > 0 ? "+" : ""}{part.shift.toFixed(2)} s</span>
                   </button>
                 ))}
               </div>
@@ -132,42 +136,43 @@ function Changes({ guard, onGuard, onPart, changes, onRemove, onPick, lines }: P
           <li key={`${change.first}-${change.last}`} className="flex items-center gap-2.5 py-3">
             <i className="size-2 flex-none rounded-full bg-ours" />
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onPick(change.first, false)}>
-              <div className="underline decoration-border underline-offset-4">Lines {change.first + 1} to {change.last + 1}</div>
-              <div className="text-xs text-muted-foreground">from {clock(lines[change.first]?.start ?? 0, 0)}, your change</div>
+              <div className="underline decoration-border underline-offset-4">{t("Lines {first} to {last}", { first: change.first + 1, last: change.last + 1 })}</div>
+              <div className="text-xs text-muted-foreground">{t("from {time}, your change", { time: clock(lines[change.first]?.start ?? 0, 0) })}</div>
             </button>
             <span className="font-mono tabular-nums">{change.offset > 0 ? "+" : ""}{change.offset.toFixed(2)} s</span>
-            <Button size="icon" variant="ghost" className="size-7" aria-label={`Remove the change on lines ${change.first + 1} to ${change.last + 1}`} onClick={() => onRemove(change)}><XIcon /></Button>
+            <Button size="icon" variant="ghost" className="size-7" aria-label={t("Remove the change on lines {first} to {last}", { first: change.first + 1, last: change.last + 1 })} onClick={() => onRemove(change)}><XIcon /></Button>
           </li>
         ))}
       </ul>
-      {changes.length > 0 && <p className="py-3 text-xs text-muted-foreground">Ctrl Z undoes the last change.</p>}
+      {changes.length > 0 && <p className="py-3 text-xs text-muted-foreground">{t("Ctrl Z undoes the last change.")}</p>}
     </div>
   )
 }
 
 function History({ subtitleId, versions, onRestore }: Props) {
+  const t = useT()
   const checks = useQuery({ queryKey: ["history", "subtitle", subtitleId], queryFn: () => unwrap(api.GET("/api/history", { params: { query: { subtitle: subtitleId, limit: 50 } } })) })
   return (
     <div className="px-4 py-2 text-[13px]">
-      <h2 className="pt-2 pb-1 text-xs font-medium text-muted-foreground">Checks</h2>
-      {checks.data?.rows.length === 0 && <p className="py-3 text-muted-foreground">Not checked yet.</p>}
+      <h2 className="pt-2 pb-1 text-xs font-medium text-muted-foreground">{t("Checks")}</h2>
+      {checks.data?.rows.length === 0 && <p className="py-3 text-muted-foreground">{t("Not checked yet.")}</p>}
       <ol className="divide-y">
         {checks.data?.rows.map((row) => (
           <li key={row.id} className="py-2.5">
             <div className="flex items-center gap-2"><ToneDot tone={toneOf(row.tone)} /><span className="min-w-0 flex-1 truncate">{row.words}</span>
               {row.confidence !== null && <span className="font-mono text-xs text-muted-foreground tabular-nums">{row.confidence}</span>}</div>
             <div className="mt-0.5 pl-4 text-xs text-muted-foreground">{when(row.time)}{row.started_by ? `, ${row.started_by}` : ""}</div>
-            {row.changes.filter((sentence) => sentence !== "Nothing moved").map((sentence) => <div key={sentence} className="pl-4 text-xs">{sentence}</div>)}
+            {row.changes.filter((sentence) => sentence !== t("Nothing moved")).map((sentence) => <div key={sentence} className="pl-4 text-xs">{sentence}</div>)}
           </li>
         ))}
       </ol>
-      <h2 className="pt-4 pb-1 text-xs font-medium text-muted-foreground">Saved versions</h2>
-      {versions.length === 0 && <p className="py-3 text-muted-foreground">No saved version yet. One is kept each time the file is written.</p>}
+      <h2 className="pt-4 pb-1 text-xs font-medium text-muted-foreground">{t("Saved versions")}</h2>
+      {versions.length === 0 && <p className="py-3 text-muted-foreground">{t("No saved version yet. One is kept each time the file is written.")}</p>}
       <ul className="divide-y">
         {versions.map((version) => (
           <li key={version.id} className="flex items-center gap-2 py-2.5">
-            <div className="min-w-0 flex-1"><div className="truncate">{VERSION_WORDS[version.label] ?? version.label}</div><div className="text-xs text-muted-foreground">{when(version.time)}</div></div>
-            <Button size="sm" variant="outline" onClick={() => onRestore(version)}>Restore</Button>
+            <div className="min-w-0 flex-1"><div className="truncate">{t(VERSION_WORDS[version.label] ?? version.label)}</div><div className="text-xs text-muted-foreground">{when(version.time)}</div></div>
+            <Button size="sm" variant="outline" onClick={() => onRestore(version)}>{t("Restore")}</Button>
           </li>
         ))}
       </ul>

@@ -115,11 +115,11 @@ def calibration_allows_automatic():
     folder = state_path("calibration")
     reports = sorted(name for name in os.listdir(folder) if name.startswith("audio-") and name.endswith(".json")) if os.path.isdir(folder) else []
     if not reports:
-        return False, "Run subtitle-guard calibrate-audio on your library first."
+        return False, "Run subtitle-guard calibrate-audio on your library first.", {}
     with open(os.path.join(folder, reports[-1])) as handle:
         latest = json.load(handle)
     if latest["count"] < MIN_TRIALS_FOR_AUTOMATIC:
-        return False, f"The last calibration has {latest['count']} trials, it needs at least {MIN_TRIALS_FOR_AUTOMATIC}."
+        return False, "The last calibration has {count} trials, it needs at least {needed}.", {"count": latest["count"], "needed": MIN_TRIALS_FOR_AUTOMATIC}
     if latest["false_positives"]:
-        return False, f"The last calibration found {latest['false_positives']} confident audio syncs that were wrong."
-    return True, f"The last calibration found no wrong confident result in {latest['count']} trials."
+        return False, "The last calibration found {count} confident audio syncs that were wrong.", {"count": latest["false_positives"]}
+    return True, "The last calibration found no wrong confident result in {count} trials.", {"count": latest["count"]}

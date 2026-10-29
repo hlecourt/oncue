@@ -11,10 +11,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, unwrap } from "@/lib/api/client"
 import { when } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 
 const PAGE_SIZE = 100
 
 export function SubtitlesPage() {
+  const t = useT()
   const [search, setSearch] = useState("")
   const query = useDeferredValue(search)
   const listing = useInfiniteQuery({
@@ -28,18 +30,18 @@ export function SubtitlesPage() {
 
   return (
     <>
-      <PageHeader title="Subtitles" description="Every subtitle the guard has checked. Open one to listen to it and fix its timing by hand, even when it is not in Review." />
+      <PageHeader title={t("Subtitles")} description={t("Every subtitle the guard has checked. Open one to listen to it and fix its timing by hand, even when it is not in Review.")} />
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <Input placeholder="Search a file or a folder" value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-80" aria-label="Search the subtitles" />
-        {listing.data && <span className="text-sm text-muted-foreground">{total} subtitle{total === 1 ? "" : "s"}</span>}
+        <Input placeholder={t("Search a file or a folder")} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-80" aria-label={t("Search the subtitles")} />
+        {listing.data && <span className="text-sm text-muted-foreground">{total === 1 ? t("{count} subtitle", { count: total }) : t("{count} subtitles", { count: total })}</span>}
       </div>
       {listing.isPending && <Skeleton className="h-64 w-full" />}
-      {listing.data && rows.length === 0 && <EmptyState icon={<FilesIcon />} title={query ? "No subtitle matches" : "No subtitle checked yet"}>{query ? "Try a shorter search." : "Scan the library from the System page."}</EmptyState>}
+      {listing.data && rows.length === 0 && <EmptyState icon={<FilesIcon />} title={query ? t("No subtitle matches") : t("No subtitle checked yet")}>{query ? t("Try a shorter search.") : t("Scan the library from the System page.")}</EmptyState>}
       {rows.length > 0 && (
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader className="bg-muted/50">
-              <TableRow><TableHead>Subtitle</TableHead><TableHead className="hidden md:table-cell">Result</TableHead><TableHead className="hidden md:table-cell">Confidence</TableHead><TableHead className="hidden md:table-cell">Checked</TableHead></TableRow>
+              <TableRow><TableHead>{t("Subtitle")}</TableHead><TableHead className="hidden md:table-cell">{t("Result")}</TableHead><TableHead className="hidden md:table-cell">{t("Confidence")}</TableHead><TableHead className="hidden md:table-cell">{t("Checked")}</TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
@@ -58,7 +60,7 @@ export function SubtitlesPage() {
           </Table>
         </div>
       )}
-      {listing.hasNextPage && <Button variant="outline" className="mt-3" onClick={() => listing.fetchNextPage()} disabled={listing.isFetchingNextPage}>Show more</Button>}
+      {listing.hasNextPage && <Button variant="outline" className="mt-3" onClick={() => listing.fetchNextPage()} disabled={listing.isFetchingNextPage}>{t("Show more")}</Button>}
     </>
   )
 }
