@@ -24,10 +24,11 @@ from .alignment import (
     weak_minutes,
     wrong_end_share,
 )
-from .bazarr import RETRY_STAGE, file_hash, request_another
+from .bazarr import RETRY_STAGE, request_another
+from .catalog import discard_proposal, proposal_for
 from .confidence import confidence
-from .errors import EditRefusedError, MatroskaError, ToolError, UnsafePathError
-from .files import inside_roots, restore_version, save_version, subtitle_lock, subtitle_locks
+from .errors import EditRefusedError, MatroskaError, ToolError
+from .files import file_hash, inside_roots, restore_version, save_backup, subtitle_lock
 from .guard import evaluate_and_fix
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
@@ -39,7 +40,6 @@ from .reports import latest_reports, needs_review, report
 from .state import load_state, update_state
 from .storage import (
     backup_folders,
-    backup_path,
     file_signature,
     heavy_disk_read,
     read_json,
@@ -201,10 +201,31 @@ def diagnosis_from(cues, decision, original, weak, attempt):
     return {"state": "out-of-sync", "parts": changes["parts"], "scale": changes["scale"], "fixable": True, "shifts": shifts, "weak_minutes": weak}
 
 
-def fix_everything(video, subtitle):
-    log("review.fix-requested", "full fix requested from the UI", subtitle=subtitle)
-    outcome = evaluate_and_fix(video, subtitle, True)
+def apply_proposal(video, subtitle, expected_version=None):
+    version = file_hash(subtitle)
+    if expected_version and expected_version != version:
+        raise EditRefusedError("the subtitle changed since this page was opened, reload it and try again")
+    proposal = proposal_for(subtitle, version)
+    if proposal is None:
+        evaluate_and_fix(video, subtitle, False)
+        proposal = proposal_for(subtitle, version)
+    if proposal is None:
+        return None
+    with subtitle_lock(subtitle):
+        if file_hash(subtitle) != version:
+            raise EditRefusedError("the subtitle changed while the proposal was applied, nothing was written")
+        document = parse_subtitle(subtitle)
+        if len(document["cues"]) != len(proposal["timings"]):
+            raise EditRefusedError("the proposal does not match this file any more, nothing was written")
+        timings = [(start, end, text) for (start, end), (_, _, text) in zip(proposal["timings"], document["cues"], strict=True)]
+        backup_folder = save_backup(subtitle, "original")
+        write_subtitle(subtitle, document, timings)
+    discard_proposal(subtitle)
+    outcome = {"decision": DECISION["approved"], "reason": f"{proposal['kind']} proposal applied by hand", "changes": proposal.get("changes"),
+               "confidence": proposal.get("confidence"), "confidence_band": proposal.get("confidence_band"), "reference": proposal.get("reference") or ""}
     report(subtitle, "ui", outcome)
+    log("review.proposal-applied", f"{proposal['kind']} proposal applied, backup={backup_folder}", subtitle=subtitle, backup=backup_folder,
+        confidence=proposal.get("confidence"))
     return outcome
 
 
@@ -262,8 +283,9 @@ def shift_range(video, subtitle, first, last, offset, expected_hash=None):
         timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
         if any(start < 0 for start, _, _ in timings):
             raise EditRefusedError("some lines would start before the beginning of the video")
-        save_version(subtitle, backup_path(subtitle), "before-manual")
+        save_backup(subtitle, "before-manual")
         write_subtitle(subtitle, document, timings)
+    discard_proposal(subtitle)
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
     previous = measure(document["cues"], reference) if reference else None
@@ -284,8 +306,9 @@ def revert(subtitle):
     if original is None:
         return False
     with subtitle_lock(subtitle):
-        save_version(subtitle, backup_path(subtitle), "before-revert")
+        save_backup(subtitle, "before-revert")
         restore_version(subtitle, original)
+    discard_proposal(subtitle)
     report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(original))}"})
     log("review.reverted", f"original restored from {original}", subtitle=subtitle, original=original)
     return True
@@ -307,25 +330,14 @@ def recheck(video, subtitle):
     return jobs.enqueue(jobs.KIND["check"], {"video": video, "subtitle": subtitle, "apply": True, "neighbours": folder_neighbours(folder, name, videos)})
 
 
-def move_to_episode(video, subtitle, label):
-    folder, name = os.path.split(video)
-    videos = sorted(entry for entry in os.listdir(folder) if entry.lower().endswith(VIDEO_EXTENSIONS))
-    target_video = next((path for neighbour, path in folder_neighbours(folder, name, videos) if neighbour == label), None)
-    if target_video is None:
-        return None
-    suffix = os.path.basename(subtitle)[len(os.path.splitext(name)[0]):]
-    target = os.path.splitext(target_video)[0] + suffix
-    if os.path.islink(subtitle) or os.path.islink(target):
-        raise UnsafePathError(f"refusing to move a symlinked subtitle: {subtitle}")
-    if os.path.realpath(target) == os.path.realpath(subtitle):
-        return None
-    with subtitle_locks(subtitle, target):
-        if os.path.exists(target):
-            save_version(target, backup_path(target), "before-move")
-        save_version(subtitle, backup_path(subtitle), "moved-away")
-        os.replace(subtitle, target)
-    log("review.moved", f"moved to {label} target={target}", subtitle=subtitle, target=target, episode=label)
-    return target, recheck(target_video, target)
+def delete_subtitle(subtitle):
+    with subtitle_lock(subtitle):
+        backup_folder = save_backup(subtitle, "deleted")
+        os.remove(subtitle)
+    discard_proposal(subtitle)
+    report(subtitle, "ui", {"decision": DECISION["deleted"], "reason": f"deleted by hand, a copy is in {backup_folder}"})
+    log("review.deleted", f"subtitle deleted by hand, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
+    return backup_folder
 
 
 def ask_for_another(video, subtitle):

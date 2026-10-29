@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -14,14 +15,14 @@ import urllib.request
 
 from . import jobs
 from .errors import ConfigError, SubtitleGuardError
-from .files import read_regular, restore_version, save_version, subtitle_lock
-from .guard import evaluate_and_fix
+from .files import file_hash, read_regular, restore_version, save_backup, subtitle_lock
+from .guard import AUTOMATIC_BAND, evaluate_and_fix
 from .library import nearby
 from .logs import LEVEL, log
 from .outcome import DECISION, describe
 from .reports import report
 from .state import load_state, update_state
-from .storage import backup_path, now, state_path
+from .storage import now, state_path
 
 BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")
@@ -30,6 +31,7 @@ RETRY_WAIT_SECONDS = 900
 BLACKLIST_DELAY_SECONDS = 20
 API_KEY_HEADER = "X-API-KEY"
 RETRY_STAGE = {"requested": "requested", "blacklisted": "blacklisted"}
+TRUSTED_DECISIONS = (DECISION["kept"], DECISION["fixed"])
 
 
 def handle_download(video, subtitle, language, provider, subtitle_id, media_id, series_id="", content_hash=None, queued=False):
@@ -45,23 +47,25 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     media_number = int(media_id) if media_id.isdigit() else None
     neighbours = series_neighbours(series_number, video) if series_number else ()
     outcome = evaluate_and_fix(video, subtitle, apply=True, neighbours=neighbours)
+    replace = media_number is not None and wants_replacement(outcome)
     attempt = {"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, "language": language, "media_id": media_number,
-               "series_id": series_number, "content_hash": received, **outcome}
+               "series_id": series_number, "content_hash": received, **outcome, "copy": keep_attempt_copy(subtitle) if replace else None}
 
     def record(state):
         if state.get("video_size") != os.path.getsize(video):
             state.clear()
             state.update(video_size=os.path.getsize(video), attempts=[])
         state.setdefault("attempts", []).append(attempt)
-        if outcome["decision"] != DECISION["rejected"]:
+        if not replace:
             state.pop("pending_retry", None)
 
     state = update_state(video, subtitle, record)
     report(subtitle, provider, outcome)
-    if outcome["decision"] != DECISION["rejected"] or media_number is None:
+    if not replace:
+        forget_attempt_copies(subtitle)
         return outcome
     if len(state["attempts"]) >= MAX_SUBTITLES_PER_MEDIA:
-        restore_best(subtitle, state)
+        restore_best(video, subtitle, state)
         return outcome
     pending = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number, "subtitle": subtitle,
                "provider": provider, "subtitle_id": subtitle_id, "language": language, "content_hash": received, "stage": RETRY_STAGE["requested"]}
@@ -70,8 +74,31 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     return outcome
 
 
-def file_hash(path):
-    return hashlib.sha1(read_regular(path)).hexdigest()
+def wants_replacement(outcome):
+    trusted = outcome["decision"] in TRUSTED_DECISIONS and outcome.get("confidence_band") == AUTOMATIC_BAND
+    if trusted:
+        return False
+    judged = outcome["decision"] in (DECISION["proposed"], DECISION["kept"], DECISION["unverified"]) and bool(outcome.get("reference"))
+    return outcome["decision"] in (DECISION["rejected"], DECISION["wrong_episode"]) or judged
+
+
+def keep_attempt_copy(subtitle):
+    folder = attempt_folder(subtitle)
+    os.makedirs(folder, exist_ok=True)
+    data = read_regular(subtitle)
+    copy = os.path.join(folder, hashlib.sha1(data).hexdigest() + os.path.splitext(subtitle)[1])
+    if not os.path.exists(copy):
+        with open(copy, "wb") as handle:
+            handle.write(data)
+    return copy
+
+
+def forget_attempt_copies(subtitle):
+    shutil.rmtree(attempt_folder(subtitle), ignore_errors=True)
+
+
+def attempt_folder(subtitle):
+    return state_path("attempts", hashlib.sha1(os.path.abspath(subtitle).encode()).hexdigest()[:16])
 
 
 def request_another(video, subtitle, queued=False):
@@ -191,26 +218,28 @@ def finish_retry(video, subtitle, pending, attempts_before):
     if another_arrived(video, subtitle, pending, attempts_before):
         update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
         return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
-    restore_best(pending["subtitle"], load_state(video, subtitle))
+    restore_best(video, pending["subtitle"], load_state(video, subtitle))
     rescan(pending)
     update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
     log("bazarr.replacement-timeout", f"no replacement after {RETRY_WAIT_SECONDS}s, best attempt restored", LEVEL["warning"], video=video, subtitle=subtitle)
     return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
 
-def restore_best(subtitle, state):
-    candidates = [attempt for attempt in state["attempts"] if attempt.get("subtitle") == subtitle and attempt.get("after")
-                  and attempt.get("best_copy") and os.path.exists(attempt["best_copy"])]
+def restore_best(video, subtitle, state):
+    candidates = [attempt for attempt in state["attempts"] if attempt.get("subtitle") == subtitle and attempt.get("copy") and os.path.exists(attempt["copy"])]
     if not candidates:
+        forget_attempt_copies(subtitle)
         return
-    best = max(candidates, key=lambda attempt: attempt["after"]["matched"])
+    best = max(candidates, key=lambda attempt: (attempt.get("confidence") or 0, (attempt.get("after") or {}).get("matched", 0)))
     with subtitle_lock(subtitle):
         if os.path.exists(subtitle):
-            save_version(subtitle, backup_path(subtitle), "before-restore")
-        restore_version(subtitle, best["best_copy"])
+            save_backup(subtitle, "before-restore")
+        restore_version(subtitle, best["copy"])
+    forget_attempt_copies(subtitle)
     report(subtitle, best.get("provider", ""), {**best, "decision": DECISION["best_effort"]})
-    log("bazarr.best-attempt-restored", f"best attempt restored provider={best.get('provider')} matched={best['after']['matched']:.2f}", LEVEL["warning"],
-        subtitle=subtitle, provider=best.get("provider"), matched=best["after"]["matched"])
+    log("bazarr.best-attempt-restored", f"best attempt restored provider={best.get('provider')} confidence={best.get('confidence')}", LEVEL["warning"],
+        subtitle=subtitle, provider=best.get("provider"), confidence=best.get("confidence"))
+    report(subtitle, best.get("provider", ""), evaluate_and_fix(video, subtitle, apply=True, neighbours=()))
 
 
 def rescan(pending):

@@ -113,7 +113,7 @@ def test_the_best_attempt_is_restored_even_after_bazarr_deleted_the_subtitle(tmp
     video, subtitle = rejected_download(tmp_path, monkeypatch)
     best = tmp_path / "best.srt"
     best.write_text("best version")
-    state.save_state(video, subtitle, {"attempts": [{"subtitle": subtitle, "provider": "opensubtitles", "after": {"matched": 0.8}, "best_copy": str(best)}],
+    state.save_state(video, subtitle, {"attempts": [{"subtitle": subtitle, "provider": "opensubtitles", "after": {"matched": 0.8}, "copy": str(best)}],
                                        "pending_retry": {"subtitle": subtitle, "media_type": "movie", "media_id": 7, "content_hash": "gone"}})
     Path(subtitle).unlink()
     fake = FakeBazarr()

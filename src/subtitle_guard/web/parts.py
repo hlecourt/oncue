@@ -46,7 +46,7 @@ DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected":
 BAND_TONES = {"high": "good", "medium": "warn", "low": "bad", "none": "neutral"}
 
 
-STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
+STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, in the UI", "revert": "You, restore"}
 
 
 KIND_WORDS = {"hook": "Check a subtitle from Bazarr", "check": "Check", "blacklist": "Ask Bazarr for another subtitle", "retry-check": "Wait for the other subtitle"}
@@ -268,15 +268,15 @@ def first_problem_minute(diagnosis):
 
 def actions(video, path, diagnosis, latest, hidden):
     buttons = []
-    if latest and latest["decision"] == "wrong-episode" and latest["note"]:
-        buttons.append(("move", f"Move it to {latest['note']}", True, f'<input type="hidden" name="episode" value="{escape(latest["note"])}">'))
     if diagnosis["fixable"]:
         buttons.append(("fix-all", "Fix everything", not buttons, ""))
     buttons.append(("accept", "It looks fine, keep it", False, ""))
     if review.has_backup(path):
         buttons.append(("revert", "Restore the original file", False, ""))
     if review.came_from_bazarr(video, path):
-        buttons.append(("another", "Try another subtitle", False, ""))
+        buttons.append(("another", "Try another subtitle", bool(latest) and latest["decision"] == "wrong-episode", ""))
+    if latest and latest["decision"] == "wrong-episode":
+        buttons.append(("delete", "Delete this subtitle", False, ""))
     return f'<a class="button" href="{editor_link(path)}">Listen and edit</a>' + "".join(f'<form class="inline" method="post" id="{action}-form">{hidden}{extra}<input type="hidden" name="action" value="{action}">'
                    f'<button class="{"primary" if primary else ""}">{escape(label)}</button></form>' for action, label, primary, extra in buttons)
 

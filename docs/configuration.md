@@ -39,7 +39,8 @@ To check that it works, download a subtitle from Bazarr and look at the Log page
 `scan-folder` checks every video under a folder against its external subtitles (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`...).
 Samples and hidden folders are skipped, and episode neighbours for the wrong-episode check come from `SxxEyy` or `NxNN` file
 names. `watch` queues every new or changed subtitle under one or more folders; `serve` does the same for the folders in
-`SUBTITLE_GUARD_LIBRARY`. Without Bazarr a rejected subtitle stays as it is and shows up for review; nothing is downloaded.
+`SUBTITLE_GUARD_LIBRARY`. Without Bazarr a subtitle that is not in sync with high confidence stays as it is and shows up for
+review, with its proposal when there is one; nothing is downloaded.
 
 ## Troubleshooting
 
@@ -57,6 +58,8 @@ names. `watch` queues every new or changed subtitle under one or more folders; `
 |---|---|
 | `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, UI account |
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
+| `SUBTITLE_GUARD_AUDIO_AUTOMATIC` | unset; `1` lets a high-confidence audio sync be written without a person, once `calibrate-audio` found no false positive |
+| `SUBTITLE_GUARD_KEEP_VERSIONS` / `SUBTITLE_GUARD_KEEP_DAYS` | `5` / `30`: backups kept per subtitle besides its first version |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
@@ -75,8 +78,9 @@ names. `watch` queues every new or changed subtitle under one or more folders; `
 `subtitle-guard serve` runs a supervisor, `SUBTITLE_GUARD_WORKERS` worker processes (2 by default), the web UI and the folder
 watch. Only one supervisor can run on a state directory. A worker that dies is restarted and its job requeued; a job that killed
 its worker three times is marked failed. SIGTERM stops every role and the tools they started. Alignment runs in parallel; full
-file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A rejected subtitle becomes a
-`blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found nothing else.
+file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A Bazarr download that is not
+trusted becomes a `blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found
+nothing else.
 
 ```
 subtitle-guard status                     # jobs by status and confidence band

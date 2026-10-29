@@ -16,8 +16,8 @@ def is_hearing_impaired(subtitle):
     return any(tag in os.path.basename(subtitle).lower() for tag in HEARING_IMPAIRED_TAGS)
 
 
-def parse_subtitle(path):
-    text, encoding, bom = decode(read_regular(path))
+def parse_subtitle(path, confined=True):
+    text, encoding, bom = decode(read_regular(path, confined))
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     kept = {"lines": lines, "encoding": encoding, "bom": bom.hex(), "newline": "\r\n" if "\r\n" in text else "\n"}
     lowered = text.lower()
