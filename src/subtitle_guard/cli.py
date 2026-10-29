@@ -19,6 +19,7 @@ Commands:
   retry ID                                                                  run a finished or failed job again
   needs-human                                                               subtitles whose last check needs a person
   set-password [USER]                                                       set the UI account (default user admin); reads the password from stdin when piped
+  calibrate-audio PATH [N]                                                  read-only: measure audio sync confidence on N videos that have a track
   log [N] [--problems]                                                      the last N events of the global log (default 50), or only warnings and errors
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
@@ -38,20 +39,22 @@ import tempfile
 from . import jobs
 from .bazarr import (
     bazarr_get,
-    file_hash,
     handle_download,
     queue_enabled,
     scan_movies,
     scan_series,
     try_another_subtitle,
 )
+from .calibration import calibrate_audio
 from .errors import ConfigError, SubtitleGuardError
+from .files import file_hash
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
 from .logs import LEVEL, event_level, event_message, log, recent_events, settings
 from .outcome import describe
 from .reports import print_needs_human, report
+from .storage import check_state_folder
 from .web import HOST as UI_HOST
 from .web import PORT as UI_PORT
 from .web import serve_ui
@@ -68,6 +71,11 @@ def main():
     command = sys.argv[1]
     arguments, flags, workers = parse_options(sys.argv[2:])
     apply, queue = flags["--apply"], flags["--queue"]
+    try:
+        check_state_folder()
+    except ConfigError as error:
+        print(f"subtitle-guard: {error}", file=sys.stderr)
+        return 2
     lower_io_priority()
     if command == "hook" and len(arguments) >= 6:
         return hook(arguments, queue or queue_enabled())
@@ -107,6 +115,9 @@ def main():
         if roots:
             roles["watch"] = (watch, (roots, apply))
         return supervise(roles)
+    if command == "calibrate-audio" and arguments:
+        calibrate_audio(arguments[0], int(arguments[1]) if len(arguments) > 1 and arguments[1].isdigit() else None)
+        return 0
     if command == "status":
         print(json.dumps(jobs.counts(), indent=1))
         return 0

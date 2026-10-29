@@ -7,8 +7,8 @@ import os
 import threading
 
 from .. import review
-from ..bazarr import file_hash
 from ..errors import ToolError
+from ..files import file_hash
 from ..logs import LEVEL, log
 from ..preview import audio_clip, audio_tracks, still_frame, video_duration
 from ..subtitles import parse_subtitle

@@ -7,7 +7,7 @@ import signal
 import subprocess
 
 from .errors import ToolError
-from .logs import settings
+from .logs import LEVEL, log, settings
 from .storage import state_path
 
 PROBE_SECONDS = 600
@@ -71,9 +71,12 @@ def forget_group(group):
 
 def save_groups():
     path = groups_file(settings["source"])
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as handle:
-        json.dump(sorted(ACTIVE_GROUPS), handle)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            json.dump(sorted(ACTIVE_GROUPS), handle)
+    except OSError as error:
+        log("tool.groups-not-saved", f"running tools not recorded in {path}, they cannot be cleaned up after a crash: {error}", LEVEL["warning"], path=path)
 
 
 def groups_file(role):

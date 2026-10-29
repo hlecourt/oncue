@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Check one subtitle against its video and repair it when the result can be trusted."""
+"""Check one subtitle against its video, repair it on its own only at high confidence, and keep any other fix as a proposal."""
 
 import os
 import time
@@ -14,22 +14,27 @@ from .alignment import (
     oversized_reason,
     wrong_end_share,
 )
-from .audio import sync_to_audio
+from .audio import audio_fix
+from .catalog import discard_proposal, save_proposal
 from .confidence import confidence
 from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
-from .files import save_version, subtitle_lock
+from .files import file_hash, save_backup, subtitle_lock
 from .logs import LEVEL, log
-from .outcome import CHANGED_REASON, DECISION, WORRYING_DECISIONS
+from .outcome import CHANGED_REASON, DECISION, FIX_KIND, WORRYING_DECISIONS
 from .reference import load_reference
-from .storage import backup_path, file_signature
+from .storage import file_signature
 from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
+
+AUTOMATIC_BAND = "high"
+AUDIO_REFERENCE = "audio"
+AUDIO_AUTOMATIC = os.environ.get("SUBTITLE_GUARD_AUDIO_AUTOMATIC") == "1"
 
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     started = time.time()
-    outcome = examine(video, subtitle, apply, neighbours)
+    outcome, fix = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
-    outcome = {**outcome, "confidence": score, "confidence_band": band}
+    outcome = settle(video, subtitle, {**outcome, "confidence": score, "confidence_band": band}, fix, apply)
     message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {time.time() - started:.2f}s"
                + (f" matches={outcome['matches']}" if outcome.get("matches") else "") + ("" if apply else " dry-run"))
     level = LEVEL["warning"] if outcome["decision"] in WORRYING_DECISIONS else LEVEL["info"]
@@ -41,54 +46,69 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     return outcome
 
 
+def settle(video, subtitle, outcome, fix, apply):
+    if fix is None:
+        return outcome
+    automatic = outcome["confidence_band"] == AUTOMATIC_BAND and (fix["kind"] != FIX_KIND["audio"] or AUDIO_AUTOMATIC)
+    if not (automatic and apply):
+        save_proposal(subtitle, video, fix["version"], fix["kind"], fix["timings"], outcome)
+    if not automatic:
+        log("guard.proposed", f"{fix['kind']} fix kept as a proposal, confidence {outcome['confidence']}", subtitle=subtitle,
+            confidence=outcome["confidence"], kind=fix["kind"])
+        return {**outcome, "decision": DECISION["proposed"], "proposed": outcome["decision"]}
+    if not apply:
+        return outcome
+    with subtitle_lock(subtitle):
+        if file_signature(subtitle) != fix["signature"]:
+            log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)
+            return {"decision": DECISION["unverified"], "reason": CHANGED_REASON}
+        backup_folder = save_backup(subtitle, "original")
+        write_subtitle(subtitle, fix["document"], fix["timings"])
+    discard_proposal(subtitle)
+    log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
+    return {**outcome, "backup": backup_folder}
+
+
 def examine(video, subtitle, apply, neighbours):
     if ".forced." in os.path.basename(subtitle).lower():
-        return {"decision": DECISION["unverified"], "reason": "forced subtitle, too few lines to check"}
+        return {"decision": DECISION["unverified"], "reason": "forced subtitle, too few lines to check"}, None
     signature = file_signature(subtitle)
     try:
+        version = file_hash(subtitle)
         document = parse_subtitle(subtitle)
     except (UnsafePathError, SubtitleTooLargeError) as error:
-        return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}
+        return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}, None
     if len(document["cues"]) < MIN_CUES:
-        return {"decision": DECISION["unverified"], "reason": f"too few cues ({len(document['cues'])})"}
+        return {"decision": DECISION["unverified"], "reason": f"too few cues ({len(document['cues'])})"}, None
     oversized = oversized_reason(document["cues"])
     if oversized:
-        return {"decision": DECISION["unverified"], "reason": oversized}
+        return {"decision": DECISION["unverified"], "reason": oversized}, None
     wrong_ends = wrong_end_share(document["cues"])
     if wrong_ends > MAX_WRONG_END_SHARE:
         return {"decision": DECISION["rejected"], "reason": f"the end times are wrong: {wrong_ends:.0%} of lines end before they start or last over "
-                                                            f"{MAX_CUE_SECONDS} s"}
+                                                            f"{MAX_CUE_SECONDS} s"}, None
     hearing_impaired = is_hearing_impaired(subtitle)
     try:
         reference = load_reference(video, hearing_impaired, len(document["cues"]))
     except ToolError as error:
-        return {"decision": DECISION["unverified"], "reason": f"could not read the video, nothing changed: {error}"}
+        return {"decision": DECISION["unverified"], "reason": f"could not read the video, nothing changed: {error}"}, None
+    fix = {"document": document, "signature": signature, "version": version}
     if reference is None and not apply:
-        return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, would sync to the audio"}
+        return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, would sync to the audio"}, None
     if reference is None:
-        return sync_to_audio(video, subtitle, signature)
+        outcome, timings = audio_fix(video, subtitle, document)
+        return {**outcome, "reference": AUDIO_REFERENCE}, ({**fix, "kind": FIX_KIND["audio"], "timings": timings} if timings else None)
     outcome = summarize(reference["kind"], *judge(document["cues"], reference))
     if outcome["decision"] == DECISION["kept"]:
-        return outcome
+        return outcome, None
     attempt = outcome.pop("attempt")
     if attempt["fixed"]:
         outcome["changes"] = describe_changes(document["cues"], attempt)
-    if not attempt["fixed"]:
-        better = find_better_episode(document["cues"], hearing_impaired, neighbours)
-        if better:
-            outcome = {**outcome, "decision": DECISION["wrong_episode"], "matches": better}
-    if not apply:
-        return outcome
-    with subtitle_lock(subtitle):
-        if file_signature(subtitle) != signature:
-            log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)
-            return {"decision": DECISION["unverified"], "reason": CHANGED_REASON}
-        backup_folder = backup_path(subtitle)
-        save_version(subtitle, backup_folder, "original")
-        if attempt["fixed"]:
-            write_subtitle(subtitle, document, attempt["timings"])
-            log("guard.rewritten", f"subtitle rewritten with aligned timings, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)
-        return {**outcome, "best_copy": save_version(subtitle, backup_folder, "kept")}
+        return outcome, {**fix, "kind": FIX_KIND["aligned"], "timings": attempt["timings"]}
+    better = find_better_episode(document["cues"], hearing_impaired, neighbours)
+    if better:
+        outcome = {**outcome, "decision": DECISION["wrong_episode"], "matches": better}
+    return outcome, None
 
 
 def summarize(reference_kind, decision, original, weak, attempt):

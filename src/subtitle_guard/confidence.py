@@ -13,6 +13,7 @@ FULL_CONFIDENCE_MARGIN = 0.25
 FULL_CONFIDENCE_OBJECTIVE_MARGIN = 0.3
 WEAK_MINUTE_PENALTY = 10
 AUDIO_SYNC_CONFIDENCE = 30
+AUDIO_MIN_PARTS = 4
 BANDS = ((80, "high"), (60, "medium"), (1, "low"), (0, "none"))
 
 
@@ -23,7 +24,10 @@ def confidence(outcome):
 
 def confidence_score(outcome):
     if outcome["decision"] == DECISION["audio_synced"]:
-        return AUDIO_SYNC_CONFIDENCE
+        agreement = outcome.get("agreement") or {}
+        if agreement.get("parts", 0) < AUDIO_MIN_PARTS:
+            return AUDIO_SYNC_CONFIDENCE
+        return round(100 * agreement["agreeing"] / agreement["parts"])
     if outcome["decision"] not in (DECISION["kept"], DECISION["fixed"]):
         return 0
     after = outcome["after"]

@@ -9,6 +9,14 @@ First public version.
 
 ### Added
 
+- Automatic fixes only at high confidence (80 or more). Any other fix, including every audio sync for now, is stored as a
+  proposal for the exact version of the file, shown for review, and applied by a person; applying refuses a file that changed.
+- Bazarr first: a download that is not trusted (a proposal, a rejection, a wrong episode, or in sync with low confidence) asks
+  Bazarr for another subtitle before anything reaches review; copies of the tries are kept outside the backups until the best
+  version is chosen.
+- Backups only when something is written, with retention (first version, last 5, last 30 days), and a delete action for a
+  subtitle that belongs to another episode, which is no longer moved.
+
 - Listen and edit: a subtitle editor with the lines, a picture of the video with the current line, a waveform with the lines
   as blocks and the video's own subtitles under them, playback by one-minute clips, and moves of every line or a selection,
   by buttons or by dragging, applied with a backup and a check that the file did not change.

@@ -5,7 +5,7 @@ import json
 import os
 
 from .. import jobs, review
-from ..bazarr import file_hash
+from ..files import file_hash
 from ..logs import (
     log_file,
     recent_events,
@@ -88,9 +88,6 @@ def review_page(query):
 
 def quick_fix(item):
     hidden = f'<input type="hidden" name="path" value="{escape(item["subtitle"])}"><input type="hidden" name="back" value="review">'
-    if item["decision"] == "wrong-episode" and item["note"]:
-        return (f'<form class="inline" method="post">{hidden}<input type="hidden" name="action" value="move">'
-                f'<input type="hidden" name="episode" value="{escape(item["note"])}"><button class="small primary">Move it to {escape(item["note"])}</button></form>')
     video = review.video_for(item["subtitle"])
     diagnosis = review.known_diagnosis(video, item["subtitle"]) if video else None
     if not diagnosis or not diagnosis["fixable"]:

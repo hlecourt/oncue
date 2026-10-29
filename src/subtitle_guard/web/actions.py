@@ -6,7 +6,7 @@ import os
 import urllib.parse
 
 from .. import jobs, review
-from ..errors import EditRefusedError, SubtitleGuardError
+from ..errors import EditRefusedError
 from ..files import inside_roots
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
@@ -43,8 +43,11 @@ def perform(form):
             return back_to(form, path, f"Nothing was changed: {error}.")
         message = f"Done. The lines from {short_clock(first)} to {short_clock(last)} now appear {abs(shift):.1f} s {'earlier' if shift < 0 else 'later'}."
     elif action == "fix-all":
-        fixed = review.fix_everything(video, path)["decision"] == "fixed"
-        message = "Done. The whole subtitle is back in sync." if fixed else "It could not be fixed safely, so nothing was changed."
+        try:
+            applied = review.apply_proposal(video, path, form.get("hash") or None)
+        except EditRefusedError as error:
+            return back_to(form, path, f"Nothing was changed: {error}.")
+        message = "Done. The fix was applied and the previous file was backed up." if applied else "There is no fix to apply, so nothing was changed."
     elif action == "revert":
         message = "Done. The original file is back." if review.revert(path) else "There is no original file to go back to."
     elif action == "accept":
@@ -56,21 +59,13 @@ def perform(form):
     elif action == "another":
         asked = review.ask_for_another(video, path)
         message = "Bazarr is looking for another subtitle. It will be checked when it arrives." if asked else "This subtitle did not come from Bazarr."
-    elif action == "move":
-        try:
-            moved = review.move_to_episode(video, path, form.get("episode", ""))
-        except SubtitleGuardError as error:
-            return subtitle_link(path, message=f"Nothing was changed: {error}")
-        if moved is None:
-            message = "That episode was not found next to this one, nothing was changed."
-        else:
-            path, message = moved[0], f"Moved to {form['episode']}. It will be checked there."
+    elif action == "delete":
+        review.delete_subtitle(path)
+        return "/review?" + urllib.parse.urlencode({"notice": notice(f"{os.path.basename(path)} was deleted. A copy was kept in the backups.")})
     else:
         message = "Nothing was changed."
     if form.get("back") == "review":
         return "/review?" + urllib.parse.urlencode({"notice": notice(f"{os.path.basename(path)}: {message}")})
-    if action == "move":
-        return subtitle_link(path, None, message)
     return back_to(form, path, message)
 
 
