@@ -9,6 +9,10 @@ First public version.
 
 ### Added
 
+- Listen and edit: a subtitle editor with the lines, a picture of the video with the current line, a waveform with the lines
+  as blocks and the video's own subtitles under them, playback by one-minute clips, and moves of every line or a selection,
+  by buttons or by dragging, applied with a backup and a check that the file did not change.
+
 - Check of external SRT, WebVTT and ASS/SSA subtitles against a text or bitmap subtitle track embedded in the video, read from
   the Matroska Cues index when possible, with a piecewise-constant alignment (offsets, ad breaks, cuts, framerate and speed
   errors), a null test against a mirrored reference, segment support and per-minute checks.
