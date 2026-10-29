@@ -19,6 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { STATUS_KEY } from "@/hooks/use-status"
 import { ApiError, api, mediaUrl, type Schemas, unwrap } from "@/lib/api/client"
 import { clock } from "@/lib/format"
+import { type Locale, useLocale, useT } from "@/lib/i18n"
 import { type Change, lineOffsets, type Scope, scopeRange, segments } from "@/lib/retime"
 import { REVIEW_KEY } from "@/pages/review"
 
@@ -38,6 +39,8 @@ const KEYS: [string, string][] = [["Space", "Play or pause"], ["A", "The chosen 
 type Props = { detail: Detail; lines: Lines; actions: ReactNode; onNext: () => void; onRestore: (version: Schemas["Version"]) => void }
 
 export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
+  const t = useT()
+  const locale = useLocale()
   const queryClient = useQueryClient()
   const audio = useRef<HTMLAudioElement>(null)
   const wide = useWide()
@@ -81,6 +84,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
   const playingLine = useMemo(() => shown.findIndex((line) => line.start <= time && time < line.end), [shown, time])
   const nearest = useMemo(() => nearestLine(shown, time), [shown, time])
   const changeCount = (guardOn && hasGuardFix ? 1 : 0) + pending.length
+  const unsaved = changeCount > 1 ? t("{count} changes, not saved", { count: changeCount }) : t("{count} change, not saved", { count: changeCount })
   const negative = shown.some((line) => line.start < 0)
   const chosen = shown[current]
   const delta = chosen ? Math.round((time - chosen.start) * 100) / 100 : 0
@@ -94,13 +98,13 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
       body: { version: lines.version, use_proposal: guardOn && hasGuardFix, changes: pending },
     })),
     onSuccess: () => {
-      toast.success("Saved. The previous file was backed up.", { action: { label: "Next in Review", onClick: onNext } })
+      toast.success(t("Saved. The previous file was backed up."), { action: { label: t("Next in Review"), onClick: onNext } })
       setHistory([])
       for (const key of [["subtitle", detail.id], ["lines", detail.id], ["history"], REVIEW_KEY, STATUS_KEY]) queryClient.invalidateQueries({ queryKey: key })
     },
     onError: (error) => {
       const stale = error instanceof ApiError && error.code === "stale_version"
-      toast.error(error.message, stale ? { action: { label: "Reload", onClick: () => location.reload() } } : undefined)
+      toast.error(error.message, stale ? { action: { label: t("Reload"), onClick: () => location.reload() } } : undefined)
     },
   })
 
@@ -113,7 +117,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     setTime(Math.max(0, Math.min(duration, seconds)))
   }
   const start = () => audio.current?.play().catch((error: unknown) => {
-    if (!(error instanceof DOMException && error.name === "AbortError")) toast.error("The sound could not be played.", { description: String(error) })
+    if (!(error instanceof DOMException && error.name === "AbortError")) toast.error(t("The sound could not be played."), { description: String(error) })
   })
   const play = () => (audio.current?.paused ? start() : audio.current?.pause())
   const pick = (index: number, extend: boolean) => {
@@ -196,11 +200,11 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     return () => window.removeEventListener("beforeunload", warn)
   }, [history.length])
 
-  const soundNote = media.data && !media.data.tracks.length ? "This video has no sound to listen to."
-    : <><Loader2Icon className="mr-2 size-4 animate-spin" />Preparing the sound for listening. It takes a moment the first time only.</>
+  const soundNote = media.data && !media.data.tracks.length ? t("This video has no sound to listen to.")
+    : <><Loader2Icon className="mr-2 size-4 animate-spin" />{t("Preparing the sound for listening. It takes a moment the first time only.")}</>
   const saveButton = (
     <Button size="sm" disabled={!changeCount || negative || save.isPending} onClick={() => save.mutate()}>
-      {save.isPending && <Loader2Icon className="animate-spin" />}Save<kbd className="hidden rounded border border-current/30 px-1 font-mono text-[10px] opacity-80 lg:inline">Ctrl S</kbd>
+      {save.isPending && <Loader2Icon className="animate-spin" />}{t("Save")}<kbd className="hidden rounded border border-current/30 px-1 font-mono text-[10px] opacity-80 lg:inline">Ctrl S</kbd>
     </Button>
   )
 
@@ -208,18 +212,18 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     <div className="flex h-svh min-h-0 flex-col bg-background">
       <header className="flex h-12 flex-none items-center gap-2 border-b px-2">
         <SidebarTrigger className="lg:hidden" />
-        <Button asChild size="icon" variant="ghost" aria-label="Back to Review"><Link to="/"><ChevronLeftIcon /></Link></Button>
+        <Button asChild size="icon" variant="ghost" aria-label={t("Back to Review")}><Link to="/"><ChevronLeftIcon /></Link></Button>
         <div className="flex min-w-0 items-baseline gap-2.5">
           {detail.siblings.length === 0 && <h1 className="truncate text-sm font-semibold">{detail.name}</h1>}
           {detail.siblings.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="-mx-2 min-w-0 gap-1.5 px-2" aria-label={`${detail.name}: other subtitles of this video`}>
+                <Button variant="ghost" size="sm" className="-mx-2 min-w-0 gap-1.5 px-2" aria-label={t("{name}: other subtitles of this video", { name: detail.name })}>
                   <h1 className="truncate text-sm font-semibold">{detail.name}</h1><ChevronsUpDownIcon className="text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-80">
-                <DropdownMenuLabel>Other subtitles of this video</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("Other subtitles of this video")}</DropdownMenuLabel>
                 {detail.siblings.map((sibling) => (
                   <DropdownMenuItem key={sibling.id} asChild>
                     <Link to="/subtitles/$subtitleId" params={{ subtitleId: sibling.id }} className="flex items-center gap-2">
@@ -233,16 +237,16 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
           )}
           <span className="hidden truncate text-[13px] text-muted-foreground xl:inline">{detail.folder}</span>
         </div>
-        {hasGuardFix ? <span className="hidden flex-none rounded-full bg-guard-soft px-2 py-px text-xs font-medium text-guard-ink md:inline">Fix found, confidence {detail.proposal?.confidence}</span>
+        {hasGuardFix ? <span className="hidden flex-none rounded-full bg-guard-soft px-2 py-px text-xs font-medium text-guard-ink md:inline">{t("Fix found, confidence {confidence}", { confidence: detail.proposal?.confidence ?? "" })}</span>
           : <span className="hidden flex-none items-center gap-1.5 rounded-full bg-muted px-2 py-px text-xs font-medium md:inline-flex"><ToneDot tone={toneOf(detail.tone)} />{detail.words}</span>}
         {changeCount > 0 && (
           <span className="hidden flex-none items-center gap-1.5 text-xs font-medium text-unsaved-ink sm:inline-flex">
-            <i className="size-1.5 rounded-full bg-unsaved shadow-[0_0_0_3px_var(--unsaved-soft)]" />{changeCount} change{changeCount > 1 ? "s" : ""}, not saved
+            <i className="size-1.5 rounded-full bg-unsaved shadow-[0_0_0_3px_var(--unsaved-soft)]" />{unsaved}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
           {actions}
-          <Button size="sm" variant="outline" className="hidden sm:inline-flex" onClick={onNext}>Next<kbd className="hidden rounded border px-1 font-mono text-[10px] text-muted-foreground lg:inline">N</kbd></Button>
+          <Button size="sm" variant="outline" className="hidden sm:inline-flex" onClick={onNext}>{t("Next")}<kbd className="hidden rounded border px-1 font-mono text-[10px] text-muted-foreground lg:inline">N</kbd></Button>
           <span className="hidden lg:contents">{saveButton}</span>
         </div>
       </header>
@@ -256,24 +260,24 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
               <span className="font-mono text-[13px] whitespace-nowrap tabular-nums">{clock(time, 2)} <span className="text-muted-foreground">/ {clock(duration, 0)}</span></span>
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="sm" onClick={() => seek(time - SKIP_SECONDS)}>-5 s</Button>
-                <Button size="icon" className="size-10 rounded-full" aria-label={playing ? "Pause" : "Play"} disabled={!peaks.data} onClick={play}>{playing ? <PauseIcon /> : <PlayIcon />}</Button>
+                <Button size="icon" className="size-10 rounded-full" aria-label={playing ? t("Pause") : t("Play")} disabled={!peaks.data} onClick={play}>{playing ? <PauseIcon /> : <PlayIcon />}</Button>
                 <Button variant="outline" size="sm" onClick={() => seek(time + SKIP_SECONDS)}>+5 s</Button>
               </div>
               <div className="hidden items-center justify-self-end gap-1 text-[13px] text-muted-foreground lg:flex">
                 {media.data && media.data.tracks.length > 1 && (
                   <Select value={String(media.data.track)} onValueChange={(value) => setTrack(Number(value))}>
-                    <SelectTrigger size="sm" className="w-40" aria-label="Sound track"><SelectValue /></SelectTrigger>
-                    <SelectContent>{media.data.tracks.map((item) => <SelectItem key={item.index} value={String(item.index)}>{[item.language || "Unknown", item.title, item.commentary ? "commentary" : ""].filter(Boolean).join(", ")}</SelectItem>)}</SelectContent>
+                    <SelectTrigger size="sm" className="w-40" aria-label={t("Sound track")}><SelectValue /></SelectTrigger>
+                    <SelectContent>{media.data.tracks.map((item) => <SelectItem key={item.index} value={String(item.index)}>{[item.language || t("Unknown"), item.title, item.commentary ? t("commentary") : ""].filter(Boolean).join(", ")}</SelectItem>)}</SelectContent>
                   </Select>
                 )}
-                <span>Speed</span>
+                <span>{t("Speed")}</span>
                 <Select value={String(rate)} onValueChange={(value) => setRate(Number(value))}>
-                  <SelectTrigger size="sm" className="w-[4.5rem]" aria-label="Speed"><SelectValue /></SelectTrigger>
+                  <SelectTrigger size="sm" className="w-[4.5rem]" aria-label={t("Speed")}><SelectValue /></SelectTrigger>
                   <SelectContent>{RATES.map((value) => <SelectItem key={value} value={String(value)}>{value}x</SelectItem>)}</SelectContent>
                 </Select>
-                <span>Zoom</span>
+                <span>{t("Zoom")}</span>
                 <Select value={String(span)} onValueChange={(value) => setSpan(Number(value))}>
-                  <SelectTrigger size="sm" className="w-[5.5rem]" aria-label="Zoom"><SelectValue /></SelectTrigger>
+                  <SelectTrigger size="sm" className="w-[5.5rem]" aria-label={t("Zoom")}><SelectValue /></SelectTrigger>
                   <SelectContent>{SPANS.map((value) => <SelectItem key={value} value={String(value)}>{value < 60 ? `${value} s` : `${value / 60} min`}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
@@ -282,7 +286,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
           <div className="lg:border-t lg:pt-1 lg:[grid-area:timeline]">
             <Timeline duration={duration} peaks={peaks.data ?? null} media={sound} soundNote={soundNote}
               lines={shown} before={lines.lines[current] ?? null} reference={lines.reference} current={current} selection={selection} time={time} span={wide ? span : 20}
-              bands={bands} labels={trackLabels(detail, lines)} compact={!wide} onSeek={seek} onPick={pick}
+              bands={bands} labels={trackLabels(detail, lines, t, locale)} compact={!wide} onSeek={seek} onPick={pick}
               onDrag={(index, newStart) => {
                 const insideSelection = selection !== null && selection[0] !== selection[1] && index >= selection[0] && index <= selection[1]
                 setCurrent(index)
@@ -292,39 +296,39 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
           </div>
         </div>
 
-        <section aria-label="Fix the timing" className="flex flex-wrap items-center gap-x-3 gap-y-2.5 border-b p-3 text-[13px] lg:flex-nowrap lg:justify-between lg:border-t lg:border-b-0 lg:px-4 lg:py-2.5 lg:[grid-area:toolbar]">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2 whitespace-nowrap lg:flex-nowrap">
-            <span className="font-semibold">Line {current + 1}</span>
-            <span className="text-muted-foreground">starts <span className="font-mono text-foreground tabular-nums">{chosen ? clock(chosen.start, 2) : "-"}</span></span>
-            <span className="text-muted-foreground">playhead <span className="font-mono text-foreground tabular-nums">{clock(time, 2)}</span></span>
+        <section aria-label={t("Fix the timing")} className="flex flex-wrap items-center gap-x-3 gap-y-2.5 border-b p-3 text-[13px] lg:justify-between lg:border-t lg:border-b-0 lg:px-4 lg:py-2.5 lg:[grid-area:toolbar]">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2 whitespace-nowrap">
+            <span className="font-semibold">{t("Line {number}", { number: current + 1 })}</span>
+            <span className="text-muted-foreground">{t("starts")} <span className="font-mono text-foreground tabular-nums">{chosen ? clock(chosen.start, 2) : "-"}</span></span>
+            <span className="text-muted-foreground">{t("playhead")} <span className="font-mono text-foreground tabular-nums">{clock(time, 2)}</span></span>
             <strong className="min-w-[4.5rem] font-mono text-lg font-semibold tracking-tight text-ours-ink tabular-nums">{delta > 0 ? "+" : ""}{delta.toFixed(2)} s</strong>
             <Button size="sm" variant="outline" className="border-ours-line bg-ours-soft text-ours-ink hover:bg-ours-soft/80 hover:text-ours-ink max-lg:flex-1" onClick={anchor} disabled={!chosen}>
-              It starts here<Key>A</Key>
+              {t("It starts here")}<Key>A</Key>
             </Button>
-            <Button size="sm" variant="outline" onClick={hear} disabled={!chosen || !peaks.data}>Hear it<Key>R</Key></Button>
+            <Button size="sm" variant="outline" onClick={hear} disabled={!chosen || !peaks.data}>{t("Hear it")}<Key>R</Key></Button>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-nowrap">
-            <ToggleGroup type="single" value={scope} onValueChange={(value) => value && setScope(value as Scope)} aria-label="Lines to move"
+          <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto lg:flex-nowrap">
+            <ToggleGroup type="single" value={scope} onValueChange={(value) => value && setScope(value as Scope)} aria-label={t("Lines to move")}
               className="rounded-lg bg-muted p-0.5 max-lg:w-full">
-              <ToggleGroupItem value="all" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">All lines</ToggleGroupItem>
-              <ToggleGroupItem value="from" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">From line {current + 1}</ToggleGroupItem>
+              <ToggleGroupItem value="all" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("All lines")}</ToggleGroupItem>
+              <ToggleGroupItem value="from" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("From line {number}", { number: current + 1 })}</ToggleGroupItem>
               <ToggleGroupItem value="selected" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">
-                {selection && selection[0] !== selection[1] ? `Lines ${selection[0] + 1} to ${selection[1] + 1}` : "Selected"}
+                {selection && selection[0] !== selection[1] ? t("Lines {first} to {last}", { first: selection[0] + 1, last: selection[1] + 1 }) : t("Selected")}
               </ToggleGroupItem>
             </ToggleGroup>
-            <div className="flex max-lg:w-full" role="group" aria-label="Move by">
+            <div className="flex max-lg:w-full" role="group" aria-label={t("Move by")}>
               {NUDGES.map((amount, index) => (
-                <Button key={amount} size="sm" variant="outline" title={`${amount < 0 ? "Left" : "Right"}${Math.abs(amount) === 1 ? " with Shift" : ""}`} onClick={() => move(amount)}
+                <Button key={amount} size="sm" variant="outline" title={nudgeTitle(amount, t)} onClick={() => move(amount)}
                   className={`min-w-12 rounded-none max-lg:flex-1 ${index ? "-ml-px" : "rounded-l-md"} ${index === NUDGES.length - 1 ? "rounded-r-md" : ""}`}>
                   {amount > 0 ? "+" : ""}{Math.abs(amount) === 1 ? `${amount} s` : amount}
                 </Button>
               ))}
             </div>
           </div>
-          {negative && <p className="w-full text-xs text-destructive">Some lines would start before the video begins, so this cannot be saved. Undo the last change.</p>}
+          {negative && <p className="w-full text-xs text-destructive">{t("Some lines would start before the video begins, so this cannot be saved. Undo the last change.")}</p>}
         </section>
 
-        <aside className="flex min-h-[420px] flex-col lg:min-h-0 lg:border-l lg:[grid-area:panel]" aria-label="Lines and changes">
+        <aside className="flex min-h-[420px] flex-col lg:min-h-0 lg:border-l lg:[grid-area:panel]" aria-label={t("Lines and changes")}>
           <SidePanel tab={tab} onTab={setTab} lines={shown} videoText={videoText} moves={moves} current={current} selection={selection} following={playing}
             onPick={pick} changeCount={changeCount} changes={pending}
             guard={hasGuardFix ? { confidence: detail.proposal?.confidence ?? null, parts: detail.parts, on: guardOn } : null} onGuard={setGuardOn} onPart={choosePart}
@@ -333,7 +337,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
       </div>
 
       <div className="flex flex-none items-center justify-between border-t px-3 py-2 lg:hidden">
-        <span className="text-xs font-medium text-unsaved-ink">{changeCount ? `${changeCount} change${changeCount > 1 ? "s" : ""}, not saved` : "Nothing to save"}</span>
+        <span className="text-xs font-medium text-unsaved-ink">{changeCount ? unsaved : t("Nothing to save")}</span>
         {saveButton}
       </div>
 
@@ -348,9 +352,9 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
 
       <Dialog open={helping} onOpenChange={setHelping}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Keyboard</DialogTitle><DialogDescription>Everything on this screen also works with the mouse or a finger.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{t("Keyboard")}</DialogTitle><DialogDescription>{t("Everything on this screen also works with the mouse or a finger.")}</DialogDescription></DialogHeader>
           <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
-            {KEYS.map(([key, meaning]) => <div key={key} className="contents"><dt className="font-mono text-xs leading-5">{key}</dt><dd>{meaning}</dd></div>)}
+            {KEYS.map(([key, meaning]) => <div key={key} className="contents"><dt className="font-mono text-xs leading-5">{t(key)}</dt><dd>{t(meaning)}</dd></div>)}
           </dl>
         </DialogContent>
       </Dialog>
@@ -382,19 +386,24 @@ function touchScreen() {
   return matchMedia("(pointer: coarse)").matches
 }
 
-function trackLabels(detail: Detail, lines: Lines) {
-  const ours = languageName(detail.name.split(".").at(-2) ?? "")
-  const theirs = languageName((detail.reference ?? "").split("-")[0] ?? "")
+function nudgeTitle(amount: number, t: ReturnType<typeof useT>) {
+  if (Math.abs(amount) === 1) return amount < 0 ? t("Left with Shift") : t("Right with Shift")
+  return amount < 0 ? t("Left") : t("Right")
+}
+
+function trackLabels(detail: Detail, lines: Lines, t: ReturnType<typeof useT>, locale: Locale) {
+  const ours = languageName(detail.name.split(".").at(-2) ?? "", locale)
+  const theirs = languageName((detail.reference ?? "").split("-")[0] ?? "", locale)
   return {
-    ours: "Your subtitle", oursDetail: ours || "the file",
-    theirs: "Video's subtitle", theirsDetail: lines.reference.length ? `${theirs || "in the video"}, the reference` : "none, judge by the sound",
+    ours: t("Your subtitle"), oursDetail: ours || t("the file"),
+    theirs: t("Video's subtitle"), theirsDetail: lines.reference.length ? t("{language}, the reference", { language: theirs || t("in the video") }) : t("none, judge by the sound"),
   }
 }
 
-function languageName(code: string) {
+function languageName(code: string, locale: Locale) {
   if (!/^[a-z]{2,3}$/.test(code)) return ""
   try {
-    const name = new Intl.DisplayNames(["en"], { type: "language" }).of(code)
+    const name = new Intl.DisplayNames([locale], { type: "language" }).of(code)
     return name && name !== code ? name : code
   } catch {
     return code

@@ -3,12 +3,13 @@ import { cn } from "cn"
 import type { ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
+import { useT } from "@/lib/i18n"
 
 export type Tone = "good" | "warn" | "bad" | "neutral"
 
 const DOT = { good: "bg-success", warn: "bg-warning", bad: "bg-destructive", neutral: "bg-muted-foreground" } as const
 const TEXT = { good: "text-success", warn: "text-warning", bad: "text-destructive", neutral: "text-muted-foreground" } as const
-const BAND_WORDS: Record<string, string> = { high: "High", medium: "Medium", low: "Low", none: "None" }
+const BAND_WORDS: Record<string, string> = { high: "High confidence", medium: "Medium confidence", low: "Low confidence", none: "None confidence" }
 
 export function toneOf(value: string): Tone {
   return value in DOT ? (value as Tone) : "neutral"
@@ -23,9 +24,10 @@ export function ToneText({ tone, children, className }: { tone: Tone; children: 
 }
 
 export function ConfidenceBadge({ confidence, band }: { confidence: number | null | undefined; band: string }) {
+  const t = useT()
   if (confidence == null) return <span className="text-xs text-muted-foreground">-</span>
   return (
-    <Badge variant="outline" className="font-mono tabular-nums" title={`${BAND_WORDS[band] ?? band} confidence`}>
+    <Badge variant="outline" className="font-mono tabular-nums" title={t(BAND_WORDS[band] ?? "{band} confidence", { band })}>
       {confidence}
     </Badge>
   )

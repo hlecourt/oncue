@@ -127,3 +127,16 @@ def test_every_known_subtitle_is_listed_and_searchable_and_its_own_history_can_b
     own = answer.json()["rows"]
     assert own and all(row["name"] == "Movie.2020.fr.srt" for row in own)
     assert client.get("/api/history", params={"subtitle": "deadbeef0000"}).status_code == 404
+
+
+def test_the_words_follow_the_language_of_the_request_and_fall_back_to_english(client, proposed):
+    _, subtitle, _ = proposed
+    french = client.get("/api/review", headers={"Accept-Language": "fr-FR,fr;q=0.9"}).json()[0]
+    assert french["reason"] == "Un correctif d'après les sous-titres de la vidéo est prêt"
+    assert client.get("/api/review").json()[0]["reason"] == "A fix from the video's subtitles is ready"
+    reports.report(str(subtitle), "scan", {"decision": "kept", "confidence": 90, "confidence_band": "high"})
+    chinese = client.get("/api/history", params={"limit": 1}, headers={"Accept-Language": "zh-CN"}).json()
+    assert chinese["rows"][0]["words"] == "已同步" and chinese["rows"][0]["started_by"] == "媒体库扫描"
+    assert {group["key"]: group["label"] for group in chinese["groups"]}["proposals"] == "修正建议"
+    german = client.get("/api/history", params={"limit": 1}, headers={"Accept-Language": "de-DE"}).json()
+    assert german["rows"][0]["words"] == "In sync" and german["rows"][0]["started_by"] == "Library scan"

@@ -8,6 +8,7 @@ from ...calibration import calibration_allows_automatic
 from ...errors import ConfigError
 from ...files import ROOTS, inside_roots
 from ...guard import AUTOMATIC_BAND
+from ..i18n import tr
 from ..schemas import ApiKey, FixedValue, SettingsChange, SettingsView, SettingView
 from ..security import api_key, regenerate_api_key, require_csrf, require_user
 
@@ -24,14 +25,14 @@ def get_settings() -> SettingsView:
 def change_settings(body: SettingsChange) -> SettingsView:
     outside = [folder for folder in body.changes.get("watched_folders") or [] if isinstance(folder, str) and not inside_roots(folder)]
     if outside:
-        raise HTTPException(422, {"code": "outside_allowed_folders", "message": f"Not inside the allowed folders: {', '.join(outside)}."})
+        raise HTTPException(422, {"code": "outside_allowed_folders", "message": tr("Not inside the allowed folders: {folders}.", folders=", ".join(outside))})
     if "bazarr_url" in body.changes and body.changes["bazarr_url"] != configuration.value("bazarr_url") and not body.changes.get("bazarr_api_key"):
-        raise HTTPException(422, {"code": "bazarr_key_needed", "message": "Enter Bazarr's API key again with the new address: the key is only sent to "
-                                                                          "the address it was entered for."})
+        raise HTTPException(422, {"code": "bazarr_key_needed", "message": tr("Enter Bazarr's API key again with the new address: the key is only sent to "
+                                                                             "the address it was entered for.")})
     if body.changes.get("audio_automatic") is True:
-        allowed, why = calibration_allows_automatic()
+        allowed, why, values = calibration_allows_automatic()
         if not allowed:
-            raise HTTPException(409, {"code": "not_calibrated", "message": why})
+            raise HTTPException(409, {"code": "not_calibrated", "message": tr(why, **values)})
     try:
         configuration.update(body.changes)
     except ConfigError as error:
@@ -56,7 +57,12 @@ def settings_view():
         views.append(SettingView(name=name, value=None if setting.secret else current, is_set=bool(current), source=configuration.source(name),
                                  locked=configuration.source(name) == configuration.SOURCE["environment"], restart=setting.restart, kind=setting.kind,
                                  low=setting.low, high=setting.high, choices=list(setting.choices),
-                                 note=calibration_allows_automatic()[1] if name == "audio_automatic" else None))
-    fixed = [FixedValue(name="allowed_folders", value=ROOTS, why="Set by SUBTITLE_GUARD_ROOTS only: it limits where the guard may ever write."),
-             FixedValue(name="automatic_fix_confidence", value=f"{HIGH_CONFIDENCE} ({AUTOMATIC_BAND})", why="Fixed: a fix is written on its own only at high confidence.")]
+                                 note=calibration_note() if name == "audio_automatic" else None))
+    fixed = [FixedValue(name="allowed_folders", value=ROOTS, why=tr("Set by SUBTITLE_GUARD_ROOTS only: it limits where the guard may ever write.")),
+             FixedValue(name="automatic_fix_confidence", value=f"{HIGH_CONFIDENCE} ({AUTOMATIC_BAND})", why=tr("Fixed: a fix is written on its own only at high confidence."))]
     return SettingsView(settings=views, fixed=fixed)
+
+
+def calibration_note():
+    _, why, values = calibration_allows_automatic()
+    return tr(why, **values)

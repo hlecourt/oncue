@@ -14,6 +14,7 @@ from ...library import SUBTITLE_EXTENSIONS, external_subtitles
 from ...reports import latest_reports, report_history
 from ...storage import backup_folders
 from ...subtitles import parse_subtitle
+from ..i18n import tr
 from ..lookup import known_path, usable
 from ..presentation import folder_label, result_words
 from ..schemas import Line, Lines, Part, Sibling, SubtitleDetail, SubtitleList, SubtitleRow, Version
@@ -47,7 +48,7 @@ def get_subtitle(subtitle_id: str) -> SubtitleDetail:
     path = known_path(subtitle_id)
     video = review.video_for(path)
     latest = next(iter(report_history(path, limit=1)), None)
-    words, tone = result_words(latest) if latest else ("Not checked yet", "neutral")
+    words, tone = result_words(latest) if latest else (tr("Not checked yet"), "neutral")
     proposal = current_proposal(path)
     diagnosis = review.diagnose(video, path) if video else None
     changes = (proposal or {}).get("changes") or {}
@@ -71,7 +72,7 @@ def siblings(path, video):
         if other == path or not usable(other) or review.video_for(other) != video:
             continue
         latest = next(iter(report_history(other, limit=1)), None)
-        words, tone = result_words(latest) if latest else ("Not checked yet", "neutral")
+        words, tone = result_words(latest) if latest else (tr("Not checked yet"), "neutral")
         found.append(Sibling(id=known_id(other, video), name=name, words=words, tone=tone))
     return found
 

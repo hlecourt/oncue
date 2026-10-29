@@ -11,6 +11,7 @@ from ... import jobs
 from ...catalog import subtitle_id
 from ...logs import event_level, event_message, log_file, recent_events
 from ...reports import decision_counts, report_history
+from ..i18n import tr
 from ..lookup import known_path
 from ..presentation import DRY_RUN_WORDS, HISTORY_GROUPS, change_sentences, folder_label, result_words, started_by
 from ..schemas import History, HistoryGroup, HistoryRow, Job, LogEvent
@@ -26,7 +27,7 @@ def get_history(result: str | None = None, before: int | None = None, limit: int
     decisions = HISTORY_GROUPS[result][1] if result in HISTORY_GROUPS else None
     rows = report_history(subtitle=known_path(subtitle) if subtitle else None, limit=limit + 1, decisions=decisions, before=before)
     counts = decision_counts()
-    groups = [HistoryGroup(key=key, label=label, count=sum(counts.get(decision, 0) for decision in members)) for key, (label, members) in HISTORY_GROUPS.items()]
+    groups = [HistoryGroup(key=key, label=tr(label), count=sum(counts.get(decision, 0) for decision in members)) for key, (label, members) in HISTORY_GROUPS.items()]
     shown = rows[:limit]
     return History(rows=[history_row(row) for row in shown], groups=groups, next_before=shown[-1]["id"] if len(rows) > limit else None)
 
@@ -50,7 +51,7 @@ def get_log(q: str = Query("", max_length=200), level: str | None = None, limit:
 def export_log():
     path = log_file()
     if not os.path.exists(path):
-        raise HTTPException(404, {"code": "no_log", "message": "Nothing logged yet."})
+        raise HTTPException(404, {"code": "no_log", "message": tr("Nothing logged yet.")})
     return FileResponse(path, media_type="application/x-ndjson", filename="subtitle-guard.log.jsonl")
 
 
@@ -59,7 +60,7 @@ def history_row(row):
     exists = os.path.isfile(row["subtitle"])
     changes = change_sentences(row["changes"], row["decision"])
     if not row["applied"] and row["decision"] in DRY_RUN_WORDS:
-        changes = ["Not written:", *changes]
+        changes = [tr("Not written:"), *changes]
     return HistoryRow(id=row["id"], time=row["time"], subtitle_id=subtitle_id(row["subtitle"]) if exists else None, name=os.path.basename(row["subtitle"]),
                       folder=folder_label(row["subtitle"]), decision=row["decision"], words=words, tone=tone, started_by=started_by(row["provider"]),
                       changes=changes, confidence=int(row["confidence"]) if row["confidence"] else None,

@@ -17,6 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { STATUS_KEY, useStatus } from "@/hooks/use-status"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
 import { when } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 
 type Item = Schemas["ReviewItem"]
 type Show = "all" | "proposals" | "other"
@@ -24,21 +25,21 @@ type BulkAction = Schemas["BulkAction"]["action"]
 export const REVIEW_KEY = ["review"]
 const WIDE_ONLY = new Set(["reason", "confidence", "checked"])
 
-const COLUMNS: ColumnDef<Item>[] = [
+const columns = (t: ReturnType<typeof useT>): ColumnDef<Item>[] => [
   {
     id: "select",
     header: ({ table }) => (
-      <Checkbox aria-label="Select every subtitle" checked={table.getIsAllRowsSelected() || (table.getIsSomeRowsSelected() && "indeterminate")}
+      <Checkbox aria-label={t("Select every subtitle")} checked={table.getIsAllRowsSelected() || (table.getIsSomeRowsSelected() && "indeterminate")}
         onCheckedChange={(value) => table.toggleAllRowsSelected(Boolean(value))} />
     ),
     cell: ({ row }) => (
-      <Checkbox aria-label={`Select ${row.original.name}`} checked={row.getIsSelected()} onCheckedChange={(value) => row.toggleSelected(Boolean(value))}
+      <Checkbox aria-label={t("Select {name}", { name: row.original.name })} checked={row.getIsSelected()} onCheckedChange={(value) => row.toggleSelected(Boolean(value))}
         onClick={(event) => event.stopPropagation()} />
     ),
   },
   {
     id: "subtitle",
-    header: "Subtitle",
+    header: t("Subtitle"),
     accessorFn: (item) => `${item.name} ${item.folder} ${item.reason}`,
     cell: ({ row }) => (
       <div className="flex min-w-0 items-start gap-3">
@@ -54,16 +55,17 @@ const COLUMNS: ColumnDef<Item>[] = [
       </div>
     ),
   },
-  { id: "reason", header: "Why it is here", cell: ({ row }) => <span className="text-sm">{row.original.reason}</span> },
+  { id: "reason", header: t("Why it is here"), cell: ({ row }) => <span className="text-sm">{row.original.reason}</span> },
   {
     id: "confidence",
-    header: "Confidence",
+    header: t("Confidence"),
     cell: ({ row }) => <ConfidenceBadge confidence={row.original.proposal?.confidence ?? row.original.confidence} band={row.original.proposal?.band ?? row.original.band} />,
   },
-  { id: "checked", header: "Checked", cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted-foreground">{when(row.original.checked)}</span> },
+  { id: "checked", header: t("Checked"), cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted-foreground">{when(row.original.checked)}</span> },
 ]
 
 export function ReviewPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const status = useStatus()
@@ -74,14 +76,14 @@ export function ReviewPage() {
   const [selection, setSelection] = useState<RowSelectionState>({})
   const items = useMemo(() => (review.data ?? []).filter((item) => show === "all" || (show === "proposals") === Boolean(item.proposal)), [review.data, show])
   const table = useReactTable({
-    data: items, columns: COLUMNS, getRowId: (item) => item.id, state: { rowSelection: selection, globalFilter: search },
+    data: items, columns: useMemo(() => columns(t), [t]), getRowId: (item) => item.id, state: { rowSelection: selection, globalFilter: search },
     onRowSelectionChange: setSelection, onGlobalFilterChange: setSearch, getCoreRowModel: getCoreRowModel(), getFilteredRowModel: getFilteredRowModel(),
   })
   const bulk = useMutation({
     mutationFn: (action: BulkAction) => unwrap(api.POST("/api/review/bulk", { body: { action, ids: Object.keys(selection) } })),
     onSuccess: (result) => {
       const skipped = Object.keys(result.skipped).length
-      toast.success(`${result.done.length} done${skipped ? `, ${skipped} skipped` : ""}.`, { description: Object.values(result.skipped)[0] })
+      toast.success(skipped ? t("{done} done, {skipped} skipped.", { done: result.done.length, skipped }) : t("{done} done.", { done: result.done.length }), { description: Object.values(result.skipped)[0] })
       setSelection({})
       queryClient.invalidateQueries({ queryKey: REVIEW_KEY })
       queryClient.invalidateQueries({ queryKey: STATUS_KEY })
@@ -90,7 +92,7 @@ export function ReviewPage() {
   })
   const scan = useMutation({
     mutationFn: () => unwrap(api.POST("/api/scans")),
-    onSuccess: () => toast.success("The library scan started.", { description: "Follow it on the System page." }),
+    onSuccess: () => toast.success(t("The library scan started."), { description: t("Follow it on the System page.") }),
     onError: (error) => toast.error(error.message),
   })
   const groups = Object.fromEntries((history.data?.groups ?? []).map((group) => [group.key, group.count]))
@@ -100,38 +102,38 @@ export function ReviewPage() {
 
   return (
     <>
-      <PageHeader title="Review" description="Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here." />
+      <PageHeader title={t("Review")} description={t("Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here.")} />
       <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-6">
-        <Stat label="To review" value={review.data?.length ?? "-"} tone={review.data?.length ? "warn" : "neutral"} />
-        <Stat label="Proposals" value={review.data ? proposals : "-"} />
-        <Stat label="Fixed automatically" value={groups.fixed ?? "-"} tone={groups.fixed ? "good" : "neutral"} />
-        <Stat label="In sync" value={groups["in-sync"] ?? "-"} />
-        <Stat label="Checks waiting" value={(jobs.queued ?? 0) + (jobs.running ?? 0)} />
-        <Stat label="Errors" value={jobs.failed ?? 0} tone={jobs.failed ? "bad" : "neutral"} />
+        <Stat label={t("To review")} value={review.data?.length ?? "-"} tone={review.data?.length ? "warn" : "neutral"} />
+        <Stat label={t("Proposals")} value={review.data ? proposals : "-"} />
+        <Stat label={t("Fixed automatically")} value={groups.fixed ?? "-"} tone={groups.fixed ? "good" : "neutral"} />
+        <Stat label={t("In sync")} value={groups["in-sync"] ?? "-"} />
+        <Stat label={t("Checks waiting")} value={(jobs.queued ?? 0) + (jobs.running ?? 0)} />
+        <Stat label={t("Errors")} value={jobs.failed ?? 0} tone={jobs.failed ? "bad" : "neutral"} />
       </div>
       {review.isPending && <Skeleton className="h-64 w-full" />}
-      {review.error && <EmptyState icon={<RefreshCwIcon />} title="Review could not be loaded" action={<Button variant="outline" onClick={() => review.refetch()}>Try again</Button>}>{review.error.message}</EmptyState>}
+      {review.error && <EmptyState icon={<RefreshCwIcon />} title={t("Review could not be loaded")} action={<Button variant="outline" onClick={() => review.refetch()}>{t("Try again")}</Button>}>{review.error.message}</EmptyState>}
       {review.data?.length === 0 && (
-        <EmptyState icon={<CheckCircle2Icon className="text-success" />} title="Nothing to review"
-          action={<Button variant="outline" onClick={() => scan.mutate()} disabled={scan.isPending}><ScanSearchIcon />Scan the library</Button>}>
-          {history.data?.rows.length ? `The latest automatic fix: ${history.data.rows[0]!.name}, ${when(history.data.rows[0]!.time)}.` : "Nothing has been checked yet. Scan the library to start."}
+        <EmptyState icon={<CheckCircle2Icon className="text-success" />} title={t("Nothing to review")}
+          action={<Button variant="outline" onClick={() => scan.mutate()} disabled={scan.isPending}><ScanSearchIcon />{t("Scan the library")}</Button>}>
+          {history.data?.rows.length ? t("The latest automatic fix: {name}, {when}.", { name: history.data.rows[0]!.name, when: when(history.data.rows[0]!.time) }) : t("Nothing has been checked yet. Scan the library to start.")}
         </EmptyState>
       )}
       {review.data && review.data.length > 0 && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Input placeholder="Filter by name, folder or reason" value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-72" aria-label="Filter" />
-            <ToggleGroup type="single" variant="outline" size="sm" value={show} onValueChange={(value) => value && setShow(value as Show)} aria-label="Show">
-              <ToggleGroupItem value="all">All</ToggleGroupItem>
-              <ToggleGroupItem value="proposals">Proposals</ToggleGroupItem>
-              <ToggleGroupItem value="other">Other</ToggleGroupItem>
+            <Input placeholder={t("Filter by name, folder or reason")} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-72" aria-label={t("Filter")} />
+            <ToggleGroup type="single" variant="outline" size="sm" value={show} onValueChange={(value) => value && setShow(value as Show)} aria-label={t("Show")}>
+              <ToggleGroupItem value="all">{t("All")}</ToggleGroupItem>
+              <ToggleGroupItem value="proposals">{t("Proposals")}</ToggleGroupItem>
+              <ToggleGroupItem value="other">{t("Other")}</ToggleGroupItem>
             </ToggleGroup>
             {selected > 0 && (
-              <div className="ml-auto flex flex-wrap items-center gap-2" role="toolbar" aria-label="Selected subtitles">
-                <span className="text-sm text-muted-foreground">{selected} selected</span>
-                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("replacement")}>Ask Bazarr for new versions</Button>
-                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("recheck")}>Check again</Button>
-                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("keep")}>Keep as is</Button>
+              <div className="ml-auto flex flex-wrap items-center gap-2" role="toolbar" aria-label={t("Selected subtitles")}>
+                <span className="text-sm text-muted-foreground">{t("{count} selected", { count: selected })}</span>
+                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("replacement")}>{t("Ask Bazarr for new versions")}</Button>
+                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("recheck")}>{t("Check again")}</Button>
+                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("keep")}>{t("Keep as is")}</Button>
               </div>
             )}
           </div>
@@ -160,7 +162,7 @@ export function ReviewPage() {
                   </TableRow>
                 ))}
                 {table.getRowModel().rows.length === 0 && (
-                  <TableRow><TableCell colSpan={COLUMNS.length} className="py-8 text-center text-sm text-muted-foreground">No subtitle matches this filter.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">{t("No subtitle matches this filter.")}</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

@@ -11,11 +11,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, unwrap } from "@/lib/api/client"
 import { bytes, when } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 
 const CHECK_WORDS: Record<string, string> = { ffmpeg: "ffmpeg", ffprobe: "ffprobe", ffsubsync: "ffsubsync (audio sync)", state_writable: "State folder",
   backups_writable: "Backup folder", bazarr: "Bazarr", allowed_folders: "Allowed folders" }
 
 export function SystemPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const system = useQuery({ queryKey: ["system"], queryFn: () => unwrap(api.GET("/api/system")) })
   const bazarr = useQuery({ queryKey: ["system", "bazarr"], queryFn: () => unwrap(api.GET("/api/system/bazarr")) })
@@ -36,7 +38,7 @@ export function SystemPage() {
   const cleanUp = useMutation({
     mutationFn: () => unwrap(api.POST("/api/system/backups/clean-up")),
     onSuccess: (result) => {
-      toast.success(`${result.removed} old backups removed.`)
+      toast.success(t("{count} old backups removed.", { count: result.removed }))
       queryClient.invalidateQueries({ queryKey: ["system"] })
     },
   })
@@ -45,59 +47,59 @@ export function SystemPage() {
 
   return (
     <>
-      <PageHeader title="System" description="The health of what the guard depends on, the library scan, and the backups." />
+      <PageHeader title={t("System")} description={t("The health of what the guard depends on, the library scan, and the backups.")} />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>Health</CardTitle><CardDescription>{system.data ? `subtitle-guard ${system.data.version}, mode ${system.data.mode === "fix" ? "Fix automatically" : "Report only"}` : " "}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Health")}</CardTitle><CardDescription>{system.data ? t("subtitle-guard {version}, mode {mode}", { version: system.data.version, mode: system.data.mode === "fix" ? t("Fix automatically") : t("Report only") }) : " "}</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             {!system.data && <Skeleton className="h-40 w-full" />}
             {system.data && Object.entries(system.data.checks).map(([name, check]) => (
-              <Row key={name} label={CHECK_WORDS[name] ?? name} tone={check.ok ? "good" : "bad"}>{check.detail || (check.ok ? "OK" : "Not working")}</Row>
+              <Row key={name} label={t(CHECK_WORDS[name] ?? name)} tone={check.ok ? "good" : "bad"}>{check.detail || (check.ok ? t("OK") : t("Not working"))}</Row>
             ))}
             {system.data && (
-              <Row label="Workers" tone={workers.length && workers.every(([, alive]) => alive) ? "good" : "warn"}>
-                {workers.length ? `${workers.filter(([, alive]) => alive).length} of ${workers.length} running` : "None running: checks wait in the queue"}
+              <Row label={t("Workers")} tone={workers.length && workers.every(([, alive]) => alive) ? "good" : "warn"}>
+                {workers.length ? t("{running} of {total} running", { running: workers.filter(([, alive]) => alive).length, total: workers.length }) : t("None running: checks wait in the queue")}
               </Row>
             )}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Bazarr</CardTitle><CardDescription>Bazarr's own settings that decide what reaches the guard.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Bazarr</CardTitle><CardDescription>{t("Bazarr's own settings that decide what reaches the guard.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             {!bazarr.data && <Skeleton className="h-24 w-full" />}
-            {bazarr.data?.warnings.length === 0 && <div className="flex items-center gap-2 text-sm"><CheckCircle2Icon className="size-4 text-success" />Bazarr is set up for the guard.</div>}
+            {bazarr.data?.warnings.length === 0 && <div className="flex items-center gap-2 text-sm"><CheckCircle2Icon className="size-4 text-success" />{t("Bazarr is set up for the guard.")}</div>}
             {bazarr.data?.warnings.map((warning) => (
               <Alert key={warning.code} variant={["unreachable", "not_set_up"].includes(warning.code) ? "default" : "destructive"}>
                 <AlertTriangleIcon />
-                <AlertTitle>{({ unreachable: "Bazarr cannot be reached", not_set_up: "Bazarr is not set up" } as Record<string, string>)[warning.code] ?? "Change this in Bazarr"}</AlertTitle>
+                <AlertTitle>{t(({ unreachable: "Bazarr cannot be reached", not_set_up: "Bazarr is not set up" } as Record<string, string>)[warning.code] ?? "Change this in Bazarr")}</AlertTitle>
                 <AlertDescription>{warning.message}</AlertDescription>
               </Alert>
             ))}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Library scan</CardTitle><CardDescription>Check every subtitle of the library, through Bazarr or the watched folders.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Library scan")}</CardTitle><CardDescription>{t("Check every subtitle of the library, through Bazarr or the watched folders.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             {scan.data && (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm"><span>{scanWords(scan.data.status)}, started {when(scan.data.started).toLowerCase()}</span><span className="font-mono tabular-nums">{scan.data.done} / {scan.data.total}</span></div>
+                <div className="flex justify-between text-sm"><span>{t("{status}, started {when}", { status: t(scanWords(scan.data.status)), when: when(scan.data.started).toLowerCase() })}</span><span className="font-mono tabular-nums">{scan.data.done} / {scan.data.total}</span></div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={scan.data.total} aria-valuenow={scan.data.done}>
                   <div className="h-full bg-primary transition-all" style={{ width: `${scan.data.total ? (100 * scan.data.done) / scan.data.total : 0}%` }} />
                 </div>
-                <p className="text-xs text-muted-foreground">Through {scan.data.source}. {scan.data.not_settled} waiting for a decision, {scan.data.failed} failed.</p>
+                <p className="text-xs text-muted-foreground">{t("Through {source}. {waiting} waiting for a decision, {failed} failed.", { source: t(scan.data.source), waiting: scan.data.not_settled, failed: scan.data.failed })}</p>
               </div>
             )}
             <div className="flex gap-2">
-              {running ? <Button variant="outline" onClick={() => stop.mutate(scan.data!.id)}><SquareIcon />Stop the scan</Button>
-                : <Button onClick={() => start.mutate()} disabled={start.isPending}><ScanSearchIcon />Scan the library</Button>}
+              {running ? <Button variant="outline" onClick={() => stop.mutate(scan.data!.id)}><SquareIcon />{t("Stop the scan")}</Button>
+                : <Button onClick={() => start.mutate()} disabled={start.isPending}><ScanSearchIcon />{t("Scan the library")}</Button>}
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Backups</CardTitle><CardDescription>A copy is kept each time the guard writes a subtitle.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Backups")}</CardTitle><CardDescription>{t("A copy is kept each time the guard writes a subtitle.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             <div className="font-mono text-2xl font-semibold tabular-nums">{system.data ? bytes(system.data.backups_bytes) : "-"}</div>
-            <Button variant="outline" onClick={() => cleanUp.mutate()} disabled={cleanUp.isPending}>Clean up old backups now</Button>
+            <Button variant="outline" onClick={() => cleanUp.mutate()} disabled={cleanUp.isPending}>{t("Clean up old backups now")}</Button>
           </CardContent>
         </Card>
       </div>
