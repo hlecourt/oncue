@@ -598,6 +598,35 @@
         "title": "Line",
         "type": "object"
       },
+      "LineShift": {
+        "properties": {
+          "first": {
+            "maximum": 200000.0,
+            "minimum": 0.0,
+            "title": "First",
+            "type": "integer"
+          },
+          "last": {
+            "maximum": 200000.0,
+            "minimum": 0.0,
+            "title": "Last",
+            "type": "integer"
+          },
+          "offset": {
+            "maximum": 3600.0,
+            "minimum": -3600.0,
+            "title": "Offset",
+            "type": "number"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "offset"
+        ],
+        "title": "LineShift",
+        "type": "object"
+      },
       "Lines": {
         "properties": {
           "lines": {
@@ -781,6 +810,36 @@
           "saved"
         ],
         "title": "Restore",
+        "type": "object"
+      },
+      "Retime": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/LineShift"
+            },
+            "maxItems": 5000,
+            "title": "Changes",
+            "type": "array"
+          },
+          "use_proposal": {
+            "title": "Use Proposal",
+            "type": "boolean"
+          },
+          "version": {
+            "maxLength": 40,
+            "minLength": 40,
+            "pattern": "^[0-9a-f]+$",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "use_proposal",
+          "changes"
+        ],
+        "title": "Retime",
         "type": "object"
       },
       "ReviewItem": {
@@ -1109,6 +1168,34 @@
         "title": "Shift",
         "type": "object"
       },
+      "Sibling": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tone": {
+            "title": "Tone",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "words",
+          "tone"
+        ],
+        "title": "Sibling",
+        "type": "object"
+      },
       "Status": {
         "properties": {
           "confidence": {
@@ -1223,6 +1310,13 @@
             "title": "Scale",
             "type": "number"
           },
+          "siblings": {
+            "items": {
+              "$ref": "#/components/schemas/Sibling"
+            },
+            "title": "Siblings",
+            "type": "array"
+          },
           "tone": {
             "title": "Tone",
             "type": "string"
@@ -1271,9 +1365,86 @@
           "parts",
           "scale",
           "versions",
-          "from_bazarr"
+          "from_bazarr",
+          "siblings"
         ],
         "title": "SubtitleDetail",
+        "type": "object"
+      },
+      "SubtitleList": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SubtitleRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "total"
+        ],
+        "title": "SubtitleList",
+        "type": "object"
+      },
+      "SubtitleRow": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "checked": {
+            "title": "Checked",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tone": {
+            "title": "Tone",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "folder",
+          "words",
+          "tone",
+          "confidence",
+          "band",
+          "checked"
+        ],
+        "title": "SubtitleRow",
         "type": "object"
       },
       "SystemView": {
@@ -1448,6 +1619,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subtitle",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subtitle"
             }
           }
         ],
@@ -2047,6 +2234,73 @@
         ]
       }
     },
+    "/api/subtitles": {
+      "get": {
+        "operationId": "listSubtitles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubtitleList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Subtitles",
+        "tags": [
+          "subtitles"
+        ]
+      }
+    },
     "/api/subtitles/{subtitle_id}": {
       "get": {
         "operationId": "getSubtitle",
@@ -2594,6 +2848,58 @@
           }
         },
         "summary": "Restore",
+        "tags": [
+          "commands"
+        ]
+      }
+    },
+    "/api/subtitles/{subtitle_id}/retime": {
+      "post": {
+        "operationId": "retimeLines",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subtitle_id",
+            "required": true,
+            "schema": {
+              "title": "Subtitle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Retime"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retime",
         "tags": [
           "commands"
         ]

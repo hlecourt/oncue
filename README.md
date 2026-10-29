@@ -69,9 +69,10 @@ To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.h
 In plain words, light or dark, on a phone or a large screen.
 
 - **Review**: what waits for a decision, one sentence each, with Keep and Check again for several at once.
-- **Subtitle screen**: the fix the guard found, the sound to listen to the lines, and the actions to apply the fix, move lines
-  or restore a saved version.
-- **History**, **Log**, **System** and **Settings** for everything else.
+- **Editor**: the video, your lines, and a timeline with your subtitle, the sound and the video's own subtitle. Play, press
+  **It starts here** where the voice starts, or nudge by 0.1 s or 1 s, on every line, from a line on, or on a selection;
+  changes add up and one Save writes them, after a backup. The keyboard does it all (press `?`).
+- **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
 ![Review](docs/screenshots/review.png)
 

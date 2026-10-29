@@ -67,6 +67,29 @@ class Version(BaseModel):
     time: str
 
 
+class SubtitleRow(BaseModel):
+    id: str
+    name: str
+    folder: str
+    words: str
+    tone: str
+    confidence: int | None
+    band: str
+    checked: str
+
+
+class SubtitleList(BaseModel):
+    rows: list[SubtitleRow]
+    total: int
+
+
+class Sibling(BaseModel):
+    id: str
+    name: str
+    words: str
+    tone: str
+
+
 class SubtitleDetail(BaseModel):
     id: str
     name: str
@@ -85,6 +108,7 @@ class SubtitleDetail(BaseModel):
     scale: float
     versions: list[Version]
     from_bazarr: bool
+    siblings: list[Sibling]
 
 
 class Line(BaseModel):
@@ -158,6 +182,17 @@ class Shift(VersionGuard):
     first: float = Field(ge=0, le=48 * 3600)
     last: float = Field(ge=0, le=48 * 3600)
     offset: float = Field(ge=-3600, le=3600)
+
+
+class LineShift(BaseModel):
+    first: int = Field(ge=0, le=200_000)
+    last: int = Field(ge=0, le=200_000)
+    offset: float = Field(ge=-3600, le=3600)
+
+
+class Retime(VersionGuard):
+    use_proposal: bool
+    changes: list[LineShift] = Field(max_length=5000)
 
 
 class Restore(VersionGuard):

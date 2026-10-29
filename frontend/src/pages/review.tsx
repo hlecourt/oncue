@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { type ColumnDef, flexRender, getCoreRowModel, getFilteredRowModel, type RowSelectionState, useReactTable } from "@tanstack/react-table"
+import { cn } from "cn"
 import { CheckCircle2Icon, RefreshCwIcon, ScanSearchIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -21,6 +22,7 @@ type Item = Schemas["ReviewItem"]
 type Show = "all" | "proposals" | "other"
 type BulkAction = Schemas["BulkAction"]["action"]
 export const REVIEW_KEY = ["review"]
+const WIDE_ONLY = new Set(["reason", "confidence", "checked"])
 
 const COLUMNS: ColumnDef<Item>[] = [
   {
@@ -41,9 +43,13 @@ const COLUMNS: ColumnDef<Item>[] = [
     cell: ({ row }) => (
       <div className="flex min-w-0 items-start gap-3">
         <span className="mt-1.5"><ToneDot tone={toneOf(row.original.tone)} /></span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <Link to="/subtitles/$subtitleId" params={{ subtitleId: row.original.id }} className="block truncate font-medium hover:underline">{row.original.name}</Link>
           <div className="truncate text-xs text-muted-foreground">{row.original.folder}</div>
+          <div className="mt-1.5 flex items-start justify-between gap-3 md:hidden">
+            <span className="text-sm">{row.original.reason}</span>
+            <ConfidenceBadge confidence={row.original.proposal?.confidence ?? row.original.confidence} band={row.original.proposal?.band ?? row.original.band} />
+          </div>
         </div>
       </div>
     ),
@@ -95,7 +101,7 @@ export function ReviewPage() {
   return (
     <>
       <PageHeader title="Review" description="Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here." />
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-6">
         <Stat label="To review" value={review.data?.length ?? "-"} tone={review.data?.length ? "warn" : "neutral"} />
         <Stat label="Proposals" value={review.data ? proposals : "-"} />
         <Stat label="Fixed automatically" value={groups.fixed ?? "-"} tone={groups.fixed ? "good" : "neutral"} />
@@ -134,7 +140,11 @@ export function ReviewPage() {
               <TableHeader className="bg-muted/50">
                 {table.getHeaderGroups().map((group) => (
                   <TableRow key={group.id}>
-                    {group.headers.map((header) => <TableHead key={header.id} className={header.id === "select" ? "w-10" : undefined}>{flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}
+                    {group.headers.map((header) => (
+                      <TableHead key={header.id} className={cn(header.id === "select" && "w-10", WIDE_ONLY.has(header.id) && "hidden md:table-cell")}>
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                      </TableHead>
+                    ))}
                   </TableRow>
                 ))}
               </TableHeader>
@@ -142,7 +152,11 @@ export function ReviewPage() {
                 {table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined} className="cursor-pointer"
                     onClick={() => navigate({ to: "/subtitles/$subtitleId", params: { subtitleId: row.original.id } })}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} className="py-3 align-top">{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className={cn("py-3 align-top", cell.column.id === "subtitle" && "max-md:whitespace-normal", WIDE_ONLY.has(cell.column.id) && "hidden md:table-cell")}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
                 {table.getRowModel().rows.length === 0 && (

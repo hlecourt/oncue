@@ -61,12 +61,11 @@ function Checks() {
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader className="bg-muted/50">
-              <TableRow><TableHead>When</TableHead><TableHead>Subtitle</TableHead><TableHead>Result</TableHead><TableHead>What changed</TableHead><TableHead>Confidence</TableHead></TableRow>
+              <TableRow><TableHead>Subtitle</TableHead><TableHead>Result</TableHead><TableHead>What changed</TableHead><TableHead>Confidence</TableHead><TableHead>Checked</TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">{when(row.time)}</TableCell>
                   <TableCell className="max-w-72 align-top">
                     {row.subtitle_id ? <Link to="/subtitles/$subtitleId" params={{ subtitleId: row.subtitle_id }} className="block truncate font-medium hover:underline">{row.name}</Link>
                       : <span className="block truncate font-medium text-muted-foreground">{row.name}</span>}
@@ -74,10 +73,13 @@ function Checks() {
                   </TableCell>
                   <TableCell className="align-top">
                     <div className="flex items-center gap-2"><ToneDot tone={toneOf(row.tone)} />{row.words}</div>
-                    {row.started_by && <div className="mt-1 text-xs text-muted-foreground">Started by {row.started_by}</div>}
                   </TableCell>
                   <TableCell className="align-top text-sm">{row.changes.map((sentence) => <div key={sentence}>{sentence}</div>)}</TableCell>
                   <TableCell className="align-top"><ConfidenceBadge confidence={row.confidence} band={row.band} /></TableCell>
+                  <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">
+                    <div>{when(row.time)}</div>
+                    {row.started_by && <div className="mt-1">{row.started_by}</div>}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -106,18 +108,18 @@ function Tasks() {
     <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader className="bg-muted/50">
-          <TableRow><TableHead>Since</TableHead><TableHead>Task</TableHead><TableHead>Subtitle</TableHead><TableHead>Status</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow>
+          <TableRow><TableHead>Task</TableHead><TableHead>Subtitle</TableHead><TableHead>Status</TableHead><TableHead>Updated</TableHead><TableHead><span className="sr-only">Action</span></TableHead></TableRow>
         </TableHeader>
         <TableBody>
           {tasks.data.map((task) => (
             <TableRow key={task.id}>
-              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{when(task.finished ?? task.started ?? task.created)}</TableCell>
               <TableCell>{JOB_WORDS[task.kind] ?? task.kind}</TableCell>
               <TableCell className="max-w-64 truncate text-sm">{task.subtitle ?? "-"}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-2"><ToneDot tone={task.status === "failed" ? "bad" : task.status === "done" ? "good" : "neutral"} />{taskWords(task.status)}</div>
                 {task.error && <div className="mt-1 max-w-md truncate text-xs text-destructive" title={task.error}>{task.error}</div>}
               </TableCell>
+              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{when(task.finished ?? task.started ?? task.created)}</TableCell>
               <TableCell className="text-right">
                 {(task.status === "failed" || task.status === "done") && <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(task.id)}>Run again</Button>}
               </TableCell>

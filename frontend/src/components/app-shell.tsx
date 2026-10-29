@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, Outlet, useMatches } from "@tanstack/react-router"
-import { ActivityIcon, HistoryIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
+import { ActivityIcon, FilesIcon, HistoryIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CommandMenu } from "@/components/command-menu"
@@ -30,6 +30,7 @@ import { chooseTheme, type Theme, useTheme } from "@/lib/theme"
 
 const PAGES = [
   { to: "/", label: "Review", icon: ListChecksIcon },
+  { to: "/subtitles", label: "Subtitles", icon: FilesIcon },
   { to: "/history", label: "History", icon: HistoryIcon },
   { to: "/log", label: "Log", icon: ScrollTextIcon },
   { to: "/system", label: "System", icon: ActivityIcon },
@@ -46,14 +47,17 @@ export function AppShell() {
   const session = useSession()
   const [searching, setSearching] = useState(false)
   const toReview = status.data?.to_review ?? 0
-  const title = useMatches().at(-1)?.staticData.title ?? ""
+  const page = useMatches().at(-1)?.staticData
+  const title = page?.title ?? ""
+  const editor = Boolean(page?.editor)
+  const [open, setOpen] = useState(true)
 
   useEffect(() => {
     document.title = `${toReview ? `(${toReview}) ` : ""}${title ? `${title} - ` : ""}subtitle-guard`
   }, [toReview, title])
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={open && !editor} onOpenChange={setOpen}>
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <SidebarMenu>
@@ -63,7 +67,7 @@ export function AppShell() {
                   <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
                     <ShieldCheckIcon className="size-4" />
                   </span>
-                  <span className="font-semibold">subtitle-guard</span>
+                  <span className="font-semibold group-data-[collapsible=icon]:sr-only">subtitle-guard</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -95,7 +99,7 @@ export function AppShell() {
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+        {!editor && <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
           <span className="text-sm font-medium">{title}</span>
@@ -104,8 +108,8 @@ export function AppShell() {
             <span className="hidden sm:inline">Search</span>
             <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] sm:inline">Ctrl K</kbd>
           </Button>
-        </header>
-        <div id="content" className="mx-auto w-full min-w-0 max-w-[1400px] flex-1 p-4 md:p-6">
+        </header>}
+        <div id="content" className={editor ? "min-w-0 flex-1" : "mx-auto w-full min-w-0 max-w-[1400px] flex-1 p-4 md:p-6"}>
           <Outlet />
         </div>
       </SidebarInset>

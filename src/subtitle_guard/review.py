@@ -286,18 +286,58 @@ def shift_range(video, subtitle, first, last, offset, expected_hash=None):
         save_backup(subtitle, "before-manual")
         write_subtitle(subtitle, document, timings)
     discard_proposal(subtitle)
-    cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
-    previous = measure(document["cues"], reference) if reference else None
-    measured = measure(cues, reference) if reference else None
-    outcome = {"decision": DECISION["manual"], "reference": reference["kind"] if reference else "", "before": previous or {}, "after": measured or {},
-               "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
-               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s",
-               "changes": {"scale": 1.0, "lines": len(cues), "parts": [{"first": first, "last": last, "shift": round(offset, 2),
-                                                                         "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]}}
-    report(subtitle, "manual", outcome)
+    parts = [{"first": first, "last": last, "shift": round(offset, 2), "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]
+    outcome = manual_outcome(video, subtitle, document["cues"], DECISION["manual"], f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s", 1.0, parts)
     log("review.shifted", f"manual shift range={first:.2f}-{last:.2f}s offset={offset:+.2f}s", subtitle=subtitle, first=first, last=last,
         offset=offset, confidence=outcome["confidence"])
+    return outcome
+
+
+def retime(video, subtitle, expected_version, use_proposal, changes):
+    with subtitle_lock(subtitle):
+        if file_hash(subtitle) != expected_version:
+            raise StaleVersionError("the subtitle changed since this page was opened, reload it and try again")
+        document = parse_subtitle(subtitle)
+        cues = document["cues"]
+        proposal = proposal_for(subtitle, expected_version) if use_proposal else None
+        if use_proposal and (proposal is None or len(proposal["timings"]) != len(cues)):
+            raise EditRefusedError("the guard's fix does not match this file any more")
+        offsets = [0.0] * len(cues)
+        for first, last, offset in changes:
+            if not 0 <= first <= last < len(cues):
+                raise EditRefusedError("a change covers lines this subtitle does not have")
+            for index in range(first, last + 1):
+                offsets[index] += offset
+        if not use_proposal and not any(offsets):
+            raise EditRefusedError("there is nothing to change")
+        base = [tuple(timing) for timing in proposal["timings"]] if proposal else [(start, end) for start, end, _ in cues]
+        timings = [(start + moved, end + moved, text) for (start, end), moved, (_, _, text) in zip(base, offsets, cues, strict=True)]
+        if any(start < 0 for start, _, _ in timings):
+            raise EditRefusedError("some lines would start before the beginning of the video")
+        backup_folder = save_backup(subtitle, "original" if proposal else "before-manual")
+        write_subtitle(subtitle, document, timings)
+    discard_proposal(subtitle)
+    guard_changes = ((proposal or {}).get("changes") or {})
+    parts = guard_changes.get("parts", []) + [{"first": cues[first][0], "last": cues[last][0], "shift": round(offset, 2), "lines": last - first + 1}
+                                              for first, last, offset in changes]
+    decision = DECISION["approved"] if proposal and not changes else DECISION["manual"]
+    reason = ("the guard's fix and " if proposal else "") + (f"{len(changes)} change(s) by hand" if changes else "the guard's fix applied by hand")
+    outcome = manual_outcome(video, subtitle, cues, decision, reason, guard_changes.get("scale", 1.0), parts)
+    log("review.retimed", f"retimed by hand: {reason}, backup={backup_folder}", subtitle=subtitle, backup=backup_folder, changes=len(changes),
+        guard_fix=bool(proposal), confidence=outcome["confidence"])
+    return outcome
+
+
+def manual_outcome(video, subtitle, previous_cues, decision, reason, scale, parts):
+    cues = parse_subtitle(subtitle)["cues"]
+    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    previous = measure(previous_cues, reference) if reference else None
+    measured = measure(cues, reference) if reference else None
+    outcome = {"decision": decision, "reference": reference["kind"] if reference else "", "before": previous or {}, "after": measured or {},
+               "weak_minutes": (measured or {}).get("weak_minutes", []), "confidence": (measured or {}).get("confidence", 0),
+               "confidence_band": (measured or {}).get("confidence_band", "none"), "reason": reason,
+               "changes": {"scale": scale, "lines": len(cues), "parts": parts}}
+    report(subtitle, "manual", outcome)
     return outcome
 
 

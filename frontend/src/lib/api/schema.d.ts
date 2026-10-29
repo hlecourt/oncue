@@ -246,6 +246,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subtitles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Subtitles */
+        get: operations["listSubtitles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subtitles/{subtitle_id}": {
         parameters: {
             query?: never;
@@ -444,6 +461,23 @@ export interface paths {
         put?: never;
         /** Restore */
         post: operations["restoreVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subtitles/{subtitle_id}/retime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retime */
+        post: operations["retimeLines"];
         delete?: never;
         options?: never;
         head?: never;
@@ -710,6 +744,15 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** LineShift */
+        LineShift: {
+            /** First */
+            first: number;
+            /** Last */
+            last: number;
+            /** Offset */
+            offset: number;
+        };
         /** Lines */
         Lines: {
             /** Lines */
@@ -771,6 +814,15 @@ export interface components {
         Restore: {
             /** Saved */
             saved: string;
+            /** Version */
+            version: string;
+        };
+        /** Retime */
+        Retime: {
+            /** Changes */
+            changes: components["schemas"]["LineShift"][];
+            /** Use Proposal */
+            use_proposal: boolean;
             /** Version */
             version: string;
         };
@@ -883,6 +935,17 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** Sibling */
+        Sibling: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Tone */
+            tone: string;
+            /** Words */
+            words: string;
+        };
         /** Status */
         Status: {
             /** Confidence */
@@ -923,6 +986,8 @@ export interface components {
             reference: string;
             /** Scale */
             scale: number;
+            /** Siblings */
+            siblings: components["schemas"]["Sibling"][];
             /** Tone */
             tone: string;
             /** Version */
@@ -931,6 +996,32 @@ export interface components {
             versions: components["schemas"]["Version"][];
             /** Video */
             video: string | null;
+            /** Words */
+            words: string;
+        };
+        /** SubtitleList */
+        SubtitleList: {
+            /** Rows */
+            rows: components["schemas"]["SubtitleRow"][];
+            /** Total */
+            total: number;
+        };
+        /** SubtitleRow */
+        SubtitleRow: {
+            /** Band */
+            band: string;
+            /** Checked */
+            checked: string;
+            /** Confidence */
+            confidence: number | null;
+            /** Folder */
+            folder: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Tone */
+            tone: string;
             /** Words */
             words: string;
         };
@@ -993,6 +1084,7 @@ export interface operations {
                 result?: string | null;
                 before?: number | null;
                 limit?: number;
+                subtitle?: string | null;
             };
             header?: never;
             path?: never;
@@ -1460,6 +1552,39 @@ export interface operations {
             };
         };
     };
+    listSubtitles: {
+        parameters: {
+            query?: {
+                q?: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubtitleList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     getSubtitle: {
         parameters: {
             query?: never;
@@ -1823,6 +1948,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Restore"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retimeLines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subtitle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Retime"];
             };
         };
         responses: {
