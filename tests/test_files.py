@@ -100,3 +100,18 @@ def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkey
     outcome = evaluate_and_fix("/movie.mkv", str(subtitle), True)
     assert outcome["decision"] == "unverified" and "changed during the check" in outcome["reason"]
     assert "LINE 1" in subtitle.read_text()
+
+
+
+def test_a_same_size_change_with_the_mtime_put_back_is_still_seen(tmp_path):
+    import time
+
+    from subtitle_guard.storage import file_signature
+    subtitle = tmp_path / "movie.fr.srt"
+    subtitle.write_text(SRT)
+    before = os.stat(subtitle)
+    signature = file_signature(str(subtitle))
+    time.sleep(0.01)
+    subtitle.write_text(SRT.replace("line 1\n", "LINE 1\n", 1))
+    os.utime(subtitle, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert os.stat(subtitle).st_size == before.st_size and file_signature(str(subtitle)) != signature

@@ -20,7 +20,7 @@ def state_path(*parts):
 
 def file_signature(path):
     status = os.stat(path)
-    return f"{status.st_size}:{status.st_mtime_ns}"
+    return f"{status.st_size}:{status.st_mtime_ns}:{status.st_ino}:{status.st_ctime_ns}"
 
 
 def backup_path(subtitle):

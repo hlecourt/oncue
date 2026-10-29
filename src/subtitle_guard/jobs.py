@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Persistent job queue in SQLite, shared by the Bazarr hook, the workers and the web UI."""
 
+import fcntl
 import json
 import os
 import sqlite3
@@ -153,9 +154,12 @@ def connect():
     connection.row_factory = sqlite3.Row
     connection.execute("pragma busy_timeout = 30000")
     if database not in PREPARED:
-        connection.execute("pragma journal_mode = wal")
-        for statement in SCHEMA:
-            connection.execute(statement)
+        # switching to WAL fails at once instead of waiting when another process does it at the same time
+        with open(database + ".prepare.lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            connection.execute("pragma journal_mode = wal")
+            for statement in SCHEMA:
+                connection.execute(statement)
         PREPARED.add(database)
     return connection
 

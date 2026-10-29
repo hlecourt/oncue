@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
+import subprocess
+import sys
 
 from subtitle_guard import reports, storage
 
@@ -53,24 +55,16 @@ def test_a_corrupt_state_file_is_set_aside_and_logged(tmp_path):
     assert logs.recent_events()[0]["event"] == "state.corrupt"
 
 
-def count_rows_in_child(state_directory, queue):
-    storage.STATE_DIRECTORY = state_directory
-    queue.put(len(reports.report_history()))
-
-
 def test_processes_starting_together_import_the_old_history_exactly_once(tmp_path):
-    import multiprocessing
     os.makedirs(storage.STATE_DIRECTORY, exist_ok=True)
     row = "2026-10-27T10:00:00\tkept\teng-text\t0.9\t0.9\t0.1\tscan\t/media/Ep{number}.fr.srt\n"
     with open(storage.state_path("report.tsv"), "w") as handle:
         handle.write("".join(row.format(number=number) for number in range(3000)))
-    queue = multiprocessing.Queue()
-    children = [multiprocessing.Process(target=count_rows_in_child, args=(storage.STATE_DIRECTORY, queue)) for _ in range(4)]
-    for child in children:
-        child.start()
-    for child in children:
-        child.join(timeout=60)
-    assert sorted(queue.get() for _ in children) == [3000] * 4
+    environment = {**os.environ, "SUBTITLE_GUARD_STATE": storage.STATE_DIRECTORY}
+    script = "from subtitle_guard import reports; print(len(reports.report_history()))"
+    children = [subprocess.Popen([sys.executable, "-c", script], env=environment, stdout=subprocess.PIPE, text=True) for _ in range(4)]
+    counts = [int(child.communicate(timeout=60)[0]) for child in children]
+    assert counts == [3000] * 4
     assert len(reports.report_history()) == 3000
 
 

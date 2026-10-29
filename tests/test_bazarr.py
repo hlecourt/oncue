@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import io
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -127,3 +128,33 @@ def test_an_https_bazarr_never_follows_a_downgrade_to_http():
     request = urllib.request.Request("https://bazarr:6767/api/movies", headers={"X-API-KEY": "key"})
     with pytest.raises(urllib.error.HTTPError):
         handler.redirect_request(request, io.BytesIO(), 302, "Found", {}, "http://bazarr:6767/api/movies")
+
+
+def test_a_series_scan_queues_each_subtitle_with_its_neighbour_episodes(monkeypatch, capsys):
+    episodes = [{"season": 1, "episode": number, "path": f"/media/Show/S01E0{number}.mkv",
+                 "subtitles": [{"path": f"/media/Show/S01E0{number}.fr.srt", "code2": "fr"}, {"path": None, "code2": "en"}]} for number in (2, 1, 3)]
+    monkeypatch.setattr(bazarr, "bazarr_get", lambda path: {"data": episodes})
+    assert bazarr.scan_series(7, True, queue=True) == 0
+    queued = [job["arguments"] for job in reversed(jobs.recent())]
+    assert [os.path.basename(item["subtitle"]) for item in queued] == ["S01E01.fr.srt", "S01E02.fr.srt", "S01E03.fr.srt"]
+    assert [label for label, _ in queued[1]["neighbours"]] == ["S01E01", "S01E03"] and all(item["apply"] for item in queued)
+    assert bazarr.series_neighbours(7, "/media/Show/S01E02.mkv") == [tuple(pair) for pair in queued[1]["neighbours"]]
+    assert "S01E01 fr: queued job" in capsys.readouterr().out
+
+
+def test_a_movie_scan_reports_each_result_and_goes_on_after_an_error(monkeypatch, capsys):
+    from subtitle_guard.errors import ProbeError
+    from subtitle_guard.reports import report_history
+    movies = [{"title": "Broken", "path": "/media/Broken.mkv", "subtitles": [{"path": "/media/Broken.fr.srt", "code2": "fr"}]},
+              {"title": "Fine", "path": "/media/Fine.mkv", "subtitles": [{"path": "/media/Fine.fr.srt", "code2": "fr"}]}]
+    monkeypatch.setattr(bazarr, "bazarr_get", lambda path: {"data": movies})
+
+    def evaluate(video, subtitle, apply, neighbours):
+        if "Broken" in video:
+            raise ProbeError("Invalid data found when processing input")
+        return {"decision": "kept", "reason": "in sync"}
+    monkeypatch.setattr(bazarr, "evaluate_and_fix", evaluate)
+    assert bazarr.scan_movies(False) == 0
+    printed = capsys.readouterr().out
+    assert "Broken fr: error Invalid data" in printed and "Fine fr: subtitle-guard: kept" in printed
+    assert [row["subtitle"] for row in report_history()] == ["/media/Fine.fr.srt"]

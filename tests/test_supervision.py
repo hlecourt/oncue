@@ -2,7 +2,10 @@
 import json
 import os
 import signal
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 from subtitle_guard import heartbeats, logs, storage, worker
 
@@ -72,3 +75,27 @@ def test_a_timed_out_tool_is_killed_with_its_children(tmp_path):
     time.sleep(2.5)
     assert not marker.exists() and not tools.ACTIVE_GROUPS
     subprocess.run(["true"], check=True)
+
+
+def test_a_crashed_role_is_restarted_and_a_stop_ends_every_role(tmp_path):
+    marker = str(tmp_path / "role")
+    script = ("import sys; from subtitle_guard import worker; import roles; worker.SUPERVISION_SECONDS = 0.2; "
+              "sys.exit(worker.supervise({'worker-1': (roles.crash_once_then_wait, (sys.argv[1],))}))")
+    environment = {**os.environ, "SUBTITLE_GUARD_STATE": str(tmp_path / "state"), "PYTHONPATH": os.path.dirname(__file__)}
+    supervisor = subprocess.Popen([sys.executable, "-c", script, marker], env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + 20
+    while not os.path.exists(marker + ".restarted") and time.time() < deadline:
+        time.sleep(0.1)
+    assert os.path.exists(marker + ".restarted"), "the crashed role was not restarted"
+    restarted = int(Path(marker + ".restarted").read_text())
+    supervisor.send_signal(signal.SIGTERM)
+    assert supervisor.wait(timeout=20) == 0
+    time.sleep(0.2)
+    try:
+        os.kill(restarted, 0)
+        alive = True
+    except ProcessLookupError:
+        alive = False
+    assert not alive and not os.path.exists(tmp_path / "state" / "supervisor.json")
+    events = [json.loads(line)["event"] for line in (tmp_path / "state" / "subtitle-guard.log").read_text().splitlines()]
+    assert "supervisor.role-restarted" in events and "supervisor.stopped" in events
