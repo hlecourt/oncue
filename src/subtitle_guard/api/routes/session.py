@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from ...logs import log
-from ...web.auth import LOCKOUT_SECONDS, SESSION_SECONDS, SESSIONS, locked_out, open_session, record_failure, verify
+from ..auth import LOCKOUT_SECONDS, SESSION_SECONDS, SESSIONS, locked_out, open_session, record_failure, verify
 from ..schemas import Credentials, Problem, SessionState
 from ..security import CSRF_COOKIE, SESSION_COOKIE, current_session, new_csrf_token, require_csrf
 

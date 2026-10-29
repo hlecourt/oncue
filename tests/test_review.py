@@ -128,3 +128,20 @@ def test_each_moment_pairs_the_video_line_with_the_subtitle_line_that_belongs_to
     assert len(paired) >= 0.9 * len([moment for moment in moments if moment["video"]])
     assert all(moment["video"].split()[-1] == moment["subtitle"].split()[-1] for moment in paired)
     assert sum(moment["shift"] < -2.5 for moment in paired) >= 0.8 * len(paired)
+
+
+def test_a_symlinked_video_or_one_outside_the_roots_is_never_used(tmp_path, monkeypatch):
+    from subtitle_guard import files
+    library, outside = tmp_path / "library", tmp_path / "outside"
+    library.mkdir()
+    outside.mkdir()
+    (outside / "Movie.mkv").write_bytes(b"v")
+    (library / "Movie.mkv").symlink_to(outside / "Movie.mkv")
+    (library / "Movie.fr.srt").write_text("x")
+    assert review.video_for(str(library / "Movie.fr.srt")) is None
+    (library / "Movie.mkv").unlink()
+    (library / "Movie.mkv").write_bytes(b"v")
+    assert review.video_for(str(library / "Movie.fr.srt")) == str(library / "Movie.mkv")
+    monkeypatch.setattr(files, "ROOTS", [str(outside.resolve())])
+    assert review.video_for(str(library / "Movie.fr.srt")) is None
+    assert os.path.exists(library / "Movie.mkv")

@@ -115,3 +115,10 @@ def test_the_system_page_and_the_backup_clean_up(client, tmp_path, monkeypatch):
     assert set(view["checks"]) >= {"ffmpeg", "ffprobe", "ffsubsync", "bazarr"} and view["mode"] == "report" and view["backups_bytes"] > 0
     answer = client.post("/api/system/backups/clean-up").json()
     assert answer["removed"] == 4 and len(storage.backup_folders(str(kept))) == 2 and storage.backup_folders(str(gone)) == []
+
+
+def test_a_failing_check_shows_the_error_itself_not_the_traceback(client, monkeypatch):
+    from subtitle_guard.api.routes import system
+    failing = {"ok": False, "error": "Traceback (most recent call last):\n  File \"<string>\", line 1\nModuleNotFoundError: No module named 'ffsubsync'\n"}
+    monkeypatch.setattr(system, "health_checks", lambda: {"ffsubsync": failing})
+    assert client.get("/api/system").json()["checks"]["ffsubsync"]["detail"] == "ModuleNotFoundError: No module named 'ffsubsync'"

@@ -8,7 +8,8 @@ How subtitle-guard protects its web UI, your files and Bazarr's key. To report a
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
   opening it. Five wrong attempts lock a client out for 10 minutes. Logging in opens a session that expires on the server after
   30 days (HttpOnly, SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`); logging out ends it.
-- Every action is a POST with a CSRF token, from the same origin; without a token only loopback host names are accepted. Pages
-  send a strict Content-Security-Policy and refuse to be framed. Requests are size- and time-limited.
+- Every change is a JSON request carrying the session's CSRF token in a header, or the API key, from the same origin; without a
+  login only loopback host names are accepted. Pages send a strict Content-Security-Policy with no inline script and refuse to be
+  framed. Requests are size- and time-limited, and proxy headers are ignored.
 - The UI only acts on subtitles the guard already checked, never through a symlink, and only under `SUBTITLE_GUARD_ROOTS` (or the
   watched folders) when set.
