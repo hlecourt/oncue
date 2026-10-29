@@ -23,7 +23,7 @@ from .alignment import (
     weak_minutes,
     wrong_end_share,
 )
-from .bazarr import request_another
+from .bazarr import RETRY_STAGE, file_hash, request_another
 from .confidence import confidence
 from .errors import MatroskaError, ToolError, UnsafePathError
 from .files import restore_version, save_version, subtitle_lock
@@ -35,7 +35,7 @@ from .matroska import matroska_texts
 from .outcome import DECISION
 from .reference import load_reference
 from .reports import latest_reports, needs_review, report
-from .state import load_state, save_state
+from .state import load_state, update_state
 from .storage import (
     backup_folders,
     backup_path,
@@ -311,9 +311,10 @@ def ask_for_another(video, subtitle):
     last = next((attempt for attempt in reversed(state.get("attempts", [])) if attempt.get("media_id") and attempt.get("provider")), None)
     if last is None:
         return False
-    state["pending_retry"] = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
-                              "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language")}
-    save_state(video, subtitle, state)
+    pending = {"media_type": "series" if last.get("series_id") else "movie", "media_id": last["media_id"], "series_id": last.get("series_id"),
+               "subtitle": subtitle, "provider": last["provider"], "subtitle_id": last["subtitle_id"], "language": last.get("language"),
+               "content_hash": file_hash(subtitle), "stage": RETRY_STAGE["requested"]}
+    update_state(video, subtitle, lambda current: current.update(pending_retry=pending))
     request_another(video, subtitle, queued=bool(worker_health()))
     log("review.replacement-requested", f"replacement requested provider={last['provider']} id={last['subtitle_id']}", subtitle=subtitle, provider=last["provider"])
     return True

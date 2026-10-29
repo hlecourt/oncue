@@ -18,13 +18,12 @@ from .confidence import confidence
 from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
 from .files import save_version, subtitle_lock
 from .logs import LEVEL, log
-from .outcome import DECISION, WORRYING_DECISIONS
+from .outcome import CHANGED_REASON, DECISION, WORRYING_DECISIONS
 from .reference import load_reference
 from .storage import backup_path, file_signature
 from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
 
 MAX_CHECKED_CUES = 20000
-CHANGED_REASON = "the subtitle changed during the check, it was left as it is and will be checked again"
 
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):

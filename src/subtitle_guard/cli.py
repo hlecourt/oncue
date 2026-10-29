@@ -44,7 +44,7 @@ from .bazarr import (
     scan_series,
     try_another_subtitle,
 )
-from .errors import ConfigError
+from .errors import ConfigError, SubtitleGuardError
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
@@ -152,7 +152,7 @@ def hook(arguments, queue):
     log("bazarr.hook-received", f"post-processing hook lang={fields['language']} provider={fields['provider']} id={fields['subtitle_id']} "
         f"mode={'queued' if queue else 'inline'}", **fields)
     if queue:
-        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': file_hash(fields['subtitle']) if os.path.isfile(fields['subtitle']) else None})}")
+        print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': received_hash(fields['subtitle'])})}")
         return 0
     print(describe(handle_download(*arguments)))
     return 0
@@ -179,6 +179,13 @@ def print_log(count, problems_only):
         subtitle = f"  [{os.path.basename(event['subtitle'])}]" if event.get("subtitle") else ""
         print(f"{event['time']}  {event_level(event).upper():7s} {event.get('source', ''):10s} {event['event']:28s} {event_message(event)}{subtitle}")
     return 0
+
+
+def received_hash(subtitle):
+    try:
+        return file_hash(subtitle)
+    except (OSError, SubtitleGuardError):
+        return None
 
 
 def lower_io_priority():

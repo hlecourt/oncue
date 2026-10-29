@@ -58,8 +58,14 @@ class Opener:
 class Answer:
     status = 200
 
-    def read(self):
+    def read(self, *size):
         return b'{"data": []}'
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *details):
+        return False
 
 
 def test_every_bazarr_request_is_logged_without_the_key(monkeypatch):
