@@ -23,8 +23,13 @@ where `serve` copies the package at every start when `SUBTITLE_GUARD_HOOK_DIR` i
 always matches the running version. Without Docker, point `PYTHONPATH` at a clone's `src` folder instead. Without `--queue`,
 the hook checks the subtitle inline before Bazarr goes on.
 
-Turn off Bazarr's own audio sync (`use_subsync`): the guard falls back to ffsubsync by itself for videos without any embedded
-track, and marks those results as not verified.
+Turn off Bazarr's own audio sync (`use_subsync`): Bazarr runs it before the post-processing command, so it rewrites the file
+without any confidence check and the guard never sees the subtitle as downloaded. The guard falls back to ffsubsync by itself
+for videos without any embedded track, and marks those results as not verified.
+
+Leave Bazarr's post-processing threshold off (`use_postprocessing_threshold`, and the movie one): when it is on, Bazarr runs the
+command only for subtitles scored below it, so the best-scored downloads are never checked. Bazarr's score rates how well the
+release name matches, not the timing.
 
 To check that it works, download a subtitle from Bazarr and look at the Log page: you should see `bazarr.hook-received`, then
 `job.started` and `guard.checked` for that file.
