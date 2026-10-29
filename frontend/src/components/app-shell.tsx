@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, Outlet, useMatches } from "@tanstack/react-router"
-import { ActivityIcon, FilesIcon, HistoryIcon, LanguagesIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
+import { ActivityIcon, ChartNoAxesColumnIcon, FilesIcon, HistoryIcon, LanguagesIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CommandMenu } from "@/components/command-menu"
@@ -30,6 +30,7 @@ import { chooseLocale, LOCALES, useLocale, useT } from "@/lib/i18n"
 import { chooseTheme, type Theme, useTheme } from "@/lib/theme"
 
 const PAGES = [
+  { to: "/dashboard", label: "Dashboard", icon: ChartNoAxesColumnIcon },
   { to: "/", label: "Review", icon: ListChecksIcon },
   { to: "/subtitles", label: "Subtitles", icon: FilesIcon },
   { to: "/history", label: "History", icon: HistoryIcon },

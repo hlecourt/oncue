@@ -38,6 +38,7 @@ function Gate() {
 const root = createRootRoute({ component: Gate })
 const routes = [
   createRoute({ getParentRoute: () => root, path: "/", component: ReviewPage, staticData: { title: "Review" } }),
+  createRoute({ getParentRoute: () => root, path: "/dashboard", component: lazyRouteComponent(() => import("@/pages/dashboard"), "DashboardPage"), staticData: { title: "Dashboard" } }),
   createRoute({ getParentRoute: () => root, path: "/subtitles", component: lazyRouteComponent(() => import("@/pages/subtitles"), "SubtitlesPage"), staticData: { title: "Subtitles" } }),
   createRoute({ getParentRoute: () => root, path: "/subtitles/$subtitleId", component: lazyRouteComponent(() => import("@/pages/subtitle"), "SubtitlePage"), staticData: { title: "Subtitle", editor: true } }),
   createRoute({ getParentRoute: () => root, path: "/history", component: lazyRouteComponent(() => import("@/pages/history"), "HistoryPage"), staticData: { title: "History" } }),

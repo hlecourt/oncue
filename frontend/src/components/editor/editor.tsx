@@ -20,7 +20,7 @@ import { STATUS_KEY } from "@/hooks/use-status"
 import { ApiError, api, mediaUrl, type Schemas, unwrap } from "@/lib/api/client"
 import { clock } from "@/lib/format"
 import { type Locale, useLocale, useT } from "@/lib/i18n"
-import { type Change, lineOffsets, type Scope, scopeRange, segments } from "@/lib/retime"
+import { type Change, heldLines, lineOffsets, type Move, openRuns, type Scope, scopeRange, segments } from "@/lib/retime"
 import { REVIEW_KEY } from "@/pages/review"
 
 type Detail = Schemas["SubtitleDetail"]
@@ -33,7 +33,7 @@ const HEAR_BEFORE_SECONDS = 3
 const VIDEO_TEXT_SECONDS = 1.5
 const SKIP_SECONDS = 5
 const KEYS: [string, string][] = [["Space", "Play or pause"], ["A", "The chosen line starts at the playhead"], ["R", "Hear 3 s before the line"],
-  ["Left / Right", "0.1 s earlier or later, Shift for 1 s"], ["J / K", "Next or previous line"], ["1 / 2 / 3", "All lines, from this line, selected lines"],
+  ["Left / Right", "0.1 s earlier or later, Shift for 1 s"], ["J / K, Down / Up", "Next or previous line"], ["1 / 2 / 3", "All lines, from this line, selected lines"],
   ["Ctrl Z", "Undo the last change"], ["Ctrl S", "Save"], ["N", "Next in Review"], ["?", "This help"]]
 
 type Props = { detail: Detail; lines: Lines; actions: ReactNode; onNext: () => void; onRestore: (version: Schemas["Version"]) => void }
@@ -46,7 +46,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
   const wide = useWide()
   const hasGuardFix = Boolean(lines.proposal)
   const [guardOn, setGuardOn] = useState(hasGuardFix)
-  const [history, setHistory] = useState<Change[]>([])
+  const [history, setHistory] = useState<Move[]>([])
   const [scope, setScope] = useState<Scope>("all")
   const [current, setCurrent] = useState(0)
   const [selection, setSelection] = useState<[number, number] | null>(null)
@@ -108,9 +108,16 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     },
   })
 
-  const move = (offset: number, range = scopeRange(scope, current, selection, shown.length)) => {
+  const move = (offset: number, target?: [number, number]) => {
     const rounded = Math.round(offset * 100) / 100
-    if (rounded !== 0) setHistory((previous) => [...previous, { first: range[0], last: range[1], offset: rounded }])
+    if (rounded === 0) return
+    const held = target !== undefined || scope === "selected"
+    const range = target ?? scopeRange(scope, current, selection, shown.length)
+    const runs = held ? [range] : openRuns(range, heldLines(shown.length, history))
+    const skipped = range[1] - range[0] + 1 - runs.reduce((sum, [first, last]) => sum + last - first + 1, 0)
+    if (skipped > 0) toast(skipped === 1 ? t("1 line placed by hand stays where it is") : t("{count} lines placed by hand stay where they are", { count: skipped }))
+    const group = (history.at(-1)?.group ?? 0) + 1
+    setHistory((previous) => [...previous, ...runs.map(([first, last]) => ({ first, last, offset: rounded, group, held }))])
   }
   const seek = (seconds: number) => {
     if (audio.current) audio.current.currentTime = Math.max(0, Math.min(duration, seconds))
@@ -153,11 +160,11 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]")) return
     const command = event.ctrlKey || event.metaKey
     const actions: Record<string, () => void> = {
-      " ": play, a: anchor, r: hear, j: () => step(1), k: () => step(-1), n: onNext, "?": () => setHelping((value) => !value),
+      " ": play, a: anchor, r: hear, j: () => step(1), k: () => step(-1), ArrowDown: () => step(1), ArrowUp: () => step(-1), n: onNext, "?": () => setHelping((value) => !value),
       "1": () => setScope("all"), "2": () => setScope("from"), "3": () => setScope("selected"),
       ArrowLeft: () => move(event.shiftKey ? -1 : -0.1), ArrowRight: () => move(event.shiftKey ? 1 : 0.1),
     }
-    if (command && event.key.toLowerCase() === "z") actions.undo = () => setHistory((previous) => previous.slice(0, -1))
+    if (command && event.key.toLowerCase() === "z") actions.undo = () => setHistory((previous) => previous.filter((entry) => entry.group !== previous.at(-1)?.group))
     if (command && event.key.toLowerCase() === "s") actions.save = () => changeCount > 0 && !negative && save.mutate()
     const name = command ? { z: "undo", s: "save" }[event.key.toLowerCase()] : event.key.length === 1 ? event.key.toLowerCase() : event.key
     const action = event.altKey || !name ? undefined : actions[name]
@@ -329,7 +336,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
         </section>
 
         <aside className="flex min-h-[420px] flex-col lg:min-h-0 lg:border-l lg:[grid-area:panel]" aria-label={t("Lines and changes")}>
-          <SidePanel tab={tab} onTab={setTab} lines={shown} videoText={videoText} moves={moves} current={current} selection={selection} following={playing}
+          <SidePanel tab={tab} onTab={setTab} lines={shown} videoText={videoText} moves={moves} current={current} selection={selection}
             onPick={pick} changeCount={changeCount} changes={pending}
             guard={hasGuardFix ? { confidence: detail.proposal?.confidence ?? null, parts: detail.parts, on: guardOn } : null} onGuard={setGuardOn} onPart={choosePart}
             onRemove={(change) => move(-change.offset, [change.first, change.last])} subtitleId={detail.id} versions={detail.versions} onRestore={onRestore} />

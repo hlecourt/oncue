@@ -23,7 +23,6 @@ type Props = {
   moves: { amount: number; byHand: boolean }[]
   current: number
   selection: [number, number] | null
-  following: boolean
   onPick: (index: number, extend: boolean) => void
   guard: { confidence: number | null; parts: Schemas["Part"][]; on: boolean } | null
   onGuard: (on: boolean) => void
@@ -65,14 +64,14 @@ function PanelTab({ value, children }: { value: string; children: React.ReactNod
   )
 }
 
-function Script({ lines, videoText, moves, current, selection, following, onPick }: Props) {
+function Script({ lines, videoText, moves, current, selection, onPick }: Props) {
   const t = useT()
   const scroller = useRef<HTMLDivElement>(null)
   const virtual = useVirtualizer({ count: lines.length, getScrollElement: () => scroller.current, estimateSize: () => ROW_ESTIMATE, overscan: 10 })
 
   useEffect(() => {
-    if (following && current >= 0) virtual.scrollToIndex(current, { align: "center" })
-  }, [current, following, virtual])
+    if (current >= 0) virtual.scrollToIndex(current, { align: "center" })
+  }, [current, virtual])
 
   return (
     <div ref={scroller} className="h-full overflow-y-auto" tabIndex={-1}>

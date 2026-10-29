@@ -32,9 +32,9 @@ def report(subtitle, provider, outcome, applied=True):
     values = (now(), subtitle, provider, outcome["decision"], outcome.get("reference", ""), text(before.get("matched")), text(after.get("matched")),
               ",".join(str(minute) for minute in outcome.get("weak_minutes", [])), outcome.get("matches", "") or outcome.get("reason", ""),
               text(outcome.get("confidence")), outcome.get("confidence_band", ""), json.dumps(outcome["changes"]) if outcome.get("changes") else "",
-              int(applied))
+              int(applied), outcome.get("seconds"))
     with closing(connect()) as connection:
-        connection.execute(f"insert into reports ({', '.join(COLUMNS)}) values ({', '.join('?' * len(COLUMNS))})", values)
+        connection.execute(f"insert into reports ({', '.join(COLUMNS)}, seconds) values ({', '.join('?' * (len(COLUMNS) + 1))})", values)
 
 
 def latest_reports():

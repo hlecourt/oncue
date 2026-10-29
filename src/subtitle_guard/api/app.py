@@ -16,7 +16,7 @@ from ..logs import log
 from .auth import configure
 from .front import add_front
 from .i18n import tr
-from .routes import activity, commands, media, review, session, settings, status, subtitles, system
+from .routes import activity, commands, media, review, session, settings, stats, status, subtitles, system
 from .security import SECURITY_HEADERS, guard, new_csrf_token
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
@@ -36,7 +36,7 @@ def create_app(host=HOST):
     app.middleware("http")(guard)
     app.add_exception_handler(HTTPException, http_problem)
     app.add_exception_handler(RequestValidationError, invalid_request)
-    for router in (session.router, review.router, subtitles.router, commands.router, activity.router, settings.router, system.router, media.router):
+    for router in (session.router, review.router, subtitles.router, commands.router, activity.router, settings.router, system.router, stats.router, media.router):
         app.include_router(router, prefix=f"{base}/api")
     app.include_router(status.router, prefix=base)
     for prefix in {"", base}:
