@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import os
+import subprocess
 import sys
 
 from subtitle_guard import cli, jobs
@@ -32,3 +34,14 @@ def test_hook_queue_flag_works_without_the_environment(monkeypatch):
     assert cli.main() == 0
     assert jobs.recent()[0]["arguments"] == {"video": "/m.mkv", "subtitle": "/m.fr.srt", "language": "fr", "provider": "opensubtitlescom",
                                              "subtitle_id": "9", "media_id": "512", "content_hash": None}
+
+
+def test_serve_installs_the_hook_package_where_bazarr_can_run_it(tmp_path):
+    hook_folder = tmp_path / "hook"
+    cli.install_hook_package(str(hook_folder))
+    (hook_folder / "subtitle_guard" / "stale.py").write_text("old")
+    cli.install_hook_package(str(hook_folder))
+    assert not (hook_folder / "subtitle_guard" / "stale.py").exists() and sorted(os.listdir(hook_folder)) == ["subtitle_guard"]
+    result = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import subtitle_guard.bazarr, subtitle_guard; print(subtitle_guard.__file__)",
+                             str(hook_folder)], capture_output=True, text=True, check=True)
+    assert result.stdout.startswith(str(hook_folder))

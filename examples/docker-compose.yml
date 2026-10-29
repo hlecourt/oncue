@@ -14,6 +14,7 @@ services:
       SUBTITLE_GUARD_UI_PASSWORD: ${SUBTITLE_GUARD_UI_PASSWORD:-}   # empty: a password for admin is generated and printed once in the logs
       SUBTITLE_GUARD_ROOTS: /data/media                       # the UI only acts on subtitles under these folders
       SUBTITLE_GUARD_QUEUE: "1"                               # Bazarr hooks go through the queue and the workers
+      SUBTITLE_GUARD_HOOK_DIR: /config/subtitle-guard/hook    # serve copies the package here, where Bazarr's hook runs it
       BAZARR_URL: http://bazarr:6767    # Bazarr mode
       BAZARR_API_KEY: ${BAZARR_API_KEY}
       # SUBTITLE_GUARD_LIBRARY: /data/media/movies:/data/media/series   # standalone mode: watch these folders
@@ -29,4 +30,3 @@ services:
     volumes:
       - ./bazarr:/config
       - /mnt/media:/data
-      - ../src:/opt/subtitle-guard:ro   # the package, for the post-processing hook

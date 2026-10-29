@@ -12,8 +12,11 @@ permissions:
 
 jobs:
   analyze:
+    # code scanning is only available to private repositories with GitHub Advanced Security
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
       contents: read
       security-events: write
     strategy:

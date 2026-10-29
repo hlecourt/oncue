@@ -28,8 +28,9 @@ which cannot fix a different cut, and they sometimes report success on a wrong r
   Bazarr for another subtitle.
 
 Every change to a subtitle is made by one writer at a time, after a backup, atomically, and only if the file did not change
-during the check. Only the timing lines change: text, styles, encoding and line endings are kept. Commands are dry runs unless
-`--apply` is given.
+during the check. Only the timing lines change: text, styles, encoding and line endings are kept. `check`, the scans, `watch`
+and `serve` are dry runs unless `--apply` is given; the Bazarr `hook` always applies, since it runs on a subtitle Bazarr has
+just downloaded.
 
 ## Install
 
@@ -61,11 +62,13 @@ In Bazarr, Settings > Subtitles > Post-processing, turn on post-processing and u
 shell). It queues a check and returns at once; the workers do the work:
 
 ```
-/usr/bin/env PYTHONPATH=/opt/subtitle-guard /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
+/usr/bin/env PYTHONPATH=/config/subtitle-guard/hook /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
 ```
 
-`/lsiopy/bin/python` is the Python of the linuxserver.io Bazarr image, which has numpy; `/opt/subtitle-guard` is where the
-compose example mounts the package. Without `--queue`, the hook checks the subtitle inline before Bazarr goes on.
+`/lsiopy/bin/python` is the Python of the linuxserver.io Bazarr image, which has numpy. `/config/subtitle-guard/hook` is
+where `serve` copies the package at every start when `SUBTITLE_GUARD_HOOK_DIR` is set, as in the compose example, so the hook
+always matches the running version. Without Docker, point `PYTHONPATH` at a clone's `src` folder instead. Without `--queue`,
+the hook checks the subtitle inline before Bazarr goes on.
 
 Turn off Bazarr's own audio sync (`use_subsync`): the guard falls back to ffsubsync by itself for videos without any embedded
 track, and marks those results as not verified.
@@ -159,6 +162,7 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
+| `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
 | `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
 | `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only acts on subtitles under these folders |

@@ -24,7 +24,7 @@ Commands:
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
 SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, SUBTITLE_GUARD_LIBRARY,
-SUBTITLE_GUARD_ROOTS, SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_USER, SUBTITLE_GUARD_UI_PASSWORD, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
+SUBTITLE_GUARD_ROOTS, SUBTITLE_GUARD_HOOK_DIR (serve copies the package there for Bazarr's hook), SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_USER, SUBTITLE_GUARD_UI_PASSWORD, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
 """
 
 import getpass
@@ -33,6 +33,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from . import jobs
 from .bazarr import (
@@ -100,6 +101,8 @@ def main():
     if command == "serve":
         roles = {**worker_roles(workers), "web": (serve_ui, ())}
         roots = [root for root in os.environ.get("SUBTITLE_GUARD_LIBRARY", "").split(os.pathsep) if root]
+        if os.environ.get("SUBTITLE_GUARD_HOOK_DIR"):
+            install_hook_package(os.environ["SUBTITLE_GUARD_HOOK_DIR"])
         report_startup(command, workers=workers, ui_host=UI_HOST, ui_port=UI_PORT, roots=roots, applied=apply, queue=queue_enabled())
         if roots:
             roles["watch"] = (watch, (roots, apply))
@@ -191,3 +194,15 @@ def received_hash(subtitle):
 def lower_io_priority():
     if shutil.which("ionice"):
         subprocess.run(["ionice", "-c2", "-n7", "-p", str(os.getpid())], capture_output=True, check=False)
+
+
+def install_hook_package(folder):
+    target = os.path.join(folder, "subtitle_guard")
+    os.makedirs(folder, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".subtitle_guard.", dir=folder)
+    shutil.copytree(os.path.dirname(os.path.abspath(__file__)), os.path.join(staging, "subtitle_guard"), ignore=shutil.ignore_patterns("__pycache__"))
+    if os.path.exists(target):
+        os.rename(target, os.path.join(staging, "previous"))
+    os.rename(os.path.join(staging, "subtitle_guard"), target)
+    shutil.rmtree(staging)
+    log("service.hook-installed", f"package copied for the Bazarr hook into {folder}", folder=folder)
