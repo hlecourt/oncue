@@ -218,6 +218,46 @@
         "title": "Check",
         "type": "object"
       },
+      "CheckTime": {
+        "properties": {
+          "bins": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Bins",
+            "type": "array"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          },
+          "p95": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95"
+          }
+        },
+        "required": [
+          "median",
+          "p95",
+          "bins"
+        ],
+        "title": "CheckTime",
+        "type": "object"
+      },
       "CleanUp": {
         "properties": {
           "backups_bytes": {
@@ -289,6 +329,24 @@
           "password"
         ],
         "title": "Credentials",
+        "type": "object"
+      },
+      "DayCount": {
+        "properties": {
+          "checks": {
+            "title": "Checks",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "checks"
+        ],
+        "title": "DayCount",
         "type": "object"
       },
       "FixedValue": {
@@ -713,6 +771,43 @@
         "title": "LogEvent",
         "type": "object"
       },
+      "OffsetBin": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          }
+        },
+        "required": [
+          "low",
+          "high",
+          "count"
+        ],
+        "title": "OffsetBin",
+        "type": "object"
+      },
       "Part": {
         "properties": {
           "first": {
@@ -788,6 +883,118 @@
           "changes"
         ],
         "title": "ProposalSummary",
+        "type": "object"
+      },
+      "ProviderStats": {
+        "properties": {
+          "downloads": {
+            "title": "Downloads",
+            "type": "integer"
+          },
+          "in_sync": {
+            "title": "In Sync",
+            "type": "integer"
+          },
+          "median_offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Offset"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "review": {
+            "title": "Review",
+            "type": "integer"
+          },
+          "sure_fix": {
+            "title": "Sure Fix",
+            "type": "integer"
+          },
+          "unchecked": {
+            "title": "Unchecked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "downloads",
+          "in_sync",
+          "sure_fix",
+          "review",
+          "rejected",
+          "unchecked",
+          "median_offset"
+        ],
+        "title": "ProviderStats",
+        "type": "object"
+      },
+      "Records": {
+        "properties": {
+          "edits_by_hand": {
+            "title": "Edits By Hand",
+            "type": "integer"
+          },
+          "fastest_check": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fastest Check"
+          },
+          "largest_offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Offset"
+          },
+          "most_parts": {
+            "title": "Most Parts",
+            "type": "integer"
+          },
+          "replacements": {
+            "title": "Replacements",
+            "type": "integer"
+          },
+          "replacements_checked": {
+            "title": "Replacements Checked",
+            "type": "integer"
+          },
+          "replacements_in_sync": {
+            "title": "Replacements In Sync",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "largest_offset",
+          "most_parts",
+          "fastest_check",
+          "replacements",
+          "replacements_in_sync",
+          "replacements_checked",
+          "edits_by_hand"
+        ],
+        "title": "Records",
         "type": "object"
       },
       "Restore": {
@@ -916,6 +1123,73 @@
           "from_bazarr"
         ],
         "title": "ReviewItem",
+        "type": "object"
+      },
+      "RightNow": {
+        "properties": {
+          "audio_cache_bytes": {
+            "title": "Audio Cache Bytes",
+            "type": "integer"
+          },
+          "audio_cache_limit": {
+            "title": "Audio Cache Limit",
+            "type": "integer"
+          },
+          "backups_bytes": {
+            "title": "Backups Bytes",
+            "type": "integer"
+          },
+          "last_check": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Check"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "started": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started"
+          },
+          "workers": {
+            "title": "Workers",
+            "type": "integer"
+          },
+          "workers_expected": {
+            "title": "Workers Expected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "workers",
+          "workers_expected",
+          "last_check",
+          "audio_cache_bytes",
+          "audio_cache_limit",
+          "backups_bytes",
+          "started"
+        ],
+        "title": "RightNow",
         "type": "object"
       },
       "Scan": {
@@ -1194,6 +1468,132 @@
           "tone"
         ],
         "title": "Sibling",
+        "type": "object"
+      },
+      "StatsView": {
+        "properties": {
+          "check_time": {
+            "$ref": "#/components/schemas/CheckTime"
+          },
+          "checks": {
+            "title": "Checks",
+            "type": "integer"
+          },
+          "confidence": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Confidence",
+            "type": "array"
+          },
+          "fixed_on_their_own": {
+            "title": "Fixed On Their Own",
+            "type": "integer"
+          },
+          "found_not_written": {
+            "title": "Found Not Written",
+            "type": "integer"
+          },
+          "languages": {
+            "items": {
+              "$ref": "#/components/schemas/Tally"
+            },
+            "title": "Languages",
+            "type": "array"
+          },
+          "lines_realigned": {
+            "title": "Lines Realigned",
+            "type": "integer"
+          },
+          "median_offset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Offset"
+          },
+          "now": {
+            "$ref": "#/components/schemas/RightNow"
+          },
+          "offsets": {
+            "items": {
+              "$ref": "#/components/schemas/OffsetBin"
+            },
+            "title": "Offsets",
+            "type": "array"
+          },
+          "per_day": {
+            "items": {
+              "$ref": "#/components/schemas/DayCount"
+            },
+            "title": "Per Day",
+            "type": "array"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderStats"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "records": {
+            "$ref": "#/components/schemas/Records"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/Tally"
+            },
+            "title": "References",
+            "type": "array"
+          },
+          "speed_fixes": {
+            "items": {
+              "$ref": "#/components/schemas/Tally"
+            },
+            "title": "Speed Fixes",
+            "type": "array"
+          },
+          "subtitles": {
+            "title": "Subtitles",
+            "type": "integer"
+          },
+          "undone": {
+            "title": "Undone",
+            "type": "integer"
+          },
+          "weekly": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Weekly",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subtitles",
+          "checks",
+          "fixed_on_their_own",
+          "found_not_written",
+          "lines_realigned",
+          "median_offset",
+          "undone",
+          "per_day",
+          "weekly",
+          "confidence",
+          "offsets",
+          "providers",
+          "languages",
+          "references",
+          "speed_fixes",
+          "check_time",
+          "records",
+          "now"
+        ],
+        "title": "StatsView",
         "type": "object"
       },
       "Status": {
@@ -1484,6 +1884,24 @@
           "mode"
         ],
         "title": "SystemView",
+        "type": "object"
+      },
+      "Tally": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "count"
+        ],
+        "title": "Tally",
         "type": "object"
       },
       "ValidationError": {
@@ -2210,6 +2628,57 @@
         "summary": "New Api Key",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "operationId": "getStats",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stats",
+        "tags": [
+          "stats"
         ]
       }
     },

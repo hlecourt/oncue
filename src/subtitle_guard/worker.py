@@ -29,7 +29,7 @@ from .outcome import CHANGED_REASON, describe
 from .reports import needs_review, report
 from .review import diagnose
 from .scans import run_scan
-from .storage import state_path, write_json
+from .storage import now, state_path, write_json
 from .tools import kill_active_groups, kill_recorded_groups
 
 POLL_SECONDS = 2.0
@@ -56,7 +56,7 @@ def supervise(roles, roles_for=None):
     requeued, abandoned = jobs.recover_running(MAX_ATTEMPTS)
     log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} requeued_jobs={requeued} abandoned_jobs={abandoned}", roles=sorted(roles),
         requeued=requeued, abandoned=abandoned)
-    write_json(state_path("supervisor.json"), {"pid": os.getpid(), "workers": sorted(name for name in roles if name.startswith("worker-"))})
+    write_json(state_path("supervisor.json"), {"pid": os.getpid(), "started": now(), "workers": sorted(name for name in roles if name.startswith("worker-"))})
     os.environ[SUPERVISED_VARIABLE] = "1"
     processes = {name: start(*role) for name, role in roles.items()}
     for stop_signal in (signal.SIGTERM, signal.SIGINT):

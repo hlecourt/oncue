@@ -35,14 +35,15 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
     outcome, fix = examine(video, subtitle, apply, neighbours)
     score, band = confidence(outcome)
     outcome = settle(video, subtitle, {**outcome, "confidence": score, "confidence_band": band}, fix, apply)
-    message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {time.time() - started:.2f}s"
+    outcome["seconds"] = round(time.time() - started, 2)
+    message = (f"decision={outcome['decision']} confidence={score} band={band} reference={outcome.get('reference') or '-'} in {outcome['seconds']:.2f}s"
                + (f" matches={outcome['matches']}" if outcome.get("matches") else "") + ("" if apply else " dry-run"))
     level = LEVEL["warning"] if outcome["decision"] in WORRYING_DECISIONS else LEVEL["info"]
     log("guard.checked", message, level, video=video, subtitle=subtitle, applied=apply, decision=outcome["decision"], confidence=score, band=band,
         reference=outcome.get("reference"), reason=outcome.get("reason"), matches=outcome.get("matches"),
         weak_minutes=outcome.get("weak_minutes"), before=outcome.get("before"), after=outcome.get("after"), objective=outcome.get("objective"),
         null_objective=outcome.get("null_objective"), segments=outcome.get("segments"), unsupported_share=outcome.get("unsupported_share"),
-        changes=outcome.get("changes"), seconds=round(time.time() - started, 2))
+        changes=outcome.get("changes"), seconds=outcome["seconds"])
     return outcome
 
 

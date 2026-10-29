@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from "vitest"
 
-import { lineOffsets, scopeRange, segments } from "./retime"
+import { heldLines, lineOffsets, openRuns, scopeRange, segments } from "./retime"
 
 describe("lineOffsets", () => {
   it("adds every change to the lines it covers, to the hundredth", () => {
@@ -34,5 +34,18 @@ describe("scopeRange", () => {
     expect(scopeRange("from", 3, null, 10)).toEqual([3, 9])
     expect(scopeRange("selected", 3, [2, 5], 10)).toEqual([2, 5])
     expect(scopeRange("selected", 3, null, 10)).toEqual([3, 3])
+  })
+})
+
+describe("held lines", () => {
+  it("are the lines placed one by one that still move, so removing their segment frees them", () => {
+    const history = [{ first: 0, last: 9, offset: 1, group: 1, held: false }, { first: 3, last: 4, offset: 0.5, group: 2, held: true }]
+    expect(heldLines(10, history)).toEqual([false, false, false, true, true, false, false, false, false, false])
+    expect(heldLines(10, [...history, { first: 3, last: 4, offset: -1.5, group: 3, held: true }])).toEqual(new Array(10).fill(false))
+  })
+
+  it("are skipped by a move over several lines", () => {
+    expect(openRuns([0, 9], [false, false, false, true, true, false, false, false, false, true])).toEqual([[0, 2], [5, 8]])
+    expect(openRuns([3, 4], [false, false, false, true, true])).toEqual([])
   })
 })

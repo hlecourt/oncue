@@ -164,6 +164,8 @@ def connect():
             connection.execute("pragma journal_mode = wal")
             for statement in SCHEMA:
                 connection.execute(statement)
+            if "seconds" not in {column["name"] for column in connection.execute("pragma table_info(reports)")}:
+                connection.execute("alter table reports add column seconds real")
         PREPARED.add(database)
     return connection
 

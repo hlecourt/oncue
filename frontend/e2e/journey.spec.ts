@@ -19,7 +19,7 @@ test.describe.serial("from Review to a fixed subtitle", () => {
     test(`every page is accessible in the ${scheme} theme`, async ({ page }) => {
       const problems = await watchProblems(page)
       await page.emulateMedia({ colorScheme: scheme })
-      for (const [url, heading] of [["/", "Review"], ["/subtitles", "Subtitles"], ["/history", "History"], ["/log", "Log"], ["/system", "System"], ["/settings", "Settings"]]) {
+      for (const [url, heading] of [["/", "Review"], ["/dashboard", "Dashboard"], ["/subtitles", "Subtitles"], ["/history", "History"], ["/log", "Log"], ["/system", "System"], ["/settings", "Settings"]]) {
         await page.goto(url!)
         await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible()
         await expectAccessible(page)
