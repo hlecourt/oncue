@@ -9,7 +9,7 @@ from ..logs import (
     log_file,
     recent_events,
 )
-from ..reports import latest_reports, report_history
+from ..reports import decision_counts, latest_reports, report_history
 from .actions import known_subtitle
 from .context import DIAGNOSES, cached
 from .parts import (
@@ -93,12 +93,18 @@ def quick_fix(item):
 
 def history_page(query):
     latest = query.get("latest") == "1"
-    rows = sorted(cached("latest", latest_reports), key=lambda row: row["id"], reverse=True) if latest else report_history()
     group = query.get("result") if query.get("result") in HISTORY_GROUPS else None
+    decisions = HISTORY_GROUPS[group][1] if group else None
+    if latest:
+        rows = sorted(cached("latest", latest_reports), key=lambda row: row["id"], reverse=True)
+        counts = {decision: sum(row["decision"] == decision for row in rows) for decision in {row["decision"] for row in rows}}
+        shown = [row for row in rows if not decisions or row["decision"] in decisions][:HISTORY_LIMIT]
+    else:
+        counts = decision_counts()
+        shown = report_history(limit=HISTORY_LIMIT, decisions=decisions)
     keep = {key: value for key, value in (("latest", "1" if latest else None), ("result", group)) if value}
     views = [(None, "Every check", None), ("1", "Latest check of each subtitle", None)]
-    options = [(None, "All", len(rows))] + [(key, label, sum(row["decision"] in decisions for row in rows)) for key, (label, decisions) in HISTORY_GROUPS.items()]
-    shown = [row for row in rows if not group or row["decision"] in HISTORY_GROUPS[group][1]][:HISTORY_LIMIT]
+    options = [(None, "All", sum(counts.values()))] + [(key, label, sum(counts.get(decision, 0) for decision in decisions)) for key, (label, decisions) in HISTORY_GROUPS.items()]
     body = (message_box(query) + tasks_now() + "<h2>Checks</h2><p class=\"subtle words\">Every time the guard checked a subtitle, newest first: "
             "what started it, what it decided, how sure it was, and what it changed.</p>"
             + tab_links("/history", "latest", "1" if latest else None, views, keep) + tab_links("/history", "result", group, options, keep) + history_table(shown))

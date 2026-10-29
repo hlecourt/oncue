@@ -10,6 +10,7 @@ from contextlib import closing
 from .logs import log
 from .storage import now, state_path
 
+PREPARED = set()
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
 KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check"}
 SCHEMA = (
@@ -22,6 +23,8 @@ SCHEMA = (
     ("create table if not exists reports (id integer primary key, time text not null, subtitle text not null, provider text not null, decision text not null, "
      "reference text, matched_before text, matched text, weak_minutes text, note text, confidence text, band text, changes text, applied integer not null default 1)"),
     "create index if not exists reports_subtitle on reports (subtitle, id)",
+    "create index if not exists reports_decision on reports (decision, id)",
+    "create table if not exists migrations (name text primary key, applied text not null)",
 )
 
 
@@ -124,7 +127,9 @@ def accepted():
 
 
 def for_subtitle(path, limit=20):
-    return [item for item in recent(limit=1000) if item["arguments"].get("subtitle") == path][:limit]
+    with closing(connect()) as connection:
+        rows = connection.execute("select * from jobs where json_extract(arguments, '$.subtitle') = ? order by id desc limit ?", (path, limit)).fetchall()
+        return [as_job(row) for row in rows]
 
 
 def connect():
@@ -133,9 +138,11 @@ def connect():
     connection = sqlite3.connect(database, timeout=30, isolation_level=None)
     connection.row_factory = sqlite3.Row
     connection.execute("pragma busy_timeout = 30000")
-    connection.execute("pragma journal_mode = wal")
-    for statement in SCHEMA:
-        connection.execute(statement)
+    if database not in PREPARED:
+        connection.execute("pragma journal_mode = wal")
+        for statement in SCHEMA:
+            connection.execute(statement)
+        PREPARED.add(database)
     return connection
 
 
