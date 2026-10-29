@@ -12,10 +12,12 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
+import { useT } from "@/lib/i18n"
 
 const LEVEL_TONE: Record<string, string> = { error: "text-destructive", warning: "text-warning", debug: "text-muted-foreground" }
 
 export function LogPage() {
+  const t = useT()
   const [search, setSearch] = useState("")
   const [level, setLevel] = useState("all")
   const query = useDeferredValue(search)
@@ -27,18 +29,18 @@ export function LogPage() {
 
   return (
     <>
-      <PageHeader title="Log" description="The technical log, newest first. Open a line for its details." />
+      <PageHeader title={t("Log")} description={t("The technical log, newest first. Open a line for its details.")} />
       <div className="mb-3 flex flex-wrap gap-2">
-        <Input placeholder="Search a file, an event, a word" value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-80" aria-label="Search the log" />
+        <Input placeholder={t("Search a file, an event, a word")} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-80" aria-label={t("Search the log")} />
         <Select value={level} onValueChange={setLevel}>
-          <SelectTrigger size="sm" className="w-36" aria-label="Level"><SelectValue /></SelectTrigger>
+          <SelectTrigger size="sm" className="w-36" aria-label={t("Level")}><SelectValue /></SelectTrigger>
           <SelectContent>
-            {["all", "error", "warning", "info", "debug"].map((value) => <SelectItem key={value} value={value}>{value === "all" ? "Every level" : value}</SelectItem>)}
+            {["all", "error", "warning", "info", "debug"].map((value) => <SelectItem key={value} value={value}>{value === "all" ? t("Every level") : t(value)}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       {log.isPending && <Skeleton className="h-96 w-full" />}
-      {log.data?.length === 0 && <EmptyState icon={<ScrollTextIcon />} title={query || level !== "all" ? "No log entry matches" : "Nothing logged yet"} />}
+      {log.data?.length === 0 && <EmptyState icon={<ScrollTextIcon />} title={query || level !== "all" ? t("No log entry matches") : t("Nothing logged yet")} />}
       {log.data && log.data.length > 0 && (
         <div className="overflow-hidden rounded-lg border bg-card font-mono text-xs">
           {log.data.map((event, index) => <LogLine key={`${event.time}-${index}`} event={event} />)}
@@ -49,6 +51,7 @@ export function LogPage() {
 }
 
 function LogLine({ event }: { event: Schemas["LogEvent"] }) {
+  const t = useT()
   const details = JSON.stringify(event.details, null, 2)
   return (
     <Collapsible className="border-b last:border-b-0">
@@ -61,7 +64,7 @@ function LogLine({ event }: { event: Schemas["LogEvent"] }) {
       </CollapsibleTrigger>
       <CollapsibleContent className="px-3 pb-3">
         <div className="flex justify-end pb-1">
-          <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(details).then(() => toast.success("Copied."))}><CopyIcon />Copy</Button>
+          <Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(details).then(() => toast.success(t("Copied.")))}><CopyIcon />{t("Copy")}</Button>
         </div>
         <pre className="overflow-x-auto rounded-md border bg-background p-3">{details}</pre>
       </CollapsibleContent>

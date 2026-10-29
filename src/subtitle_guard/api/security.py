@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from ..configuration import AUTH_MODE
 from ..storage import state_path
 from .auth import LOOPBACK_HOSTS, session_for
+from .i18n import current_locale, locale_from, tr
 
 SESSION_COOKIE = "subtitle_guard_session"
 CSRF_HEADER = "X-CSRF-Token"
@@ -30,16 +31,17 @@ SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosnif
 
 
 async def guard(request, call_next):
+    current_locale.set(locale_from(request.headers.get("accept-language")))
     if request.url.path not in request.app.state.open_paths and not trusted_host(request):
-        return refusal(400, "unknown_host", "This host is not allowed.")
+        return refusal(400, "unknown_host", tr("This host is not allowed."))
     if request.method not in SAFE_METHODS:
         if not same_origin(request):
-            return refusal(403, "foreign_origin", "Requests from another site are refused.")
+            return refusal(403, "foreign_origin", tr("Requests from another site are refused."))
         if "transfer-encoding" in request.headers:
-            return refusal(411, "length_required", "Send the request with a Content-Length.")
+            return refusal(411, "length_required", tr("Send the request with a Content-Length."))
         length = request.headers.get("content-length", "0")
         if not (length.isascii() and length.isdigit()) or int(length) > MAX_BODY_BYTES:
-            return refusal(413, "too_large", "The request is too large.")
+            return refusal(413, "too_large", tr("The request is too large."))
     response = await call_next(request)
     for name, value in SECURITY_HEADERS.items():
         if name not in response.headers:
@@ -172,7 +174,7 @@ def require_user(request: Request):
     if valid_api_key(request):
         return
     if login_needed(request) and current_session(request) is None:
-        raise HTTPException(401, {"code": "login_required", "message": "Log in first."})
+        raise HTTPException(401, {"code": "login_required", "message": tr("Log in first.")})
 
 
 def require_csrf(request: Request):
@@ -180,10 +182,10 @@ def require_csrf(request: Request):
     if valid_api_key(request):
         return
     if not same_secret(request.headers.get(CSRF_HEADER, ""), expected_csrf(request)):
-        raise HTTPException(403, {"code": "csrf", "message": "The page expired, reload it and try again."})
+        raise HTTPException(403, {"code": "csrf", "message": tr("The page expired, reload it and try again.")})
     has_body = request.headers.get("content-length", "0") not in ("", "0")
     if has_body and request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
-        raise HTTPException(415, {"code": "json_only", "message": "Send JSON."})
+        raise HTTPException(415, {"code": "json_only", "message": tr("Send JSON.")})
 
 
 def new_csrf_token():

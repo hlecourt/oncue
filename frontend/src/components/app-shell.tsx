@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, Outlet, useMatches } from "@tanstack/react-router"
-import { ActivityIcon, FilesIcon, HistoryIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
+import { ActivityIcon, FilesIcon, HistoryIcon, LanguagesIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CommandMenu } from "@/components/command-menu"
@@ -26,6 +26,7 @@ import {
 import { SESSION_KEY, useSession } from "@/hooks/use-session"
 import { useStatus } from "@/hooks/use-status"
 import { api, unwrap } from "@/lib/api/client"
+import { chooseLocale, LOCALES, useLocale, useT } from "@/lib/i18n"
 import { chooseTheme, type Theme, useTheme } from "@/lib/theme"
 
 const PAGES = [
@@ -43,12 +44,13 @@ const THEMES: { value: Theme; label: string; icon: typeof SunIcon }[] = [
 ]
 
 export function AppShell() {
+  const t = useT()
   const status = useStatus()
   const session = useSession()
   const [searching, setSearching] = useState(false)
   const toReview = status.data?.to_review ?? 0
   const page = useMatches().at(-1)?.staticData
-  const title = page?.title ?? ""
+  const title = page?.title ? t(page.title) : ""
   const editor = Boolean(page?.editor)
   const [open, setOpen] = useState(true)
 
@@ -78,10 +80,10 @@ export function AppShell() {
             <SidebarMenu>
               {PAGES.map((page) => (
                 <SidebarMenuItem key={page.to}>
-                  <SidebarMenuButton asChild tooltip={page.label}>
+                  <SidebarMenuButton asChild tooltip={t(page.label)}>
                     <Link to={page.to} activeOptions={{ exact: page.to === "/" }} activeProps={{ "data-active": true, "aria-current": "page" }}>
                       <page.icon />
-                      <span>{page.label}</span>
+                      <span>{t(page.label)}</span>
                     </Link>
                   </SidebarMenuButton>
                   {page.to === "/" && toReview > 0 && <SidebarMenuBadge>{toReview}</SidebarMenuBadge>}
@@ -92,6 +94,7 @@ export function AppShell() {
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
+            <LanguageMenu />
             <ThemeMenu />
             {session.data?.user && <LogOut />}
           </SidebarMenu>
@@ -105,7 +108,7 @@ export function AppShell() {
           <span className="text-sm font-medium">{title}</span>
           <Button variant="outline" size="sm" className="ml-auto h-8 gap-2 text-muted-foreground" onClick={() => setSearching(true)}>
             <SearchIcon className="size-3.5" />
-            <span className="hidden sm:inline">Search</span>
+            <span className="hidden sm:inline">{t("Search")}</span>
             <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] sm:inline">Ctrl K</kbd>
           </Button>
         </header>}
@@ -118,23 +121,50 @@ export function AppShell() {
   )
 }
 
+function LanguageMenu() {
+  const t = useT()
+  const queryClient = useQueryClient()
+  const locale = useLocale()
+  return (
+    <SidebarMenuItem>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <SidebarMenuButton tooltip={t("Language")}>
+            <LanguagesIcon />
+            <span>{LOCALES.find((item) => item.value === locale)!.label}</span>
+          </SidebarMenuButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="end">
+          {LOCALES.map((item) => (
+            <DropdownMenuItem key={item.value} lang={item.tag} onSelect={() => {
+              chooseLocale(item.value)
+              queryClient.invalidateQueries()
+            }}>{item.label}</DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SidebarMenuItem>
+  )
+}
+
 function ThemeMenu() {
+  const t = useT()
   const theme = useTheme()
   const current = THEMES.find((item) => item.value === theme) ?? THEMES[2]!
   return (
     <SidebarMenuItem>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuButton tooltip="Theme">
+          <SidebarMenuButton tooltip={t("Theme")}>
             <current.icon />
-            <span>Theme: {current.label}</span>
+            <span>{t("Theme: {name}", { name: t(current.label) })}</span>
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="end">
           {THEMES.map((item) => (
             <DropdownMenuItem key={item.value} onSelect={() => chooseTheme(item.value)}>
               <item.icon />
-              {item.label}
+              {t(item.label)}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -144,6 +174,7 @@ function ThemeMenu() {
 }
 
 function LogOut() {
+  const t = useT()
   const queryClient = useQueryClient()
   const leave = useMutation({
     mutationFn: () => unwrap(api.DELETE("/api/session")),
@@ -151,9 +182,9 @@ function LogOut() {
   })
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton tooltip="Log out" onClick={() => leave.mutate()}>
+      <SidebarMenuButton tooltip={t("Log out")} onClick={() => leave.mutate()}>
         <LogOutIcon />
-        <span>Log out</span>
+        <span>{t("Log out")}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   )

@@ -15,6 +15,7 @@ from ..errors import ConfigError
 from ..logs import log
 from .auth import configure
 from .front import add_front
+from .i18n import tr
 from .routes import activity, commands, media, review, session, settings, status, subtitles, system
 from .security import SECURITY_HEADERS, guard, new_csrf_token
 
@@ -66,4 +67,4 @@ async def http_problem(request: Request, error: HTTPException):
 
 async def invalid_request(request: Request, error: RequestValidationError):
     fields = [".".join(str(part) for part in item["loc"][1:]) for item in error.errors()]
-    return JSONResponse({"code": "invalid_request", "message": f"Invalid field: {', '.join(fields) or 'body'}."}, status_code=422, headers=SECURITY_HEADERS)
+    return JSONResponse({"code": "invalid_request", "message": tr("Invalid field: {fields}.", fields=", ".join(fields) or "body")}, status_code=422, headers=SECURITY_HEADERS)
