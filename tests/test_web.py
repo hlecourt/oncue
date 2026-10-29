@@ -287,7 +287,8 @@ def test_every_page_escapes_a_hostile_file_name(server, tmp_path):
     hostile.write_text("x")
     reports.report(str(hostile), "<b>provider</b>", {"decision": "rejected", "reason": "<script>alert(1)</script>", "confidence": 10, "confidence_band": "low"})
     logs.log("guard.checked", "<x>", subtitle=str(hostile))
-    pages = ["/", "/review", "/history", "/history?latest=1", "/log", "/subtitle?" + urllib.parse.urlencode({"path": str(hostile)})]
+    pages = ["/", "/review", "/history", "/history?latest=1", "/log", "/subtitle?" + urllib.parse.urlencode({"path": str(hostile)}),
+             "/edit?" + urllib.parse.urlencode({"path": str(hostile)})]
     for page in pages:
         status, body, _ = get(server + page)
         assert status in (200, 404) and "<x" not in body and "<script>alert" not in body and "<b>provider" not in body, page
@@ -324,3 +325,11 @@ def test_unsure_results_read_as_unsure_and_tabs_mark_the_current_one(server):
     assert '<span class="badge warn">Looks in sync, not sure</span>' in page
     assert 'aria-label="Filter by result"' in page and 'aria-current="page"' in page
     assert "keys.js" not in page and "Started by: Library scan" in page
+
+
+def test_a_browser_post_keeps_its_origin_and_a_null_origin_is_refused(server):
+    _, _, headers = get(server + "/")
+    assert headers["Referrer-Policy"] == "same-origin"
+    host = server.split("//")[1]
+    assert post(server + "/", {"action": "accept", "path": "/x.srt"}, headers={"Origin": server, "Host": host})[0] == 303
+    assert post(server + "/", {"action": "accept", "path": "/x.srt"}, headers={"Origin": "null", "Host": host})[0] == 403

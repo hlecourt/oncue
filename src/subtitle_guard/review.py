@@ -26,8 +26,8 @@ from .alignment import (
 )
 from .bazarr import RETRY_STAGE, file_hash, request_another
 from .confidence import confidence
-from .errors import MatroskaError, ToolError, UnsafePathError
-from .files import restore_version, save_version, subtitle_lock, subtitle_locks
+from .errors import EditRefusedError, MatroskaError, ToolError, UnsafePathError
+from .files import inside_roots, restore_version, save_version, subtitle_lock, subtitle_locks
 from .guard import evaluate_and_fix
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
@@ -68,8 +68,10 @@ def review_items():
 
 def video_for(subtitle):
     folder, name = os.path.split(subtitle)
-    candidates = [video for video in os.listdir(folder) if video.lower().endswith(VIDEO_EXTENSIONS) and name.startswith(os.path.splitext(video)[0] + ".")]
-    return os.path.join(folder, max(candidates, key=len)) if candidates else None
+    candidates = [os.path.join(folder, video) for video in os.listdir(folder)
+                  if video.lower().endswith(VIDEO_EXTENSIONS) and name.startswith(os.path.splitext(video)[0] + ".")]
+    safe = [video for video in candidates if not os.path.islink(video) and os.path.isfile(video) and inside_roots(video)]
+    return max(safe, key=len) if safe else None
 
 
 def side_by_side(video, subtitle, first, last, shifts=None):
@@ -250,11 +252,17 @@ def measure(cues, reference):
     return {**original, "weak_minutes": outcome["weak_minutes"], "confidence": trust, "confidence_band": band}
 
 
-def shift_range(video, subtitle, first, last, offset):
+def shift_range(video, subtitle, first, last, offset, expected_hash=None):
+    if first > last:
+        raise EditRefusedError("the part ends before it starts")
     with subtitle_lock(subtitle):
+        if expected_hash and file_hash(subtitle) != expected_hash:
+            raise EditRefusedError("the subtitle changed since this page was opened, reload it and try again")
         document = parse_subtitle(subtitle)
-        save_version(subtitle, backup_path(subtitle), "before-manual")
         timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
+        if any(start < 0 for start, _, _ in timings):
+            raise EditRefusedError("some lines would start before the beginning of the video")
+        save_version(subtitle, backup_path(subtitle), "before-manual")
         write_subtitle(subtitle, document, timings)
     cues = parse_subtitle(subtitle)["cues"]
     reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))

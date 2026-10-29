@@ -76,8 +76,9 @@ COPY = asset("copy.js")
 
 
 PICKER = asset("picker.js")
+EDITOR = asset("editor.js")
 REFRESH = asset("refresh.js")
-SCRIPT_HASHES = [f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'" for script in (PICKER, COPY, REFRESH)]
+SCRIPT_HASHES = [f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'" for script in (PICKER, COPY, REFRESH, EDITOR)]
 UNSURE_WORDS = {"kept": "Looks in sync, not sure", "fixed": "Fixed, not sure", "manual": "Adjusted by hand, still off in places"}
 TAB_NAMES = {"result": "Filter by result", "latest": "Which checks"}
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
@@ -276,7 +277,7 @@ def actions(video, path, diagnosis, latest, hidden):
         buttons.append(("revert", "Restore the original file", False, ""))
     if review.came_from_bazarr(video, path):
         buttons.append(("another", "Try another subtitle", False, ""))
-    return "".join(f'<form class="inline" method="post" id="{action}-form">{hidden}{extra}<input type="hidden" name="action" value="{action}">'
+    return f'<a class="button" href="{editor_link(path)}">Listen and edit</a>' + "".join(f'<form class="inline" method="post" id="{action}-form">{hidden}{extra}<input type="hidden" name="action" value="{action}">'
                    f'<button class="{"primary" if primary else ""}">{escape(label)}</button></form>' for action, label, primary, extra in buttons)
 
 
@@ -378,7 +379,7 @@ def minute_links(path, view, minute):
     links = f'<a href="{subtitle_link(path, earlier[-1])}">Previous minute</a>' if earlier else ""
     links += f'<a href="{subtitle_link(path, later[0])}">Next minute</a>' if later else ""
     go = (f'<form class="go-minute"><input type="hidden" name="path" value="{escape(path)}"><label for="go-minute">Go to minute</label>'
-          f'<input type="number" id="go-minute" name="minute" min="0" max="{len(view["minutes"])}" value="{minute}"><button class="small">Go</button></form>')
+          f'<input type="number" class="small" id="go-minute" name="minute" min="0" max="{len(view["minutes"])}" value="{minute}"><button class="small">Go</button></form>')
     return f'<span class="minute-links">{links}{go}</span>'
 
 
@@ -402,8 +403,9 @@ def moment_row(moment, diagnosis, fix):
             f'<td class="yours">{subtitle_cell}</td><td class="state {state}">{label}</td></tr>')
 
 
-def by_hand(hidden, minute):
+def by_hand(hidden, minute, content_hash):
     return (f'<details id="by-hand"><summary>Fix a part by hand</summary><form method="post">{hidden}<input type="hidden" name="action" value="shift">'
+            f'<input type="hidden" name="hash" value="{escape(content_hash)}">'
             f'<label>From <input type="text" id="first" name="first" value="{clock(minute * 60)}"></label>'
             f'<label>To <input type="text" id="last" name="last" value="{clock(minute * 60 + WINDOW_SECONDS)}"></label>'
             f'<label>Move by (s) <input type="text" id="offset" name="offset" value="0"></label><button class="primary">Move</button></form>'
@@ -431,7 +433,7 @@ def queue_links(path):
     return f'<nav class="queue-links" aria-label="Subtitles that need a look">{links}</nav>' if links else ""
 
 
-def layout(title, body, refresh=None, page="", current=None, navigation=True):
+def layout(title, body, refresh=None, page="", current=None, navigation=True, wide=False):
     live = f' data-status="{escape(live_status())}"' if refresh else ""
     links = "".join(navigation_link(link, label, page == key) for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
                                                     ("log", "/log", "Log")))
@@ -439,8 +441,8 @@ def layout(title, body, refresh=None, page="", current=None, navigation=True):
     navigation_html = f'<nav aria-label="Pages">{links}</nav>{sidebar(current)}{logout}' if navigation else ""
     page_html = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
                  f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body{live}>'
-                 '<a class="skip" href="#content">Skip to the content</a><div class="shell">'
-                 f'<aside><a class="brand" href="/">subtitle-guard</a>{navigation_html}</aside>'
+                 f'<a class="skip" href="#content">Skip to the content</a><div class="shell{" wide" if wide else ""}">'
+                 f'<aside><a class="brand" href="/">subtitle-guard</a>{"" if wide else navigation_html}</aside>'
                  f'<main id="content"><h1>{escape(title)}</h1>{body}</main></div>{f"<script>{REFRESH}</script>" if refresh else ""}</body></html>')
     csrf = escape(getattr(REQUEST, "csrf", ""))
     return re.sub(r'(<form\b[^>]*method="post"[^>]*>)', lambda match: match.group(1) + f'<input type="hidden" name="csrf" value="{csrf}">', page_html)
@@ -493,6 +495,15 @@ def subtitle_link(path, minute=None, message=None):
     if message:
         query["notice"] = notice(message)
     return "/subtitle?" + urllib.parse.urlencode(query)
+
+
+def editor_link(path, at=None, message=None):
+    query = {"path": path}
+    if at:
+        query["at"] = at
+    if message:
+        query["notice"] = notice(message)
+    return "/edit?" + urllib.parse.urlencode(query)
 
 
 def message_box(query):

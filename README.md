@@ -4,9 +4,9 @@
 [![codeql](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml)
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the subtitle
-track embedded in the video, fixes the timing on its own when it is sure, and lists the rest for you in a web UI. It works on
-the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
+Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the
+subtitle track embedded in the video, fixes the timing on its own when it is sure, and lets you fix the rest by ear in a web
+editor. It works on the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
 
 Status: alpha.
 
@@ -68,7 +68,7 @@ To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.h
 ## The web UI
 
 `serve` also opens a web UI on port 8484 that lists what the guard was not sure about, with Keep, Check again and Ask Bazarr
-for another, a history of every check and the technical log.
+for another, a history of every check and the technical log, and a page to listen to a subtitle and move its lines by ear.
 
 ![Overview](docs/screenshots/overview.png)
 

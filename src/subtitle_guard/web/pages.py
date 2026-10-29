@@ -5,6 +5,7 @@ import json
 import os
 
 from .. import jobs, review
+from ..bazarr import file_hash
 from ..logs import (
     log_file,
     recent_events,
@@ -153,7 +154,7 @@ def subtitle_page(query):
     hidden = f'<input type="hidden" name="path" value="{escape(path)}"><input type="hidden" name="minute" value="{minute}">'
     body = (message_box(query) + f'<p class="subtle">{escape(where(path))}</p>' + status_box(diagnosis, latest, fix)
             + f'<div class="toolbar">{actions(video, path, diagnosis, latest, hidden)}</div>' + parts_list(path, diagnosis, hidden) + fix_section(path, fix)
-            + timeline(path, view, minute, fix) + reading(path, view, diagnosis, minute, fix) + by_hand(hidden, minute)
+            + timeline(path, view, minute, fix) + reading(path, view, diagnosis, minute, fix) + by_hand(hidden, minute, file_hash(path))
             + technical(path, video, view, latest) + queue_links(path) + f"<script>{PICKER}</script>")
     return 200, layout(os.path.basename(path), body, current=path), "text/html; charset=utf-8"
 

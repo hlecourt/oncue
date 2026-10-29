@@ -32,3 +32,7 @@ class ToolError(SubtitleGuardError):
 
 class ProbeError(ToolError):
     pass
+
+
+class EditRefusedError(SubtitleGuardError):
+    pass
