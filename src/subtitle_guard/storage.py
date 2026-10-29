@@ -10,8 +10,20 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 
+from .errors import ConfigError
+
 STATE_DIRECTORY = os.environ.get("SUBTITLE_GUARD_STATE", "/config/subtitle-guard")
 BACKUP_DIRECTORY = os.environ.get("SUBTITLE_GUARD_BACKUPS", "/data/backup/subtitle-guard")
+
+
+def check_state_folder():
+    try:
+        os.makedirs(STATE_DIRECTORY, exist_ok=True)
+        with tempfile.TemporaryFile(dir=STATE_DIRECTORY):
+            pass
+    except OSError as error:
+        raise ConfigError(f"the state folder {STATE_DIRECTORY} cannot be written ({error.strerror}); set SUBTITLE_GUARD_STATE to a folder this "
+                          "user can write") from error
 
 
 def state_path(*parts):

@@ -22,7 +22,7 @@ automatic syncs rarely tell you when they got it wrong. subtitle-guard instead:
   source of timing made for that exact file;
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
 - only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
-- anything it cannot fix with confidence is left as it is and listed for you in the web UI;
+- writes on its own only at 80 or more; anything else waits for you in a review queue;
 - changes only the timings, after a backup, and never while the file is being changed by something else.
 
 How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
@@ -48,8 +48,8 @@ on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
 ## With Bazarr (optional)
 
-With [Bazarr](https://www.bazarr.media/), the guard checks each subtitle as soon as it is downloaded, and a subtitle it cannot
-fix is blacklisted so that Bazarr fetches another one. Use
+With [Bazarr](https://www.bazarr.media/), the guard checks each subtitle as soon as it is downloaded, and when a download is
+not in sync with confidence it asks Bazarr for another one before bothering you, keeping the best version tried. Use
 [examples/docker-compose.bazarr.yml](examples/docker-compose.bazarr.yml), then in Bazarr, Settings > Subtitles >
 Post-processing, turn post-processing on with this command:
 

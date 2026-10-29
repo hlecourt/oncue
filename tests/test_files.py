@@ -86,21 +86,21 @@ def test_revert_uses_the_latest_original(tmp_path):
 
 def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):
     from subtitle_guard import guard
+    starts = numpy.cumsum(numpy.random.default_rng(3).uniform(1.5, 6.0, LINES))
+    late = "".join(f"{number}\n{timestamp(start)} --> {timestamp(start + 1)}\nline {number}\n\n" for number, start in enumerate(starts, 1))
     subtitle = tmp_path / "movie.fr.srt"
-    subtitle.write_text(SRT)
+    subtitle.write_text(late)
     real_judge = guard.judge
 
     def judge_while_bazarr_replaces_the_file(cues, reference):
-        subtitle.write_text(SRT.replace("line 1\n", "LINE 1\n", 1))
+        subtitle.write_text(late.replace("line 1\n", "LINE 1\n", 1))
         return real_judge(cues, reference)
     monkeypatch.setattr(guard, "judge", judge_while_bazarr_replaces_the_file)
     monkeypatch.setattr(guard, "load_reference", lambda video, hearing_impaired, count: {
-        "kind": "eng-text", "starts": numpy.array([number * 3.0 + 7 for number in range(1, LINES + 1)]),
-        "ends": numpy.array([number * 3.0 + 8 for number in range(1, LINES + 1)]), "index": 2, "image": False})
+        "kind": "eng-text", "starts": starts + 7, "ends": starts + 8, "index": 2, "image": False})
     outcome = evaluate_and_fix("/movie.mkv", str(subtitle), True)
     assert outcome["decision"] == "unverified" and "changed during the check" in outcome["reason"]
     assert "LINE 1" in subtitle.read_text()
-
 
 
 def test_a_same_size_change_with_the_mtime_put_back_is_still_seen(tmp_path):

@@ -11,14 +11,15 @@ import time
 
 import numpy
 
-from subtitle_guard import alignment, reference, subtitles
+from subtitle_guard import alignment, reference, storage, subtitles
 from subtitle_guard.confidence import confidence
-from subtitle_guard.guard import summarize
+from subtitle_guard.guard import AUTOMATIC_BAND, summarize
 
 with open(sys.argv[2]) as corpus_file:
     work, corpus = sys.argv[1], json.load(corpus_file)
 only = sys.argv[3] if len(sys.argv) > 3 else ""
 os.makedirs(work, exist_ok=True)
+storage.STATE_DIRECTORY = os.environ.get("SUBTITLE_GUARD_STATE") or os.path.join(work, "state")
 PAL = 23.976 / 25
 FILM = 23.976 / 24
 
@@ -159,6 +160,8 @@ def run(video, path, hearing_impaired=False):
     score, band = confidence(summarize(embedded["kind"], *judged))
     if decision == "kept":
         return decision, cues, attempt, f"{score:3d} {band}"
+    if decision == "fixed" and band != AUTOMATIC_BAND:
+        return "proposed", attempt["timings"], attempt, f"{score:3d} {band}"
     return decision, attempt["timings"], attempt, f"{score:3d} {band}"
 
 

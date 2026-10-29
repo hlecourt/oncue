@@ -2,11 +2,14 @@
 """Decisions the guard can reach and their one-line description."""
 
 DECISION = {"kept": "kept", "fixed": "fixed", "rejected": "rejected", "unverified": "unverified", "wrong_episode": "wrong-episode",
-            "best_effort": "best-effort", "audio_synced": "audio-synced", "manual": "manual", "reverted": "reverted"}
-SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"])
+            "best_effort": "best-effort", "audio_synced": "audio-synced", "manual": "manual", "reverted": "reverted", "proposed": "proposed",
+            "approved": "approved", "deleted": "deleted"}
+FIX_KIND = {"aligned": "aligned", "audio": "audio"}
+SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"], DECISION["approved"])
 DECISION_WORDS = {"kept": "In sync", "fixed": "Fixed automatically", "rejected": "Could not be fixed", "wrong-episode": "Belongs to another episode",
                   "unverified": "Cannot be checked", "audio-synced": "Synced to the audio, not checked", "best-effort": "Best version kept, not fully in sync",
-                  "manual": "Adjusted by hand", "reverted": "Back to the original file"}
+                  "manual": "Adjusted by hand", "reverted": "Back to the original file", "proposed": "Proposal to check",
+                  "approved": "Proposal applied", "deleted": "Deleted"}
 CHANGED_REASON = "the subtitle changed during the check, it was left as it is and will be checked again"
 WORRYING_DECISIONS = (DECISION["rejected"], DECISION["wrong_episode"], DECISION["best_effort"])
 

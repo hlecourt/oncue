@@ -9,18 +9,28 @@ video start: the words do not matter, so the reference can be in any language, t
    programming (0.05 s steps over +/-400 s, then 0.1 s over +/-1200 s), using line starts and ends.
 4. It runs the same search against the reference reversed in time, which has the same density but no relation to the
    subtitle, and keeps the fix only if it clearly beats that null and every part is supported by the reference.
-5. It scores the result from 0 to 100, and writes the fix after a backup when the result can be trusted.
+5. It scores the result from 0 to 100; at 80 or more the fix is written after a backup, otherwise it waits as a proposal, or
+   Bazarr is asked for another subtitle first.
 
 ## Decisions
 
 | Decision | Meaning |
 |---|---|
 | `kept` | already in sync, nothing written |
-| `fixed` | realigned and verified, original backed up |
+| `fixed` | realigned and verified with high confidence, written, original backed up (in a dry run: would be written) |
+| `proposed` | a fix was found but its confidence is not high, or it comes from the audio while automatic audio writes are off; nothing written, it waits for a person |
+| `approved` | a proposal applied by a person, original backed up |
 | `rejected` | could not be realigned with confidence, or the end times are wrong; with Bazarr, another subtitle is requested |
-| `wrong-episode` | the subtitle matches a neighbouring episode; it can be moved there from the UI |
-| `audio-synced` | no embedded track; synced to the audio with ffsubsync, not verified |
+| `wrong-episode` | the subtitle matches a neighbouring episode; with Bazarr, another subtitle is requested, it is never moved |
+| `deleted` | deleted by a person, a copy is kept in the backups |
 | `unverified` | nothing to compare with, too few lines, the video could not be read, or the file changed during the check |
+
+An audio sync has no reference track to compare with, so its confidence comes from the sound itself: the synced subtitle is cut
+into up to eight parts of at least twenty lines, each part is searched on its own against the speech that ffsubsync's voice
+detector finds, and the confidence is the share of parts that land within 0.3 s of where the sync put them (below four parts it
+stays at 30). `subtitle-guard calibrate-audio PATH [N]` measures how far that can be trusted on your own library, without writing
+anything: for videos whose reference track gives the truth, it shifts a copy of the subtitle by a known amount, syncs it to the
+audio as if there were no track, and counts the confident results that are wrong.
 
 Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up), `medium` (60 to 79), `low` (below 60), `none`
 (nothing accepted). It takes the weakest of three measures (the margin over noise or over the null alignment, the margin of the

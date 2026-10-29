@@ -45,3 +45,14 @@ def test_serve_installs_the_hook_package_where_bazarr_can_run_it(tmp_path):
     result = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import subtitle_guard.bazarr, subtitle_guard; print(subtitle_guard.__file__)",
                              str(hook_folder)], capture_output=True, text=True, check=True)
     assert result.stdout.startswith(str(hook_folder))
+
+
+def test_an_unwritable_state_folder_is_a_clear_message_not_a_traceback(tmp_path, monkeypatch, capsys):
+    from subtitle_guard import storage
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("x")
+    monkeypatch.setattr(storage, "STATE_DIRECTORY", str(blocker / "state"))
+    monkeypatch.setattr(sys, "argv", ["subtitle-guard", "check", "/x.mkv", "/x.srt"])
+    assert cli.main() == 2
+    message = capsys.readouterr().err
+    assert "cannot be written" in message and "SUBTITLE_GUARD_STATE" in message
