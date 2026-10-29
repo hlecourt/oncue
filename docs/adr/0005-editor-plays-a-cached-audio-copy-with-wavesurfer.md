@@ -4,4 +4,4 @@ The first time a video is opened in the editor, a job extracts one light mono au
 
 ## Consequences
 
-- A half-day spike on the voiced demo must confirm two things before the editor is built on it: rendering from precomputed peaks with a separate media element, and two region lanes (the subtitle's lines, draggable; the reference track, fixed). If the second fails, the hand-written canvas stays.
+- A spike on the voiced demo (2026-10-29) confirmed both conditions with wavesurfer.js 8.0.3: drawing from server-side peaks while the browser streams the copy (seek to 4:10 instant, playback in real time), and two region lanes placed by styling each region element (the lines draggable, 100 px at 50 px/s moved a line by 2.00 s; the reference fixed). The copy must be given to wavesurfer as its `url` with the peaks and duration, not as a bare media element, or it clears the element's source.

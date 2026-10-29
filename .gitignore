@@ -9,3 +9,6 @@ benchmarks/corpus/
 benchmarks/work/
 .coverage
 .ruff_cache/
+
+# built front, made by pnpm build in frontend/
+src/subtitle_guard/api/static/
