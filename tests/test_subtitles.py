@@ -90,3 +90,20 @@ def test_state_is_kept_per_language():
     video = "/media/Show/Season 1/Show.S01E01.mkv"
     french, english = state.state_file(video, "/media/Show/Season 1/Show.S01E01.fr.srt"), state.state_file(video, "/media/Show/Season 1/Show.S01E01.en.srt")
     assert french != english
+
+
+
+def test_utf16_big_endian_with_crlf_comes_back_byte_for_byte(tmp_path):
+    path = tmp_path / "be.srt"
+    original = "1\r\n00:00:01,000 --> 00:00:02,000\r\nBonjour\r\n"
+    path.write_bytes(b"\xfe\xff" + original.encode("utf-16-be"))
+    document = parse_subtitle(str(path))
+    write_subtitle(str(path), document, document["cues"])
+    assert path.read_bytes() == b"\xfe\xff" + original.encode("utf-16-be")
+
+
+def test_impossible_sizes_and_times_are_not_checked(tmp_path):
+    from subtitle_guard.alignment import MAX_CHECKED_CUES, oversized_reason
+    assert oversized_reason([(1.0, 2.0, "x")] * (MAX_CHECKED_CUES + 1)).startswith("too many lines")
+    assert oversized_reason([(1.0, 9e9, "x")]).startswith("times beyond")
+    assert oversized_reason([(1.0, 2.0, "x")]) is None

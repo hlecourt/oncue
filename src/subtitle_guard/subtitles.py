@@ -9,6 +9,7 @@ from .files import read_regular, replace_file
 
 TIMING = re.compile(r"^\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})")
 HEARING_IMPAIRED_TAGS = (".hi.", ".sdh.", ".cc.")
+BYTE_ORDER_MARKS = ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
 
 
 def is_hearing_impaired(subtitle):
@@ -16,10 +17,9 @@ def is_hearing_impaired(subtitle):
 
 
 def parse_subtitle(path):
-    raw = read_regular(path)
-    text, encoding = decode(raw)
+    text, encoding, bom = decode(read_regular(path))
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    kept = {"lines": lines, "encoding": encoding, "newline": "\r\n" if b"\r\n" in raw else "\n"}
+    kept = {"lines": lines, "encoding": encoding, "bom": bom.hex(), "newline": "\r\n" if "\r\n" in text else "\n"}
     lowered = text.lower()
     if "[events]" in lowered and "dialogue:" in lowered:
         return {**parse_ass(lines), **kept}
@@ -29,16 +29,15 @@ def parse_subtitle(path):
 
 
 def decode(raw):
-    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return raw.decode("utf-16"), "utf-16"
-    if raw.startswith(codecs.BOM_UTF8):
-        return raw.decode("utf-8-sig"), "utf-8-sig"
+    for bom, encoding in BYTE_ORDER_MARKS:
+        if raw.startswith(bom):
+            return raw[len(bom):].decode(encoding), encoding, bom
     for encoding in ("utf-8", "cp1252"):
         try:
-            return raw.decode(encoding), encoding
+            return raw.decode(encoding), encoding, b""
         except UnicodeDecodeError:
             continue
-    return raw.decode("latin-1"), "latin-1"
+    return raw.decode("latin-1"), "latin-1", b""
 
 
 def parse_timed_text(text):
@@ -107,14 +106,7 @@ def clock(value):
 
 def write_subtitle(path, document, timings):
     lines = ass_lines(document, timings) if document["format"] == "ass" else timed_lines(document, timings)
-    replace_file(path, document["newline"].join(lines).encode(document["encoding"]))
-
-
-def create_subtitle(path, cues, subtitle_format="srt"):
-    separator = "." if subtitle_format == "vtt" else ","
-    blocks = [f"{number}\n{timestamp(start, separator)} --> {timestamp(end, separator)}\n{text}\n" for number, (start, end, text) in enumerate(sorted(cues), 1)]
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(("WEBVTT\n\n" if subtitle_format == "vtt" else "") + "\n".join(blocks))
+    replace_file(path, bytes.fromhex(document.get("bom", "")) + document["newline"].join(lines).encode(document["encoding"]))
 
 
 def timed_lines(document, timings):

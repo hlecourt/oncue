@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """POST actions from the UI: fix, shift, revert, keep, move, retry, each on a subtitle the guard knows."""
 
+import math
 import os
 import urllib.parse
 
@@ -11,6 +12,8 @@ from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
 from .context import notice
 from .parts import seconds, short_clock, subtitle_link
+
+MAX_MANUAL_SHIFT_SECONDS = 3600
 
 
 def perform(form):
@@ -31,6 +34,8 @@ def perform(form):
             first, last, shift = seconds(form.get("first", "")), seconds(form.get("last", "")), float(form.get("offset", "").replace(",", "."))
         except ValueError:
             return subtitle_link(path, form.get("minute", "0"), "Nothing was changed: the times must look like 2:03 or 1:02:03.50, and the move like -1.5.")
+        if not all(math.isfinite(value) for value in (first, last, shift)) or abs(shift) > MAX_MANUAL_SHIFT_SECONDS:
+            return subtitle_link(path, form.get("minute", "0"), f"Nothing was changed: a move must be a number of seconds up to {MAX_MANUAL_SHIFT_SECONDS}.")
         review.shift_range(video, path, first - 0.05, last + 0.05, shift)
         message = f"Done. The lines from {short_clock(first)} to {short_clock(last)} now appear {abs(shift):.1f} s {'earlier' if shift < 0 else 'later'}."
     elif action == "fix-all":

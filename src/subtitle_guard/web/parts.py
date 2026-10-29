@@ -233,6 +233,7 @@ def status_box(diagnosis, latest, fix):
         "no-match": ("bad", "This subtitle does not match this video.", "It may be made for another version. Try another subtitle, or fix it by hand."),
         "no-reference": ("neutral", "This subtitle cannot be checked.", "The video has no subtitle track to compare with."),
         "too-short": ("neutral", "This subtitle cannot be checked.", "It has too few lines, which is normal for subtitles that only translate signs."),
+        "too-large": ("neutral", "This subtitle cannot be checked.", "It is too large to check safely: too many lines or impossible times."),
         "wrong-ends": ("bad", "The end times of this subtitle are wrong.", "Many lines stay on screen far too long. Try another subtitle."),
     }
     tone_name, title, detail = messages[diagnosis["state"]]

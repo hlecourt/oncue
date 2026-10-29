@@ -6,6 +6,7 @@ import glob
 import hashlib
 import json
 import os
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -56,10 +57,15 @@ def read_json(path):
 
 def write_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    temporary = f"{path}.{os.getpid()}.tmp"
-    with open(temporary, "w") as handle:
-        json.dump(data, handle)
-    os.replace(temporary, path)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(data, handle)
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+        raise
 
 
 @contextmanager

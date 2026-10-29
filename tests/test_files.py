@@ -14,15 +14,31 @@ LINES = 150
 SRT = "".join(f"{number}\n{timestamp(number * 3.0)} --> {timestamp(number * 3.0 + 1)}\nline {number}\n\n" for number in range(1, LINES + 1))
 
 
-def test_a_planted_symlink_next_to_the_subtitle_is_never_followed(tmp_path):
+def test_temporary_names_are_unpredictable_and_a_swapped_target_is_never_written_through(tmp_path):
     subtitle, target = tmp_path / "movie.fr.srt", tmp_path / "victim.txt"
     subtitle.write_text(SRT)
     target.write_text("untouched")
-    (tmp_path / "movie.fr.srt.subtitle-guard.tmp").symlink_to(target)
     document = parse_subtitle(str(subtitle))
-    write_subtitle(str(subtitle), document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
-    assert target.read_text() == "untouched" and "00:00:04,000" in subtitle.read_text()
+    subtitle.unlink()
+    subtitle.symlink_to(target)
+    with pytest.raises(UnsafePathError):
+        write_subtitle(str(subtitle), document, [(start + 1, end + 1, text) for start, end, text in document["cues"]])
+    assert target.read_text() == "untouched"
     assert not [name for name in os.listdir(tmp_path) if name.endswith(files.TEMPORARY_SUFFIX)]
+
+
+def test_a_parent_folder_symlink_cannot_escape_the_roots(tmp_path, monkeypatch):
+    library, outside = tmp_path / "library", tmp_path / "outside"
+    library.mkdir()
+    outside.mkdir()
+    (outside / "victim.srt").write_text("untouched")
+    (library / "Season 1").symlink_to(outside)
+    monkeypatch.setattr(files, "ROOTS", [str(library.resolve())])
+    with pytest.raises(UnsafePathError):
+        files.replace_file(str(library / "Season 1" / "victim.srt"), b"attacker")
+    with pytest.raises(UnsafePathError):
+        files.read_regular(str(library / "Season 1" / "victim.srt"))
+    assert (outside / "victim.srt").read_text() == "untouched"
 
 
 def test_a_symlinked_subtitle_is_refused(tmp_path):
@@ -75,7 +91,7 @@ def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkey
     real_judge = guard.judge
 
     def judge_while_bazarr_replaces_the_file(cues, reference):
-        subtitle.write_text(SRT + "999\n01:00:00,000 --> 01:00:01,000\nnew download\n")
+        subtitle.write_text(SRT.replace("line 1\n", "LINE 1\n", 1))
         return real_judge(cues, reference)
     monkeypatch.setattr(guard, "judge", judge_while_bazarr_replaces_the_file)
     monkeypatch.setattr(guard, "load_reference", lambda video, hearing_impaired, count: {
@@ -83,4 +99,4 @@ def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkey
         "ends": numpy.array([number * 3.0 + 8 for number in range(1, LINES + 1)]), "index": 2, "image": False})
     outcome = evaluate_and_fix("/movie.mkv", str(subtitle), True)
     assert outcome["decision"] == "unverified" and "changed during the check" in outcome["reason"]
-    assert "new download" in subtitle.read_text()
+    assert "LINE 1" in subtitle.read_text()
