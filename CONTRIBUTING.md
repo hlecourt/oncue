@@ -27,7 +27,7 @@ You need `ffmpeg` and `ffprobe` on the PATH for the tests that build small video
 .venv/bin/ruff check src tests benchmarks
 ```
 
-CI runs both on Python 3.10 to 3.13, builds the wheel and the Docker image, and runs CodeQL.
+CI runs both on Python 3.11 to 3.13, checks that the Bazarr hook runs with numpy only, builds the wheel and the Docker image, and runs CodeQL.
 
 ## Test policy
 
@@ -37,7 +37,7 @@ synthetic case in `tests/` (see `tests/media.py` and `tests/synthetic.py`), and 
 
 ## Style
 
-- Plain Python 3.10+, standard library first. numpy is the only required dependency.
+- Plain Python 3.11+, standard library first. numpy is the only dependency of the engine, the CLI and the Bazarr hook; FastAPI and uvicorn come with the `web` extra and only the API imports them.
 - Descriptive names without abbreviations, early returns, small functions that read top-down, no comments that repeat the code.
 - Typed errors from `errors.py` for expected failures; never swallow an exception.
 - UI copy in plain English for people who are not technical; the Log page is the technical view.

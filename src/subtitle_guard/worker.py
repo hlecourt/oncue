@@ -11,7 +11,8 @@ import time
 import traceback
 from contextlib import suppress
 
-from . import jobs
+from . import configuration, jobs
+from .audio_copy import make_copy
 from .bazarr import (
     RETRY_WAIT_SECONDS,
     blacklist_for_retry,
@@ -23,13 +24,14 @@ from .guard import evaluate_and_fix
 from .heartbeats import HEARTBEAT_SECONDS, SUPERVISED_VARIABLE
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
+from .notifications import send_due
 from .outcome import CHANGED_REASON, describe
 from .reports import needs_review, report
 from .review import diagnose
+from .scans import run_scan
 from .storage import state_path, write_json
 from .tools import kill_active_groups, kill_recorded_groups
 
-WORKERS = int(os.environ.get("SUBTITLE_GUARD_WORKERS", "2"))
 POLL_SECONDS = 2.0
 SUPERVISION_SECONDS = 5.0
 STOP_SECONDS = 10
@@ -37,15 +39,15 @@ MAX_ATTEMPTS = 3
 SUPERVISOR_LOCK = {}
 
 
-def run_workers(count=WORKERS):
-    return supervise(worker_roles(count))
+def run_workers(count=None):
+    return supervise(worker_roles(count or configuration.value("workers")))
 
 
 def worker_roles(count):
     return {f"worker-{number}": (work_forever, (number,)) for number in range(1, count + 1)}
 
 
-def supervise(roles):
+def supervise(roles, roles_for=None):
     settings["echo"], settings["source"] = True, "supervisor"
     lock = single_supervisor_lock()
     if lock is None:
@@ -61,9 +63,20 @@ def supervise(roles):
         signal.signal(stop_signal, lambda number, frame: shut_down(processes, signal.Signals(number).name))
     while True:
         time.sleep(SUPERVISION_SECONDS)
+        wanted = roles_for() if roles_for else roles
+        if wanted != roles:
+            log("supervisor.roles-changed", f"settings changed, roles now {','.join(sorted(wanted))}", roles=sorted(wanted))
+            for name in [name for name in processes if roles.get(name) != wanted.get(name)]:
+                stop_role_process(name, processes.pop(name))
+            processes.update({name: start(*role) for name, role in wanted.items() if name not in processes})
+            roles = wanted
         for name, process in list(processes.items()):
             if not process.is_alive():
                 processes[name] = restart(name, process, roles[name])
+        try:
+            send_due()
+        except Exception as error:
+            log("webhook.error", f"webhook digest skipped: {type(error).__name__}: {error}", LEVEL["error"])
 
 
 def single_supervisor_lock():
@@ -103,6 +116,15 @@ def shut_down(processes, signal_name):
         os.remove(state_path("supervisor.json"))
     log("supervisor.stopped", f"all roles stopped killed={len(survivors)}", killed=len(survivors))
     sys.exit(0)
+
+
+def stop_role_process(name, process):
+    signal_group(process, signal.SIGTERM)
+    process.join(timeout=STOP_SECONDS)
+    if process.is_alive():
+        signal_group(process, signal.SIGKILL)
+        process.join(timeout=STOP_SECONDS)
+    kill_recorded_groups(name)
 
 
 def signal_group(process, number):
@@ -183,7 +205,7 @@ def check(arguments):
         if arguments.get("watched"):
             jobs.remember(arguments["subtitle"], FAILED + watch_signature(arguments["video"], arguments["subtitle"], arguments["apply"]))
         raise
-    report(arguments["subtitle"], "watch" if arguments.get("watched") else "check", outcome, applied=arguments["apply"])
+    report(arguments["subtitle"], "watch" if arguments.get("watched") else ("scan" if arguments.get("scan") else "check"), outcome, applied=arguments["apply"])
     prepare_review(arguments["video"], arguments["subtitle"], outcome, arguments["apply"])
     if arguments.get("watched") and outcome.get("reason") == CHANGED_REASON:
         jobs.forget(arguments["subtitle"])
@@ -214,6 +236,10 @@ def run_job(job):
             return {"decision": "nothing-pending", "summary": "no pending retry for this subtitle"}
         jobs.enqueue(jobs.KIND["retry_check"], {"video": arguments["video"], "subtitle": arguments["subtitle"], **retry}, delay_seconds=RETRY_WAIT_SECONDS)
         return {"decision": "blacklisted", "summary": f"blacklisted {retry['pending']['provider']} {retry['pending']['subtitle_id']}, waiting for another"}
+    if job["kind"] == jobs.KIND["scan"]:
+        return run_scan(arguments["scan"])
+    if job["kind"] == jobs.KIND["audio_copy"]:
+        return make_copy(arguments["video"], arguments["track"])
     if job["kind"] == jobs.KIND["retry_check"]:
         return finish_retry(arguments["video"], arguments["subtitle"], arguments["pending"], arguments["attempts_before"])
     raise UnknownJobKindError(f"unknown job kind {job['kind']}")

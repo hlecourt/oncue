@@ -19,6 +19,12 @@ def subtitle_id(path, video=""):
         return connection.execute("select id from subtitles where path = ?", (path,)).fetchone()["id"]
 
 
+def path_for(identity):
+    with closing(jobs.connect()) as connection:
+        row = connection.execute("select path from subtitles where id = ?", (identity,)).fetchone()
+    return row["path"] if row else None
+
+
 def save_proposal(path, video, version, kind, timings, outcome):
     details = {key: outcome.get(key) for key in ("confidence", "confidence_band", "changes", "reference", "reason")}
     with closing(jobs.connect()) as connection:
