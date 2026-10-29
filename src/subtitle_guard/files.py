@@ -11,6 +11,7 @@ import tempfile
 import time
 from contextlib import ExitStack, contextmanager
 
+from . import configuration
 from .errors import SubtitleTooLargeError, UnsafePathError
 from .logs import LEVEL, log
 from .storage import backup_folders, backup_path, state_path
@@ -18,8 +19,6 @@ from .storage import backup_folders, backup_path, state_path
 MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
 ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
 TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
-KEEP_VERSIONS = int(os.environ.get("SUBTITLE_GUARD_KEEP_VERSIONS", "5"))
-KEEP_DAYS = int(os.environ.get("SUBTITLE_GUARD_KEEP_DAYS", "30"))
 
 
 def inside_roots(path):
@@ -106,12 +105,32 @@ def save_backup(subtitle, label):
 
 def prune_backups(subtitle):
     folders = backup_folders(subtitle)
-    oldest_kept = time.time() - KEEP_DAYS * 86400
-    kept = {folders[0], *folders[-KEEP_VERSIONS:]} if folders else set()
+    oldest_kept = time.time() - configuration.value("keep_days") * 86400
+    kept = {folders[0], *folders[-configuration.value("keep_versions"):]} if folders else set()
     for folder in folders:
         if folder not in kept and os.path.getmtime(folder) < oldest_kept:
             shutil.rmtree(folder)
             log("backup.pruned", f"old backup removed: {folder}", LEVEL["debug"], subtitle=subtitle, folder=folder)
+
+
+def clean_up_backups(subtitles):
+    removed = 0
+    oldest_kept = time.time() - configuration.value("keep_days") * 86400
+    for subtitle in subtitles:
+        folders = backup_folders(subtitle)
+        if os.path.exists(subtitle):
+            before = len(folders)
+            prune_backups(subtitle)
+            removed += before - len(backup_folders(subtitle))
+        elif folders and os.path.getmtime(folders[-1]) < oldest_kept:
+            for folder in folders:
+                shutil.rmtree(folder)
+            removed += len(folders)
+    return removed
+
+
+def folder_bytes(folder):
+    return sum(os.path.getsize(os.path.join(root, name)) for root, _, names in os.walk(folder) for name in names)
 
 
 def save_version(subtitle, folder, label):

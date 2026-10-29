@@ -4,6 +4,7 @@
 import os
 import time
 
+from . import configuration
 from .alignment import (
     MAX_CUE_SECONDS,
     MAX_WRONG_END_SHARE,
@@ -27,7 +28,6 @@ from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
 
 AUTOMATIC_BAND = "high"
 AUDIO_REFERENCE = "audio"
-AUDIO_AUTOMATIC = os.environ.get("SUBTITLE_GUARD_AUDIO_AUTOMATIC") == "1"
 
 
 def evaluate_and_fix(video, subtitle, apply, neighbours=()):
@@ -49,7 +49,7 @@ def evaluate_and_fix(video, subtitle, apply, neighbours=()):
 def settle(video, subtitle, outcome, fix, apply):
     if fix is None:
         return outcome
-    automatic = outcome["confidence_band"] == AUTOMATIC_BAND and (fix["kind"] != FIX_KIND["audio"] or AUDIO_AUTOMATIC)
+    automatic = outcome["confidence_band"] == AUTOMATIC_BAND and (fix["kind"] != FIX_KIND["audio"] or configuration.value("audio_automatic"))
     if not (automatic and apply):
         save_proposal(subtitle, video, fix["version"], fix["kind"], fix["timings"], outcome)
     if not automatic:

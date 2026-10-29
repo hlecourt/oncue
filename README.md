@@ -39,9 +39,8 @@ Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folde
 folders whose subtitles the web UI may change, and `user:` must own your media. Then open `http://<host>:8484` and log in as
 `admin` with the password printed in the logs.
 
-The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one after
-that. By default it only reports what it would do: add `--apply` to the `serve` command to let it write the fixes it is sure
-about.
+The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one
+after that. It starts in `report` mode: it shows what it would do and writes nothing until you switch to `fix` in Settings.
 
 Without Docker: `pip install "subtitle-guard[web,audio]"` from a release wheel, with Python 3.11+, `ffmpeg` and `ffprobe`
 on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
@@ -76,21 +75,23 @@ for another, a history of every check and the technical log, and a page to liste
 
 ![History of every check](docs/screenshots/history.png)
 
+Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an `X-Api-Key` header.
+
 ## Safety
 
-- `check`, the scans and the folder watch only report until `--apply` is given; the Bazarr hook writes the fixes it is sure
-  about.
+- `report` mode by default: nothing is written until you choose `fix`.
 - The web UI only changes subtitles under `SUBTITLE_GUARD_ROOTS`, and never through a symbolic link.
-- Every write is atomic, after a backup, and refused if the file changed since it was checked.
+- Every write is atomic, after a backup, and refused if the file changed since it was checked; saved versions can be restored.
 - A login is required beyond the machine itself. Details: [docs/security.md](docs/security.md); to report a vulnerability,
   [SECURITY.md](SECURITY.md).
 
 ## Settings
 
-Settings are environment variables. The ones you are most likely to need:
+Most settings can be changed in the UI; an environment variable always wins. The ones you are most likely to need:
 
 | Variable | Default |
 |---|---|
+| `SUBTITLE_GUARD_MODE` | `report`; `fix` writes sure fixes on its own |
 | `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
 | `SUBTITLE_GUARD_ROOTS` | unset: the folders whose subtitles the web UI may change |
 | `SUBTITLE_GUARD_WORKERS` | `2` |

@@ -5,9 +5,9 @@ import os
 import shutil
 import sys
 
-from . import __version__, storage
+from . import __version__, configuration, storage
 from .audio import ARGUMENTS_CHECK_SCRIPT, FFSUBSYNC_LIBRARIES, ffsubsync_arguments
-from .bazarr import BAZARR_CONFIG, BAZARR_URL, bazarr_get
+from .bazarr import BAZARR_CONFIG, bazarr_get
 from .errors import ToolError
 from .logs import LEVEL, log, settings
 from .tools import run_tool, stderr_tail
@@ -18,7 +18,7 @@ IMPORT_CHECK_SECONDS = 60
 def report_startup(command, **details):
     settings["source"] = command
     log("service.started", f"subtitle-guard {__version__} started command={command}", version=__version__, python=sys.version.split()[0], command=command,
-        state=storage.STATE_DIRECTORY, backups=storage.BACKUP_DIRECTORY, bazarr_url=BAZARR_URL, **details)
+        state=storage.STATE_DIRECTORY, backups=storage.BACKUP_DIRECTORY, bazarr_url=configuration.value("bazarr_url"), **details)
     checks = health_checks()
     failing = sorted(name for name, check in checks.items() if not check["ok"])
     log("health.checked", f"health degraded failing={','.join(failing)}" if failing else "health ok", LEVEL["warning"] if failing else LEVEL["info"],
@@ -54,10 +54,10 @@ def writable(folder):
 
 
 def bazarr_status():
-    if not os.environ.get("BAZARR_API_KEY") and not os.path.exists(BAZARR_CONFIG):
+    if not configuration.value("bazarr_api_key") and not os.path.exists(BAZARR_CONFIG):
         return {"ok": True, "configured": False}
     try:
         status = bazarr_get("/api/system/status")["data"]
     except (OSError, KeyError, ValueError) as error:
-        return {"ok": False, "configured": True, "url": BAZARR_URL, "error": f"{type(error).__name__}: {error}"}
-    return {"ok": True, "configured": True, "url": BAZARR_URL, "version": status.get("bazarr_version")}
+        return {"ok": False, "configured": True, "url": configuration.value("bazarr_url"), "error": f"{type(error).__name__}: {error}"}
+    return {"ok": True, "configured": True, "url": configuration.value("bazarr_url"), "version": status.get("bazarr_version")}

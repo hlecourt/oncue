@@ -80,6 +80,7 @@ def test_a_proposal_from_bazarr_asks_for_a_replacement_and_keeps_a_copy_until_th
     video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
     video.write_bytes(b"v")
     subtitle.write_text(LATE)
+    monkeypatch.setenv("SUBTITLE_GUARD_MODE", "fix")
     requested = []
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {
         "decision": "proposed", "confidence_band": "medium", "reference": "eng-text", "after": {"matched": 0.7}})
@@ -98,7 +99,7 @@ def test_a_proposal_from_bazarr_asks_for_a_replacement_and_keeps_a_copy_until_th
 def test_backups_keep_the_first_version_the_last_ones_and_anything_recent(tmp_path, monkeypatch):
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(LATE)
-    monkeypatch.setattr(files, "KEEP_VERSIONS", 2)
+    monkeypatch.setenv("SUBTITLE_GUARD_KEEP_VERSIONS", "2")
     folders = []
     for _ in range(6):
         folders.append(files.save_backup(str(subtitle), "original"))
@@ -142,3 +143,14 @@ def test_a_state_folder_that_cannot_be_written_never_stops_a_tool(tmp_path, monk
     blocker.write_text("x")
     monkeypatch.setattr(tools, "state_path", lambda *parts: str(blocker / "tool-groups" / parts[-1]))
     assert tools.run_tool(["true"], 5).returncode == 0 and not tools.ACTIVE_GROUPS
+
+
+def test_report_only_mode_writes_nothing_and_asks_bazarr_for_nothing(tmp_path, monkeypatch):
+    video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
+    video.write_bytes(b"v")
+    subtitle.write_text(LATE)
+    calls = []
+    monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: calls.append(apply) or {"decision": "rejected"})
+    monkeypatch.setattr(bazarr, "request_another", lambda video, subtitle, queued: pytest.fail("Bazarr was asked in report-only mode"))
+    bazarr.handle_download(str(video), str(subtitle), "fr", "opensubtitles", "42", "7")
+    assert calls == [False] and "pending_retry" not in state.load_state(str(video), str(subtitle))

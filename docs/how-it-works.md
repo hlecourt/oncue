@@ -9,8 +9,8 @@ video start: the words do not matter, so the reference can be in any language, t
    programming (0.05 s steps over +/-400 s, then 0.1 s over +/-1200 s), using line starts and ends.
 4. It runs the same search against the reference reversed in time, which has the same density but no relation to the
    subtitle, and keeps the fix only if it clearly beats that null and every part is supported by the reference.
-5. It scores the result from 0 to 100; at 80 or more the fix is written after a backup, otherwise it waits as a proposal, or
-   Bazarr is asked for another subtitle first.
+5. It scores the result from 0 to 100; at 80 or more and in `fix` mode the fix is written after a backup, otherwise it waits
+   as a proposal, or Bazarr is asked for another subtitle first.
 
 ## Decisions
 

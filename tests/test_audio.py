@@ -133,7 +133,7 @@ def test_a_confident_audio_sync_is_still_a_proposal_while_automatic_audio_writes
     monkeypatch.setattr(audio, "run_tool", fake_ffsubsync([2.5, 2.5], [], speech=speech_for(shifted, shifted[-1][1] + 10)))
     outcome = guard.evaluate_and_fix(str(tmp_path / "movie.mkv"), str(subtitle), True)
     assert outcome["confidence_band"] == "high" and outcome["decision"] == DECISION["proposed"]
-    monkeypatch.setattr(guard, "AUDIO_AUTOMATIC", True)
+    monkeypatch.setenv("SUBTITLE_GUARD_AUDIO_AUTOMATIC", "1")
     subtitle.write_text(subtitle.read_text())
     outcome = guard.evaluate_and_fix(str(tmp_path / "movie.mkv"), str(subtitle), True)
     assert outcome["decision"] == DECISION["audio_synced"] and abs(parse_subtitle(str(subtitle))["cues"][0][0] - shifted[0][0]) < 0.01
