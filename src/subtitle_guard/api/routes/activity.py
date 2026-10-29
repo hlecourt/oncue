@@ -4,11 +4,12 @@
 import json
 import os
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from ... import jobs
 from ...catalog import subtitle_id
-from ...logs import event_level, event_message, recent_events
+from ...logs import event_level, event_message, log_file, recent_events
 from ...reports import decision_counts, report_history
 from ..presentation import HISTORY_GROUPS, change_sentences, folder_label, result_words, started_by
 from ..schemas import History, HistoryGroup, HistoryRow, Job, LogEvent
@@ -42,6 +43,14 @@ def get_log(q: str = Query("", max_length=200), level: str | None = None, limit:
               and (not level or event_level(event) == level)][:limit]
     return [LogEvent(time=event.get("time", ""), level=event_level(event), source=event.get("source", ""), event=event["event"], message=event_message(event),
                      details={key: value for key, value in event.items() if key not in LOG_FIELDS}) for event in events]
+
+
+@router.get("/log/export", operation_id="exportLog", response_class=FileResponse)
+def export_log():
+    path = log_file()
+    if not os.path.exists(path):
+        raise HTTPException(404, {"code": "no_log", "message": "Nothing logged yet."})
+    return FileResponse(path, media_type="application/x-ndjson", filename="subtitle-guard.log.jsonl")
 
 
 def history_row(row):

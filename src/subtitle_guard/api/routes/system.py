@@ -11,7 +11,7 @@ from ...errors import ConfigError
 from ...files import clean_up_backups, folder_bytes
 from ...health import health_checks
 from ...heartbeats import worker_health
-from ...scans import latest_scan, scan, start_scan, stop_scan
+from ...scans import bazarr_configured, latest_scan, scan, start_scan, stop_scan
 from ..schemas import BazarrSetup, Check, CleanUp, Scan, SetupWarning, SystemView
 from ..security import require_csrf, require_user
 
@@ -28,6 +28,9 @@ def get_system() -> SystemView:
 
 @router.get("/system/bazarr", operation_id="checkBazarrSetup", dependencies=[Depends(require_user)])
 def check_bazarr() -> BazarrSetup:
+    if not bazarr_configured():
+        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="not_set_up", message="Bazarr is not set up, so the guard works from the watched "
+                                                                                          "folders. Add its address and API key in Settings to use it.")])
     try:
         return BazarrSetup(reachable=True, warnings=[SetupWarning(**warning) for warning in setup_warnings()])
     except (OSError, ValueError, KeyError, ConfigError) as error:

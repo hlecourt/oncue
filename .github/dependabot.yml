@@ -18,6 +18,15 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      front:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule:

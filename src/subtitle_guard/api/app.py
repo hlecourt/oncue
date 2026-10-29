@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException
 from .. import __version__, configuration, logs
 from ..logs import log
 from ..web.auth import configure
+from .front import add_front
 from .routes import activity, commands, media, review, session, settings, status, subtitles, system
 from .security import SECURITY_HEADERS, guard
 
@@ -35,6 +36,7 @@ def create_app(host=HOST):
     app.include_router(status.router, prefix=base)
     for prefix in {"", base}:
         app.include_router(status.probes, prefix=prefix)
+    add_front(app, base)
     return app
 
 
