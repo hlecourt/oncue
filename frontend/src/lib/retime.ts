@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export type Change = { first: number; last: number; offset: number }
+export type Move = Change & { group: number; held: boolean }
 export type Scope = "all" | "from" | "selected"
 
 const CENTISECONDS = 100
@@ -22,6 +23,26 @@ export function segments(offsets: number[]) {
     else found.push({ first: index, last: index, offset })
   })
   return found
+}
+
+export function heldLines(count: number, history: Move[]) {
+  const offsets = lineOffsets(count, history)
+  const held = new Array<boolean>(count).fill(false)
+  for (const move of history.filter((entry) => entry.held)) {
+    for (let index = Math.max(0, move.first); index <= Math.min(count - 1, move.last); index += 1) held[index] = offsets[index] !== 0
+  }
+  return held
+}
+
+export function openRuns([first, last]: [number, number], held: boolean[]) {
+  const runs: [number, number][] = []
+  for (let index = first; index <= last; index += 1) {
+    if (held[index]) continue
+    const run = runs.at(-1)
+    if (run && run[1] === index - 1) run[1] = index
+    else runs.push([index, index])
+  }
+  return runs
 }
 
 export function scopeRange(scope: Scope, current: number, selection: [number, number] | null, count: number): [number, number] {

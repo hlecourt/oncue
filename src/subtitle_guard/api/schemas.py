@@ -308,3 +308,79 @@ class AudioState(BaseModel):
     duration: float
     job: int | None
     peaks_per_second: int
+
+
+class Tally(BaseModel):
+    name: str
+    count: int
+
+
+class DayCount(BaseModel):
+    day: str
+    checks: int
+
+
+class OffsetBin(BaseModel):
+    low: float | None
+    high: float | None
+    count: int
+
+
+class ProviderStats(BaseModel):
+    provider: str
+    downloads: int
+    in_sync: int
+    sure_fix: int
+    review: int
+    rejected: int
+    unchecked: int
+    median_offset: float | None
+
+
+class CheckTime(BaseModel):
+    median: float | None
+    p95: float | None
+    bins: list[int]
+
+
+class Records(BaseModel):
+    largest_offset: float | None
+    most_parts: int
+    fastest_check: float | None
+    replacements: int
+    replacements_in_sync: int
+    replacements_checked: int
+    edits_by_hand: int
+
+
+class RightNow(BaseModel):
+    queued: int
+    running: int
+    workers: int
+    workers_expected: int
+    last_check: str | None
+    audio_cache_bytes: int
+    audio_cache_limit: int
+    backups_bytes: int
+    started: str | None
+
+
+class StatsView(BaseModel):
+    subtitles: int
+    checks: int
+    fixed_on_their_own: int
+    found_not_written: int
+    lines_realigned: int
+    median_offset: float | None
+    undone: int
+    per_day: list[DayCount]
+    weekly: list[int]
+    confidence: list[int]
+    offsets: list[OffsetBin]
+    providers: list[ProviderStats]
+    languages: list[Tally]
+    references: list[Tally]
+    speed_fixes: list[Tally]
+    check_time: CheckTime
+    records: Records
+    now: RightNow
