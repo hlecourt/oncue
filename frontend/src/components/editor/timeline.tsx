@@ -4,6 +4,7 @@ import { type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState
 import WaveSurfer from "wavesurfer.js"
 
 import { clock } from "@/lib/format"
+import { useT } from "@/lib/i18n"
 import { useDark } from "@/lib/theme"
 
 export type Block = { start: number; end: number; text: string }
@@ -37,6 +38,7 @@ const FOLLOW_LEAD = 0.2
 const DRAG_THRESHOLD = 8
 
 export function Timeline(props: Props) {
+  const t = useT()
   const { duration, span, time, compact = false } = props
   const tracks = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -84,14 +86,14 @@ export function Timeline(props: Props) {
   const inSelection = (index: number) => props.selection !== null && index >= props.selection[0] && index <= props.selection[1]
 
   return (
-    <section className="flex bg-background" aria-label="Timeline">
+    <section className="flex bg-background" aria-label={t("Timeline")}>
       {!compact && (
         <div className="w-[150px] flex-none pl-4 text-xs" aria-hidden="true">
           <div style={{ height: heights.ruler }} />
           <TrackLabel height={heights.ours} tone="bg-ours" title={props.labels.ours} detail={props.labels.oursDetail} />
-          <TrackLabel height={heights.sound} tone="bg-wave" title="Sound" detail="voices" />
+          <TrackLabel height={heights.sound} tone="bg-wave" title={t("Sound")} detail={t("voices")} />
           <TrackLabel height={heights.theirs} tone="bg-theirs" title={props.labels.theirs} detail={props.labels.theirsDetail} />
-          <div className="pt-1 text-[11px] text-muted-foreground">Whole file</div>
+          <div className="pt-1 text-[11px] text-muted-foreground">{t("Whole file")}</div>
         </div>
       )}
       <div ref={tracks} className={cn("relative min-w-0 flex-1 select-none", compact ? "mx-3" : "mr-3")}>
@@ -106,7 +108,7 @@ export function Timeline(props: Props) {
           {props.before && current && visible(props.before) && Math.abs(props.before.start - current.start) > 0.05 && (
             <div className="pointer-events-none absolute flex items-center overflow-hidden rounded-[5px] border border-dashed border-ours-line px-1.5 font-mono text-[10px] whitespace-nowrap text-ours-ink"
               style={{ left: xOf(props.before.start), width: (props.before.end - props.before.start) * scale, top: 5, height: heights.ours - 10 }}>
-              was {clock(props.before.start, 2)}
+              {t("was {time}", { time: clock(props.before.start, 2) })}
             </div>
           )}
           {current && visible(current) && (
@@ -123,7 +125,7 @@ export function Timeline(props: Props) {
             return (
               <div key={index} className="contents">
                 <i className={cn("pointer-events-none absolute w-px", index === props.current ? "bg-ours" : "bg-ours/30")} style={{ left, top: 4, height: heights.ours + heights.sound - 4 }} />
-                <button type="button" aria-label={`Line ${index + 1}: ${line.text}`} title={line.text}
+                <button type="button" aria-label={t("Line {number}: {text}", { number: index + 1, text: line.text })} title={line.text}
                   onPointerDown={startDrag(index)} onPointerMove={moveDrag} onPointerUp={endDrag(index)}
                   className={cn("absolute flex cursor-grab items-center overflow-hidden rounded-[5px] px-1.5 text-[11px] whitespace-nowrap active:cursor-grabbing",
                     index === props.current ? "bg-ours-strong font-medium text-white shadow-sm" : "bg-ours-soft text-ours-ink shadow-[inset_2px_0_0_var(--ours)]",
@@ -153,17 +155,18 @@ export function Timeline(props: Props) {
 
 function TrackLabel({ height, tone, title, detail }: { height: number; tone: string; title: string; detail: string }) {
   return (
-    <div className="flex items-center gap-2" style={{ height }}>
+    <div className="flex min-w-0 items-center gap-2" style={{ height }} title={`${title}, ${detail}`}>
       <i className={cn("size-2 flex-none rounded-[2px]", tone)} />
-      <span className="flex flex-col leading-tight"><span className="font-medium">{title}</span><span className="text-[11px] text-muted-foreground">{detail}</span></span>
+      <span className="flex min-w-0 flex-col leading-tight"><span className="truncate font-medium">{title}</span><span className="truncate text-[11px] text-muted-foreground">{detail}</span></span>
     </div>
   )
 }
 
 function Overview({ duration, bands, windowStart, span, onSeek }: { duration: number; bands: Band[]; windowStart: number; span: number; onSeek: (seconds: number) => void }) {
+  const t = useT()
   const percent = (seconds: number) => `${(100 * seconds) / Math.max(duration, 1)}%`
   return (
-    <button type="button" aria-label="Whole file: click to go there" className="relative mt-1 block h-3.5 w-full overflow-hidden rounded bg-muted"
+    <button type="button" aria-label={t("Whole file: click to go there")} className="relative mt-1 block h-3.5 w-full overflow-hidden rounded bg-muted"
       onClick={(event) => {
         const box = event.currentTarget.getBoundingClientRect()
         onSeek(((event.clientX - box.left) / box.width) * duration)

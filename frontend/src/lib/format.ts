@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { translate } from "@/lib/i18n"
 
 export function clock(seconds: number, digits = 0) {
   const sign = seconds < 0 ? "-" : ""
@@ -16,8 +17,8 @@ export function when(moment: string | null | undefined) {
   const today = new Date()
   const yesterday = new Date(today.getTime() - 86_400_000)
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-  if (date.toDateString() === today.toDateString()) return `Today ${time}`
-  if (date.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`
+  if (date.toDateString() === today.toDateString()) return translate("Today {time}", { time })
+  if (date.toDateString() === yesterday.toDateString()) return translate("Yesterday {time}", { time })
   return `${date.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })} ${time}`
 }
 

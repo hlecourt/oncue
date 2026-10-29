@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from ...logs import log
 from ..auth import LOCKOUT_SECONDS, SESSION_SECONDS, SESSIONS, locked_out, open_session, record_failure, verify
+from ..i18n import tr
 from ..schemas import Credentials, Problem, SessionState
 from ..security import SESSION_COOKIE, client_address, current_session, login_needed, require_csrf
 
@@ -30,10 +31,10 @@ def log_in(credentials: Credentials, request: Request) -> SessionState:
     client = client_address(request)
     with LOGIN_LOCK:
         if locked_out(client):
-            return problem(429, "locked_out", f"Too many wrong attempts. Wait {LOCKOUT_SECONDS // 60} minutes and try again.")
+            return problem(429, "locked_out", tr("Too many wrong attempts. Wait {minutes} minutes and try again.", minutes=LOCKOUT_SECONDS // 60))
         if not verify(credentials.user, credentials.password):
             record_failure(client)
-            return problem(401, "wrong_credentials", "That user name or password is not right.")
+            return problem(401, "wrong_credentials", tr("That user name or password is not right."))
     session = open_session(credentials.user)
     log("api.login", f"user {credentials.user} logged in from {client}", user=credentials.user, client=client)
     response = JSONResponse(SessionState(login_required=True, user=credentials.user, csrf=SESSIONS[session]["csrf"]).model_dump())

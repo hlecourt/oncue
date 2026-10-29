@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
+import { useT } from "@/lib/i18n"
 
 type Setting = Schemas["SettingView"]
 type Draft = Record<string, unknown>
@@ -43,6 +44,7 @@ const LABELS: Record<string, string> = {
 const CHOICES: Record<string, string> = { report: "Report only", fix: "Fix automatically", forms: "Always", local: "Not from private addresses", external: "A reverse proxy handles it" }
 
 export function SettingsPage() {
+  const t = useT()
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => unwrap(api.GET("/api/settings")) })
   const [draft, setDraft] = useState<Draft>({})
@@ -51,7 +53,7 @@ export function SettingsPage() {
     onSuccess: (view) => {
       queryClient.setQueryData(["settings"], view)
       setDraft({})
-      toast.success("Settings saved.")
+      toast.success(t("Settings saved."))
     },
     onError: (error) => toast.error(error.message),
   })
@@ -61,23 +63,23 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="A setting set in the environment always wins and shows as locked here." />
+      <PageHeader title={t("Settings")} description={t("A setting set in the environment always wins and shows as locked here.")} />
       <div className="space-y-4">
         {GROUPS.map((group) => (
           <Card key={group.title}>
-            <CardHeader><CardTitle>{group.title}</CardTitle><CardDescription>{group.description}</CardDescription></CardHeader>
+            <CardHeader><CardTitle>{t(group.title)}</CardTitle><CardDescription>{t(group.description)}</CardDescription></CardHeader>
             <CardContent className="grid gap-5 md:grid-cols-2">
               {group.names.map((name) => byName[name] && <Field key={name} setting={byName[name]!} draft={draft} setDraft={setDraft} />)}
             </CardContent>
           </Card>
         ))}
         <Card>
-          <CardHeader><CardTitle>Fixed by the environment</CardTitle><CardDescription>These are never changed from the UI.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Fixed by the environment")}</CardTitle><CardDescription>{t("These are never changed from the UI.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3 text-sm">
             {settings.data.fixed.map((item) => (
               <div key={item.name} className="space-y-1">
-                <div className="font-medium">{item.name === "allowed_folders" ? "Allowed folders" : "Automatic fixes need a confidence of"}</div>
-                <div className="font-mono text-xs">{Array.isArray(item.value) ? (item.value.length ? item.value.join(", ") : "Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set") : String(item.value)}</div>
+                <div className="font-medium">{item.name === "allowed_folders" ? t("Allowed folders") : t("Automatic fixes need a confidence of")}</div>
+                <div className="font-mono text-xs">{Array.isArray(item.value) ? (item.value.length ? item.value.join(", ") : t("Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set")) : String(item.value)}</div>
                 <div className="text-xs text-muted-foreground">{item.why}</div>
               </div>
             ))}
@@ -86,11 +88,11 @@ export function SettingsPage() {
         <ApiKey />
       </div>
       {changed > 0 && (
-        <div className="sticky bottom-4 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur" role="region" aria-label="Unsaved changes">
-          <span className="text-sm">{changed} unsaved change{changed > 1 ? "s" : ""}</span>
+        <div className="sticky bottom-4 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur" role="region" aria-label={t("Unsaved changes")}>
+          <span className="text-sm">{changed > 1 ? t("{count} unsaved changes", { count: changed }) : t("{count} unsaved change", { count: changed })}</span>
           <div className="flex gap-2">
-            <Button variant="ghost" disabled={save.isPending} onClick={() => setDraft({})}>Discard</Button>
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>Save {changed} change{changed > 1 ? "s" : ""}</Button>
+            <Button variant="ghost" disabled={save.isPending} onClick={() => setDraft({})}>{t("Discard")}</Button>
+            <Button disabled={save.isPending} onClick={() => save.mutate()}>{changed > 1 ? t("Save {count} changes", { count: changed }) : t("Save {count} change", { count: changed })}</Button>
           </div>
         </div>
       )}
@@ -99,15 +101,16 @@ export function SettingsPage() {
 }
 
 function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; setDraft: (update: (current: Draft) => Draft) => void }) {
+  const t = useT()
   const value = setting.name in draft ? draft[setting.name] : setting.value
   const change = (next: unknown) => setDraft((current) => ({ ...current, [setting.name]: next }))
   const id = `setting-${setting.name}`
-  const note = setting.locked ? `Set by the environment.` : setting.restart ? "Applies after a restart." : setting.note
+  const note = setting.locked ? t("Set by the environment.") : setting.restart ? t("Applies after a restart.") : setting.note
   if (setting.kind === "switch") {
     return (
       <div className="flex items-start justify-between gap-4 rounded-md border p-3 md:col-span-2">
         <div className="space-y-1">
-          <Label htmlFor={id} className="flex items-center gap-1.5">{LABELS[setting.name] ?? setting.name}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
+          <Label htmlFor={id} className="flex items-center gap-1.5">{t(LABELS[setting.name] ?? setting.name)}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
           {note && <p className="text-xs text-muted-foreground">{note}</p>}
         </div>
         <Switch id={id} checked={Boolean(value)} disabled={setting.locked} onCheckedChange={change} />
@@ -116,11 +119,11 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
   }
   return (
     <div className="space-y-2">
-      <Label htmlFor={id} className="flex items-center gap-1.5">{LABELS[setting.name] ?? setting.name}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
+      <Label htmlFor={id} className="flex items-center gap-1.5">{t(LABELS[setting.name] ?? setting.name)}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
       {setting.kind === "choice" && (
         <Select value={String(value)} disabled={setting.locked} onValueChange={change}>
           <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
-          <SelectContent>{setting.choices.map((choice) => <SelectItem key={choice} value={choice}>{CHOICES[choice] ?? choice}</SelectItem>)}</SelectContent>
+          <SelectContent>{setting.choices.map((choice) => <SelectItem key={choice} value={choice}>{t(CHOICES[choice] ?? choice)}</SelectItem>)}</SelectContent>
         </Select>
       )}
       {setting.kind === "number" && <Input id={id} type="number" min={setting.low} max={setting.high} disabled={setting.locked} value={String(value)} onChange={(event) => change(Number(event.target.value))} />}
@@ -131,7 +134,7 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
       )}
       {["url", "text", "path"].includes(setting.kind) && (
         <Input id={id} type={setting.kind === "text" && setting.name.includes("key") ? "password" : "text"} disabled={setting.locked}
-          value={setting.value === null && !(setting.name in draft) ? "" : String(value ?? "")} placeholder={setting.value === null && setting.is_set ? "Set, type to replace it" : ""}
+          value={setting.value === null && !(setting.name in draft) ? "" : String(value ?? "")} placeholder={setting.value === null && setting.is_set ? t("Set, type to replace it") : ""}
           onChange={(event) => change(event.target.value)} />
       )}
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
@@ -140,6 +143,7 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
 }
 
 function ApiKey() {
+  const t = useT()
   const queryClient = useQueryClient()
   const [shown, setShown] = useState(false)
   const key = useQuery({ queryKey: ["api-key"], queryFn: () => unwrap(api.GET("/api/settings/api-key")), enabled: shown })
@@ -148,24 +152,24 @@ function ApiKey() {
     onSuccess: (result) => {
       queryClient.setQueryData(["api-key"], result)
       setShown(true)
-      toast.success("A new API key replaces the old one.")
+      toast.success(t("A new API key replaces the old one."))
     },
   })
   return (
     <Card>
-      <CardHeader><CardTitle>API key</CardTitle><CardDescription>For scripts and Home Assistant: send it in the X-Api-Key header.</CardDescription></CardHeader>
+      <CardHeader><CardTitle>{t("API key")}</CardTitle><CardDescription>{t("For scripts and Home Assistant: send it in the X-Api-Key header.")}</CardDescription></CardHeader>
       <CardContent className="flex flex-wrap items-center gap-2">
-        <Input readOnly aria-label="API key" className="w-80 font-mono" value={shown ? key.data?.key ?? "" : "********************************"} />
-        <Button variant="outline" size="icon" aria-label="Show the key" onClick={() => setShown(true)}><EyeIcon /></Button>
-        <Button variant="outline" size="icon" aria-label="Copy the key" disabled={!key.data} onClick={() => navigator.clipboard.writeText(key.data!.key).then(() => toast.success("Copied."))}><CopyIcon /></Button>
+        <Input readOnly aria-label={t("API key")} className="w-80 font-mono" value={shown ? key.data?.key ?? "" : "********************************"} />
+        <Button variant="outline" size="icon" aria-label={t("Show the key")} onClick={() => setShown(true)}><EyeIcon /></Button>
+        <Button variant="outline" size="icon" aria-label={t("Copy the key")} disabled={!key.data} onClick={() => navigator.clipboard.writeText(key.data!.key).then(() => toast.success(t("Copied.")))}><CopyIcon /></Button>
         <AlertDialog>
-          <AlertDialogTrigger asChild><Button variant="outline">Make a new key</Button></AlertDialogTrigger>
+          <AlertDialogTrigger asChild><Button variant="outline">{t("Make a new key")}</Button></AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Make a new API key?</AlertDialogTitle>
-              <AlertDialogDescription>Scripts that use the current key stop working until they get the new one.</AlertDialogDescription>
+              <AlertDialogTitle>{t("Make a new API key?")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("Scripts that use the current key stop working until they get the new one.")}</AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => renew.mutate()}>Make a new key</AlertDialogAction></AlertDialogFooter>
+            <AlertDialogFooter><AlertDialogCancel>{t("Cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => renew.mutate()}>{t("Make a new key")}</AlertDialogAction></AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </CardContent>

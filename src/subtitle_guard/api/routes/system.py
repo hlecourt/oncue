@@ -12,6 +12,7 @@ from ...files import clean_up_backups, folder_bytes
 from ...health import health_checks
 from ...heartbeats import worker_health
 from ...scans import bazarr_configured, latest_scan, scan, start_scan, stop_scan
+from ..i18n import tr
 from ..schemas import BazarrSetup, Check, CleanUp, Scan, SetupWarning, SystemView
 from ..security import require_csrf, require_user
 
@@ -21,7 +22,7 @@ router = APIRouter(tags=["system"])
 @router.get("/system", operation_id="getSystem", dependencies=[Depends(require_user)])
 def get_system() -> SystemView:
     checks = {name: Check(ok=check["ok"], detail=check_detail(check)) for name, check in health_checks().items()}
-    checks["allowed_folders"] = Check(ok=bool(files.ROOTS), detail=", ".join(files.ROOTS) or "Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set")
+    checks["allowed_folders"] = Check(ok=bool(files.ROOTS), detail=", ".join(files.ROOTS) or tr("Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set"))
     return SystemView(version=__version__, checks=checks, workers=worker_health(), backups_bytes=folder_bytes(storage.BACKUP_DIRECTORY),
                       mode=configuration.value("mode"))
 
@@ -29,18 +30,18 @@ def get_system() -> SystemView:
 def check_detail(check):
     if check.get("error"):
         return str(check["error"]).strip().splitlines()[-1]
-    return str(check.get("version") or check.get("path") or ("not set up" if check.get("configured") is False else ""))
+    return str(check.get("version") or check.get("path") or (tr("not set up") if check.get("configured") is False else ""))
 
 
 @router.get("/system/bazarr", operation_id="checkBazarrSetup", dependencies=[Depends(require_user)])
 def check_bazarr() -> BazarrSetup:
     if not bazarr_configured():
-        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="not_set_up", message="Bazarr is not set up, so the guard works from the watched "
-                                                                                          "folders. Add its address and API key in Settings to use it.")])
+        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="not_set_up", message=tr("Bazarr is not set up, so the guard works from the watched "
+                                                                                             "folders. Add its address and API key in Settings to use it."))])
     try:
-        return BazarrSetup(reachable=True, warnings=[SetupWarning(**warning) for warning in setup_warnings()])
+        return BazarrSetup(reachable=True, warnings=[SetupWarning(code=warning["code"], message=tr(warning["message"])) for warning in setup_warnings()])
     except (OSError, ValueError, KeyError, ConfigError) as error:
-        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="unreachable", message=f"Bazarr cannot be reached: {error}")])
+        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="unreachable", message=tr("Bazarr cannot be reached: {reason}", reason=error))])
 
 
 @router.post("/system/backups/clean-up", operation_id="cleanUpBackups", dependencies=[Depends(require_csrf)])
@@ -64,6 +65,6 @@ def latest() -> Scan | None:
 @router.post("/scans/{scan_id}/stop", operation_id="stopScan", dependencies=[Depends(require_csrf)])
 def stop(scan_id: int) -> Scan:
     if scan(scan_id) is None:
-        raise HTTPException(404, {"code": "unknown_scan", "message": "There is no such scan."})
+        raise HTTPException(404, {"code": "unknown_scan", "message": tr("There is no such scan.")})
     stop_scan(scan_id)
     return Scan(**scan(scan_id))

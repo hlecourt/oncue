@@ -10,12 +10,13 @@ from ..catalog import path_for
 from ..files import inside_roots
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
+from .i18n import tr
 
 
 def known_path(identity):
     path = path_for(identity)
     if path is None or not usable(path):
-        raise HTTPException(404, {"code": "unknown_subtitle", "message": "This subtitle is not known to the guard."})
+        raise HTTPException(404, {"code": "unknown_subtitle", "message": tr("This subtitle is not known to the guard.")})
     return path
 
 

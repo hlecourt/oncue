@@ -4,6 +4,7 @@
 import os
 
 from ..outcome import DECISION, DECISION_WORDS
+from .i18n import tr
 
 TONE = {"good": "good", "warn": "warn", "bad": "bad", "neutral": "neutral"}
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "approved": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
@@ -24,26 +25,25 @@ SPEED_TOLERANCE = 0.001
 
 def result_words(row):
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
-        return f"Belongs to {row['note']}", TONE["bad"]
-    words = DECISION_WORDS.get(row["decision"], row["decision"])
+        return tr("Belongs to {episode}", episode=row["note"]), TONE["bad"]
+    words = tr(DECISION_WORDS.get(row["decision"], row["decision"]))
     if not row.get("applied", 1) and row["decision"] in DRY_RUN_WORDS:
-        return DRY_RUN_WORDS[row["decision"]], TONE["neutral"]
+        return tr(DRY_RUN_WORDS[row["decision"]]), TONE["neutral"]
     if (row["band"] == "low" or row["weak_minutes"]) and row["decision"] in UNSURE_WORDS:
-        return UNSURE_WORDS[row["decision"]], TONE["warn"]
+        return tr(UNSURE_WORDS[row["decision"]]), TONE["warn"]
     return words, DECISION_TONES.get(row["decision"], TONE["neutral"])
 
 
 def review_reason(row, proposal):
     if proposal:
-        source = "the sound" if proposal["kind"] == "audio" else "the video's subtitles"
-        return f"A fix from {source} is ready"
+        return tr("A fix from the sound is ready") if proposal["kind"] == "audio" else tr("A fix from the video's subtitles is ready")
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
-        return f"Belongs to {row['note']}"
+        return tr("Belongs to {episode}", episode=row["note"])
     if row["weak_minutes"]:
-        return f"Out of sync around {clock(int(row['weak_minutes'].split(',')[0]) * 60)}"
+        return tr("Out of sync around {time}", time=clock(int(row["weak_minutes"].split(",")[0]) * 60))
     if row["decision"] == DECISION["rejected"]:
-        return "Does not match the video"
-    return DECISION_WORDS.get(row["decision"], row["decision"])
+        return tr("Does not match the video")
+    return tr(DECISION_WORDS.get(row["decision"], row["decision"]))
 
 
 def review_tone(row, proposal):
@@ -59,21 +59,33 @@ def review_tone(row, proposal):
 def started_by(provider):
     if not provider:
         return ""
-    return STARTED_BY.get(provider, f"Bazarr (downloaded from {provider})")
+    if provider in STARTED_BY:
+        return tr(STARTED_BY[provider])
+    return tr("Bazarr (downloaded from {provider})", provider=provider)
 
 
 def change_sentences(changes, decision):
     if not changes and decision in UNCHANGED_DECISIONS:
-        return ["Nothing moved"]
+        return [tr("Nothing moved")]
     if not changes:
-        return ["Not recorded"]
-    sentences = [f"Speed corrected: it was {speed_label(changes['scale'])}"] if speed_changed(changes.get("scale", 1.0)) else []
+        return [tr("Not recorded")]
+    sentences = [tr("Speed corrected: it was {speed}", speed=speed_label(changes["scale"]))] if speed_changed(changes.get("scale", 1.0)) else []
     for part in changes.get("parts", [])[:CHANGES_SHOWN]:
-        lines = f"All {changes['lines']} lines" if part["lines"] >= 0.9 * changes["lines"] else f"{part['lines']} lines from {clock(part['first'])} to {clock(part['last'])}"
-        sentences.append(f"{lines} moved {abs(part['shift']):.1f} s {'earlier' if part['shift'] < 0 else 'later'}")
+        sentences.append(part_sentence(part, changes["lines"]))
     if len(changes.get("parts", [])) > CHANGES_SHOWN:
-        sentences.append(f"and {len(changes['parts']) - CHANGES_SHOWN} more parts")
-    return sentences or ["Small timing touch-ups"]
+        sentences.append(tr("and {count} more parts", count=len(changes["parts"]) - CHANGES_SHOWN))
+    return sentences or [tr("Small timing touch-ups")]
+
+
+def part_sentence(part, total):
+    values = {"seconds": f"{abs(part['shift']):.1f}", "count": part["lines"], "first": clock(part["first"]), "last": clock(part["last"])}
+    earlier = part["shift"] < 0
+    if part["lines"] >= 0.9 * total:
+        values["count"] = total
+        return tr("All {count} lines moved {seconds} s earlier", **values) if earlier else tr("All {count} lines moved {seconds} s later", **values)
+    if earlier:
+        return tr("{count} lines from {first} to {last} moved {seconds} s earlier", **values)
+    return tr("{count} lines from {first} to {last} moved {seconds} s later", **values)
 
 
 def speed_changed(scale):
@@ -81,7 +93,10 @@ def speed_changed(scale):
 
 
 def speed_label(scale):
-    return f"made for a {'faster' if scale > 1 else 'slower'} version of the video ({abs(scale - 1):.1%})"
+    percent = f"{abs(scale - 1):.1%}"
+    if scale > 1:
+        return tr("made for a faster version of the video ({percent})", percent=percent)
+    return tr("made for a slower version of the video ({percent})", percent=percent)
 
 
 def clock(value):
