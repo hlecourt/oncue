@@ -26,7 +26,7 @@ PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip"
 SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cache-Control": "no-store",
                     "Content-Security-Policy": ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
                                                 "media-src 'self' blob:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
-                                                "base-uri 'none'")}
+                                                "base-uri 'self'")}
 
 
 async def guard(request, call_next):
@@ -40,7 +40,8 @@ async def guard(request, call_next):
             return refusal(413, "too_large", "The request is too large.")
     response = await call_next(request)
     for name, value in SECURITY_HEADERS.items():
-        response.headers.setdefault(name, value)
+        if name not in response.headers:
+            response.headers[name] = value
     return response
 
 

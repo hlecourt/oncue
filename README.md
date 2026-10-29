@@ -66,14 +66,12 @@ To check it works, download a subtitle from Bazarr: the Log page shows `bazarr.h
 
 ## The web UI
 
-`serve` also opens a web UI on port 8484 that lists what the guard was not sure about, with Keep, Check again and Ask Bazarr
-for another, a history of every check and the technical log, and a page to listen to a subtitle and move its lines by ear.
+In plain words, light or dark, on a phone or a large screen.
 
-![Overview](docs/screenshots/overview.png)
-
-![A fixed subtitle](docs/screenshots/fixed.png)
-
-![History of every check](docs/screenshots/history.png)
+- **Review**: what waits for a decision, one sentence each, with Keep and Check again for several at once.
+- **Subtitle screen**: the fix the guard found, the sound to listen to the lines, and the actions to apply the fix, move lines
+  or restore a saved version.
+- **History**, **Log**, **System** and **Settings** for everything else.
 
 Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an `X-Api-Key` header.
 
@@ -135,8 +133,8 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest -q
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the tests and releases, and [CHANGELOG.md](CHANGELOG.md) for what changed. This
-project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the front, the tests and releases, and [CHANGELOG.md](CHANGELOG.md) for what
+changed. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## Licence
 
