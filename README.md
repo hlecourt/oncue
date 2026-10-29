@@ -72,6 +72,8 @@ In plain words, in English, French or Simplified Chinese, light or dark, on a ph
 - **Editor**: the video, your lines, and a timeline with your subtitle, the sound and the video's own subtitle. Play, press
   **It starts here** where the voice starts, or nudge by 0.1 s or 1 s, on every line, from a line on, or on a selection;
   changes add up and one Save writes them, after a backup. The keyboard does it all (press `?`).
+- **Dashboard**: what the guard did over a period: checks, fixes, offsets, languages, and with Bazarr, subtitle providers
+  ranked by how often their downloads arrive in sync.
 - **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
 ![Review](docs/screenshots/review.png)

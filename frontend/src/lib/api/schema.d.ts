@@ -229,6 +229,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stats */
+        get: operations["getStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -628,6 +645,15 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /** CheckTime */
+        CheckTime: {
+            /** Bins */
+            bins: number[];
+            /** Median */
+            median: number | null;
+            /** P95 */
+            p95: number | null;
+        };
         /** CleanUp */
         CleanUp: {
             /** Backups Bytes */
@@ -650,6 +676,13 @@ export interface components {
             password: string;
             /** User */
             user: string;
+        };
+        /** DayCount */
+        DayCount: {
+            /** Checks */
+            checks: number;
+            /** Day */
+            day: string;
         };
         /** FixedValue */
         FixedValue: {
@@ -781,6 +814,15 @@ export interface components {
             /** Time */
             time: string;
         };
+        /** OffsetBin */
+        OffsetBin: {
+            /** Count */
+            count: number;
+            /** High */
+            high: number | null;
+            /** Low */
+            low: number | null;
+        };
         /** Part */
         Part: {
             /** First */
@@ -809,6 +851,42 @@ export interface components {
             confidence: number;
             /** Kind */
             kind: string;
+        };
+        /** ProviderStats */
+        ProviderStats: {
+            /** Downloads */
+            downloads: number;
+            /** In Sync */
+            in_sync: number;
+            /** Median Offset */
+            median_offset: number | null;
+            /** Provider */
+            provider: string;
+            /** Rejected */
+            rejected: number;
+            /** Review */
+            review: number;
+            /** Sure Fix */
+            sure_fix: number;
+            /** Unchecked */
+            unchecked: number;
+        };
+        /** Records */
+        Records: {
+            /** Edits By Hand */
+            edits_by_hand: number;
+            /** Fastest Check */
+            fastest_check: number | null;
+            /** Largest Offset */
+            largest_offset: number | null;
+            /** Most Parts */
+            most_parts: number;
+            /** Replacements */
+            replacements: number;
+            /** Replacements Checked */
+            replacements_checked: number;
+            /** Replacements In Sync */
+            replacements_in_sync: number;
         };
         /** Restore */
         Restore: {
@@ -849,6 +927,27 @@ export interface components {
             reason: string;
             /** Tone */
             tone: string;
+        };
+        /** RightNow */
+        RightNow: {
+            /** Audio Cache Bytes */
+            audio_cache_bytes: number;
+            /** Audio Cache Limit */
+            audio_cache_limit: number;
+            /** Backups Bytes */
+            backups_bytes: number;
+            /** Last Check */
+            last_check: string | null;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Started */
+            started: string | null;
+            /** Workers */
+            workers: number;
+            /** Workers Expected */
+            workers_expected: number;
         };
         /** Scan */
         Scan: {
@@ -946,6 +1045,42 @@ export interface components {
             /** Words */
             words: string;
         };
+        /** StatsView */
+        StatsView: {
+            check_time: components["schemas"]["CheckTime"];
+            /** Checks */
+            checks: number;
+            /** Confidence */
+            confidence: number[];
+            /** Fixed On Their Own */
+            fixed_on_their_own: number;
+            /** Found Not Written */
+            found_not_written: number;
+            /** Languages */
+            languages: components["schemas"]["Tally"][];
+            /** Lines Realigned */
+            lines_realigned: number;
+            /** Median Offset */
+            median_offset: number | null;
+            now: components["schemas"]["RightNow"];
+            /** Offsets */
+            offsets: components["schemas"]["OffsetBin"][];
+            /** Per Day */
+            per_day: components["schemas"]["DayCount"][];
+            /** Providers */
+            providers: components["schemas"]["ProviderStats"][];
+            records: components["schemas"]["Records"];
+            /** References */
+            references: components["schemas"]["Tally"][];
+            /** Speed Fixes */
+            speed_fixes: components["schemas"]["Tally"][];
+            /** Subtitles */
+            subtitles: number;
+            /** Undone */
+            undone: number;
+            /** Weekly */
+            weekly: number[];
+        };
         /** Status */
         Status: {
             /** Confidence */
@@ -1041,6 +1176,13 @@ export interface components {
             workers: {
                 [key: string]: boolean;
             };
+        };
+        /** Tally */
+        Tally: {
+            /** Count */
+            count: number;
+            /** Name */
+            name: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1528,6 +1670,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+        };
+    };
+    getStats: {
+        parameters: {
+            query?: {
+                days?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

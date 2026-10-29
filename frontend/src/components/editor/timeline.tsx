@@ -192,7 +192,7 @@ function SoundTrack({ media, peaks, duration, windowStart, span, width, height, 
     if (!container.current) return
     const wave = WaveSurfer.create({
       container: container.current, media: media.element, url: media.url, peaks: [peaks], duration, height, ...waveColors(),
-      cursorWidth: 0, barWidth: 2, barGap: 1, barRadius: 2, normalize: true, interact: false, hideScrollbar: true, autoScroll: false, autoCenter: false,
+      cursorWidth: 0, normalize: true, interact: false, hideScrollbar: true, autoScroll: false, autoCenter: false,
     })
     surfer.current = wave
     wave.on("ready", () => setLoads((count) => count + 1))
