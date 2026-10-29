@@ -13,7 +13,7 @@ from .storage import now, state_path
 
 PREPARED = set()
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
-KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check"}
+KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check", "scan": "scan", "audio_copy": "audio-copy"}
 SCHEMA = (
     ("create table if not exists jobs (id integer primary key, kind text not null, arguments text not null, status text not null, "
      "run_after real not null, created text not null, started text, finished text, attempts integer not null default 0, worker integer, "
@@ -27,6 +27,7 @@ SCHEMA = (
     "create index if not exists reports_decision on reports (decision, id)",
     "create table if not exists migrations (name text primary key, applied text not null)",
     "create table if not exists subtitles (id text primary key, path text not null unique, video text not null default '', updated text not null)",
+    "create table if not exists scans (id integer primary key, started text not null, status text not null, total integer not null, source text not null)",
     ("create table if not exists proposals (subtitle_id text primary key references subtitles (id), version text not null, kind text not null, "
      "timings text not null, details text not null, created text not null)"),
 )

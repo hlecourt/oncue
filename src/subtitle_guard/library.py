@@ -7,7 +7,7 @@ import time
 from contextlib import suppress
 from datetime import datetime
 
-from . import jobs
+from . import configuration, jobs
 from .errors import SubtitleGuardError
 from .files import TEMPORARY_SUFFIX
 from .guard import evaluate_and_fix
@@ -25,7 +25,6 @@ PENDING = "pending:"
 FAILED = "failed:"
 FAILED_RETRY_SECONDS = 3600
 LEFTOVER_SECONDS = 3600
-WATCH_SECONDS = int(os.environ.get("SUBTITLE_GUARD_WATCH_SECONDS", "600"))
 
 
 def scan_folder(root, apply, queue=False):
@@ -47,7 +46,8 @@ def scan_folder(root, apply, queue=False):
 
 def watch(roots, apply):
     settings["source"] = "watch"
-    log("watch.started", f"watching {len(roots)} roots interval={WATCH_SECONDS}s apply={apply}", roots=roots, applied=apply, interval=WATCH_SECONDS)
+    log("watch.started", f"watching {len(roots)} roots interval={configuration.value('watch_seconds')}s apply={apply}", roots=roots, applied=apply,
+        interval=configuration.value("watch_seconds"))
     while True:
         queued = 0
         for root in roots:
@@ -55,7 +55,7 @@ def watch(roots, apply):
                 queued += queue_if_changed(video, subtitle, neighbours, apply)
         if queued:
             log("watch.changes-queued", f"{queued} new or changed subtitles queued", jobs=queued)
-        time.sleep(WATCH_SECONDS)
+        time.sleep(configuration.value("watch_seconds"))
 
 
 def queue_if_changed(video, subtitle, neighbours, apply):

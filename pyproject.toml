@@ -9,7 +9,7 @@ description = "Verify and repair subtitle timing against a subtitle track embedd
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Hugo Lecourt" }]
 keywords = ["subtitles", "srt", "sync", "bazarr", "jellyfin", "plex", "ffmpeg"]
 dependencies = ["numpy>=1.24,<3"]
@@ -22,7 +22,6 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -37,8 +36,9 @@ Security = "https://github.com/hlecourt/subtitle-guard/security/policy"
 
 [project.optional-dependencies]
 audio = ["ffsubsync>=0.5.1,<0.6"]
-test = ["pytest>=8", "pytest-cov>=5"]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff==0.17.3"]
+web = ["fastapi>=0.162,<0.200", "uvicorn>=0.54,<0.100"]
+test = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3"]
+dev = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3", "ruff==0.17.3"]
 
 [project.scripts]
 subtitle-guard = "subtitle_guard.cli:main"
@@ -54,7 +54,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 250
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "SIM", "UP", "RUF", "PLW", "BLE", "ISC"]

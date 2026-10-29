@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,9 +42,25 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the package
-        run: pip install -e ".[test]"
+        run: pip install -e ".[test,web]"
       - name: Run the tests with coverage
         run: python -m pytest -q --cov=subtitle_guard --cov-report=term-missing --cov-fail-under=80
+
+  hook-without-web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Run the Bazarr hook the way Bazarr does, with numpy only
+        run: |
+          python -m venv /tmp/bazarr-like
+          /tmp/bazarr-like/bin/pip install "numpy>=1.24,<3"
+          SUBTITLE_GUARD_STATE=/tmp/state PYTHONPATH=src /tmp/bazarr-like/bin/python -m subtitle_guard hook /missing.mkv /missing.fr.srt fr opensubtitles 1 2 | tee /tmp/hook.txt
+          grep -q "subtitle-guard: unverified" /tmp/hook.txt
 
   package:
     runs-on: ubuntu-24.04

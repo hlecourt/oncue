@@ -32,9 +32,11 @@ which cannot fix a different cut, and they sometimes report success on a wrong r
 
 Every change to a subtitle is made by one writer at a time, after a backup, atomically, and only if the file did not change
 during the check. Backups are only made when something is written; each subtitle keeps its first version, its last 5 versions
-(`SUBTITLE_GUARD_KEEP_VERSIONS`) and anything from the last 30 days (`SUBTITLE_GUARD_KEEP_DAYS`). Only the timing lines change: text, styles, encoding and line endings are kept. `check`, the scans, `watch`
-and `serve` are dry runs unless `--apply` is given; the Bazarr `hook` always applies, since it runs on a subtitle Bazarr has
-just downloaded.
+(`SUBTITLE_GUARD_KEEP_VERSIONS`) and anything from the last 30 days (`SUBTITLE_GUARD_KEEP_DAYS`). Only the timing lines change: text, styles, encoding and line endings are kept.
+
+The mode decides whether anything is written: `report` (the default, so a first install only shows what it would do) or
+`fix`. The Bazarr `hook`, `serve` and the folder watch follow it, and in `report` mode Bazarr is never asked for another
+subtitle either; `check` and the scans are dry runs unless `--apply` is given.
 
 ## Install
 
@@ -57,7 +59,7 @@ media and of Bazarr's files. Both containers must mount the media and Bazarr's `
 pip install "subtitle-guard[audio] @ git+https://github.com/hlecourt/subtitle-guard"
 ```
 
-It needs Python 3.10 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
+It needs Python 3.11 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
 locks. The `audio` extra adds ffsubsync for videos without any embedded subtitle track.
 
 ## Set up Bazarr
@@ -173,13 +175,23 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 
 ### Settings
 
+Every setting below except the folders, the state and the backups can also be changed in the UI; a variable that is set always
+wins and shows as locked there.
+
 | Variable | Default |
 |---|---|
 | `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, UI account |
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
 | `SUBTITLE_GUARD_AUDIO_AUTOMATIC` | unset; `1` lets a high-confidence audio sync be written without a person, once `calibrate-audio` found no false positive |
 | `SUBTITLE_GUARD_KEEP_VERSIONS` / `SUBTITLE_GUARD_KEEP_DAYS` | `5` / `30`: backups kept per subtitle besides its first version |
+| `SUBTITLE_GUARD_MODE` | `report`; `fix` lets the guard write high-confidence fixes on its own |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
+| `SUBTITLE_GUARD_REPLACEMENTS` | `3`: other subtitles asked from Bazarr before keeping the best version |
+| `SUBTITLE_GUARD_WEBHOOK_URL` / `SUBTITLE_GUARD_WEBHOOK_MINUTES` | unset / `15`: a digest of what reached Review, at most once per interval |
+| `SUBTITLE_GUARD_URL_BASE` | unset; for example `/subtitle-guard` behind a reverse proxy, applied on restart |
+| `SUBTITLE_GUARD_AUTH` | `forms`; `local` skips the login from private addresses, `external` trusts a reverse proxy that authenticates |
+| `SUBTITLE_GUARD_API_PORT` | `8485`, the new API while it is built beside the current UI |
+| `SUBTITLE_GUARD_AUDIO_CACHE_MB` | `2048`: light audio copies the editor plays, least recently played removed first |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
