@@ -10,7 +10,7 @@ that exact file) and repairs them when the result can be trusted.
 Status: alpha. It runs as a [Bazarr](https://www.bazarr.media/) post-processing hook, or on its own over media folders, with a
 job queue, parallel workers and a web UI that anyone can use to review and fix what the guard was not sure about.
 
-![A subtitle with two parts out of sync](docs/screenshots/out-of-sync.png)
+![A subtitle in the editor](docs/screenshots/subtitle.png)
 
 ## Why
 
@@ -56,11 +56,15 @@ media and of Bazarr's files. Both containers must mount the media and Bazarr's `
 ### With pip
 
 ```
-pip install "subtitle-guard[audio] @ git+https://github.com/hlecourt/subtitle-guard"
+pip install "subtitle-guard[web,audio] @ https://github.com/hlecourt/subtitle-guard/releases/download/v0.1.0/subtitle_guard-0.1.0-py3-none-any.whl"
 ```
 
+Install the wheel attached to a release: it carries the built web UI. A clone has no built UI until you build it (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
+
 It needs Python 3.11 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
-locks. The `audio` extra adds ffsubsync for videos without any embedded subtitle track.
+locks. The `web` extra adds the UI (FastAPI and uvicorn); the Bazarr hook, the CLI and the workers only need numpy. The `audio`
+extra adds ffsubsync for videos without any embedded subtitle track.
 
 ## Set up Bazarr
 
@@ -97,37 +101,35 @@ review, with its proposal when there is one; nothing is downloaded.
 
 ## Web UI
 
-`subtitle-guard ui`, or `serve`, which also runs the workers, opens a web UI on port 8484. It is written for anyone, in plain
-words, and fits phones, tablets and large screens.
+`subtitle-guard ui`, or `serve`, which also runs the workers, opens the web UI on port 8484 (the `web` extra). It is written for
+anyone, in plain words, in light or dark, and fits phones, tablets and large screens. `Ctrl K` opens a search over the pages and
+the subtitles.
 
-![Overview](docs/screenshots/overview.png)
+![Review](docs/screenshots/review.png)
 
-- **Overview**: how many subtitles need a look, were fixed automatically, are in sync or cannot be checked (each subtitle
-  counted once, by its latest check), tasks in progress or failed, and the latest checks.
-- **Needs a look**: the subtitles the guard was not sure about, one sentence each ("Out of sync around 25:00", "Belongs to
-  S01E03"), with the obvious fix as one button. It stays in a sidebar on every page.
-- **One page per subtitle**: what is going on in one sentence, each wrong part ("25:03 to 31:38: 79 lines appear 2.3 s too
-  late") with **Fix this part**, and **Fix everything** (applies the proposal), **It looks fine, keep it**, **Restore the original
-  file**, **Try another subtitle** (Bazarr) and **Delete this subtitle** (wrong episode) when they apply. A timeline shows every minute (patterns, not
-  only colours, and a text summary), and a line-by-line view puts each moment of the video next to the line of your subtitle
-  that goes with it. Lines can be realigned by hand from the keyboard. For a fixed subtitle, the page shows what was changed
-  and where each line was.
-- **Listen and edit**: an editor to check a subtitle by ear, most useful when the video has no subtitles of its own. The lines
-  are listed on the left, a picture of the video (updated when paused) shows the current line on top of it, and a waveform of
-  the sound shows your lines as blocks, with the video's own subtitles in a grey lane under them when there are some. Play,
-  move every line or a selection earlier or later (buttons, a number, or by dragging the blocks), listen again, then apply:
-  the file is backed up first and the change is refused if the file changed meanwhile. The sound is cut into one-minute
-  clips by ffmpeg on demand, one at a time, and never stored.
-- **History**: every check, newest first, with what started it, the result, the confidence and what changed (speed corrected,
-  which lines moved, how far and which way), and the tasks waiting, running or failed with **Run again**.
-- **Log**: the technical log, one line per event; each line opens on its full metadata as JSON with a Copy button. The raw log
-  downloads from `/log.jsonl`.
+- **Review**, the home page: the subtitles waiting for a person, one sentence each ("A fix from the video's subtitles is ready,
+  confidence 72", "Out of sync around 25:00", "Belongs to S01E03"), with counts, a filter, and **Keep as is**, **Check again** and
+  **Ask Bazarr for another** for several at once. A fix is never applied in bulk.
+- **One screen per subtitle**: the decision, the confidence, the fix the guard found and the parts it moves, then the editor.
+  The lines are listed with the video's own line next to each one, a still of the video shows the current line, and a waveform
+  of the sound shows your lines as blocks, with the video's subtitles in a lane under them when there are some. Play, start from
+  the fix or from the current file, move every line or a selection earlier or later (buttons, a number, or by dragging the
+  blocks), listen again, then save: the file is backed up first and the save is refused if the file changed meanwhile. The
+  editor plays a light copy of the sound made once by ffmpeg and cached (`SUBTITLE_GUARD_AUDIO_CACHE_MB`). The same screen
+  keeps the subtitle as it is, checks it again, asks Bazarr for another, restores a saved version or deletes it.
+- **History**: every check, newest first, with what started it, the result, the confidence and what changed, filtered by result;
+  and the tasks waiting, running or failed, with **Run again**.
+- **Log**: the technical log, searchable and filtered by level; each line opens on its full metadata as JSON with a Copy button.
+  The raw log downloads from `/api/log/export`.
+- **System**: whether ffmpeg, ffprobe, ffsubsync, the folders, Bazarr and the workers are working, the Bazarr settings that keep
+  subtitles from the guard, the library scan with its progress, and the size of the backups with a clean-up.
+- **Settings**: every setting of the table below, by group; a setting set in the environment shows as locked. The API key for
+  scripts is shown, copied or replaced here.
 
-![A fixed subtitle](docs/screenshots/fixed.png)
+![A subtitle in the editor](docs/screenshots/subtitle.png)
 
-Keyboard: `j` and `k` move between subtitles, Left and Right between minutes. Pages refresh themselves when something changed,
-unless you are reading an open line or typing. JSON is at `/api/status`, `/api/jobs`, `/api/review` and `/api/log`; `/health` says
-the server is up and `/ready` checks the database and every worker.
+The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scripts send the API key in an `X-Api-Key` header.
+`/health` says the server is up and `/ready` checks the database and every worker; both also answer under the URL base.
 
 ![History of every check](docs/screenshots/history.png)
 
@@ -138,8 +140,9 @@ the server is up and `/ready` checks the database and every worker.
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
   opening it. Five wrong attempts lock a client out for 10 minutes. Logging in opens a session that expires on the server after
   30 days (HttpOnly, SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`); logging out ends it.
-- Every action is a POST with a CSRF token, from the same origin; without a token only loopback host names are accepted. Pages
-  send a strict Content-Security-Policy and refuse to be framed. Requests are size- and time-limited.
+- Every change is a JSON request carrying the session's CSRF token in a header, or the API key, from the same origin; without a
+  login only loopback host names are accepted. Pages send a strict Content-Security-Policy with no inline script and refuse to be
+  framed. Requests are size- and time-limited, and proxy headers are ignored.
 - The UI only acts on subtitles the guard already checked, never through a symlink, and only under `SUBTITLE_GUARD_ROOTS` (or the
   watched folders) when set.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
@@ -190,7 +193,6 @@ wins and shows as locked there.
 | `SUBTITLE_GUARD_WEBHOOK_URL` / `SUBTITLE_GUARD_WEBHOOK_MINUTES` | unset / `15`: a digest of what reached Review, at most once per interval |
 | `SUBTITLE_GUARD_URL_BASE` | unset; for example `/subtitle-guard` behind a reverse proxy, applied on restart |
 | `SUBTITLE_GUARD_AUTH` | `forms`; `local` skips the login from private addresses, `external` trusts a reverse proxy that authenticates |
-| `SUBTITLE_GUARD_API_PORT` | `8485`, the new API while it is built beside the current UI |
 | `SUBTITLE_GUARD_AUDIO_CACHE_MB` | `2048`: light audio copies the editor plays, least recently played removed first |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |

@@ -20,10 +20,15 @@ router = APIRouter(tags=["system"])
 
 @router.get("/system", operation_id="getSystem", dependencies=[Depends(require_user)])
 def get_system() -> SystemView:
-    checks = {name: Check(ok=check["ok"], detail=str(check.get("error") or check.get("version") or check.get("path") or ("not set up" if check.get("configured") is False else "")))
-              for name, check in health_checks().items()}
+    checks = {name: Check(ok=check["ok"], detail=check_detail(check)) for name, check in health_checks().items()}
     return SystemView(version=__version__, checks=checks, workers=worker_health(), backups_bytes=folder_bytes(storage.BACKUP_DIRECTORY),
                       mode=configuration.value("mode"))
+
+
+def check_detail(check):
+    if check.get("error"):
+        return str(check["error"]).strip().splitlines()[-1]
+    return str(check.get("version") or check.get("path") or ("not set up" if check.get("configured") is False else ""))
 
 
 @router.get("/system/bazarr", operation_id="checkBazarrSetup", dependencies=[Depends(require_user)])

@@ -8,12 +8,14 @@ from ..outcome import DECISION, DECISION_WORDS
 TONE = {"good": "good", "warn": "warn", "bad": "bad", "neutral": "neutral"}
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "approved": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
                   "unverified": "neutral", "audio-synced": "warn", "reverted": "neutral", "proposed": "warn", "deleted": "neutral"}
+DRY_RUN_WORDS = {"fixed": "A sure fix was found, not written (dry run)", "audio-synced": "An audio sync was found, not written (dry run)",
+                 "best-effort": "A best version was found, not written (dry run)"}
 UNSURE_WORDS = {"kept": "Looks in sync, not sure", "fixed": "Fixed, not sure", "manual": "Adjusted by hand, still off in places"}
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, in the UI",
               "revert": "You, restore"}
 HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed", "approved")), "proposals": ("Proposals", ("proposed",)), "in-sync": ("In sync", ("kept",)),
-                  "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")), "not-checked": ("Cannot be checked", ("unverified", "audio-synced")),
+                  "dry-runs": ("Dry runs", ("dry-run",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")), "not-checked": ("Cannot be checked", ("unverified", "audio-synced")),
                   "by-hand": ("By hand", ("manual", "reverted", "deleted"))}
 UNCHANGED_DECISIONS = ("kept", "rejected", "wrong-episode", "unverified", "proposed", "deleted")
 CHANGES_SHOWN = 3
@@ -24,8 +26,8 @@ def result_words(row):
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
         return f"Belongs to {row['note']}", TONE["bad"]
     words = DECISION_WORDS.get(row["decision"], row["decision"])
-    if not row.get("applied", 1):
-        return "Dry run, " + words.lower(), TONE["neutral"]
+    if not row.get("applied", 1) and row["decision"] in DRY_RUN_WORDS:
+        return DRY_RUN_WORDS[row["decision"]], TONE["neutral"]
     if (row["band"] == "low" or row["weak_minutes"]) and row["decision"] in UNSURE_WORDS:
         return UNSURE_WORDS[row["decision"]], TONE["warn"]
     return words, DECISION_TONES.get(row["decision"], TONE["neutral"])

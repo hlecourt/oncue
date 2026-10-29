@@ -20,8 +20,9 @@ advisory once users had a reasonable time to upgrade, normally within 90 days. Y
 
 - The web UI can change subtitle files. Anywhere but on loopback it requires a user name and password (stored as a scrypt hash;
   generated and printed once when unset), and a broken account file stops the UI rather than opening it. Without a password it
-  only serves loopback requests with no proxy headers. Every POST needs a session-bound CSRF token and the same origin, scripts
-  are allowed by hash only, and the UI only acts on subtitles it already checked, inside `SUBTITLE_GUARD_ROOTS` when set.
+  only serves loopback requests with no proxy headers. Every change needs a session-bound CSRF token in a header (or the API
+  key) and the same origin, the pages run no inline script, and the UI only acts on subtitles it already checked, inside
+  `SUBTITLE_GUARD_ROOTS` when set.
 - Subtitle files are rewritten atomically, one writer at a time, after a backup, and only when they did not change during the check.
 - Untrusted inputs are subtitle files and videos downloaded from the internet. They are parsed with size limits, and ffprobe,
   ffmpeg and ffsubsync run with time limits, and ffprobe and ffmpeg read with the file protocol only. Keep the ffmpeg in your image up to date.

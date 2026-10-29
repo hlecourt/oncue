@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 FROM mwader/static-ffmpeg:9.0.2-1@sha256:f5d100184884eb3e82b0eb14bb5ebf98da99826ac824989720297fb9ef21c822 AS ffmpeg
 
+FROM --platform=$BUILDPLATFORM node:24.22.0-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS front
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+RUN corepack pnpm@12.16.1 install --frozen-lockfile
+COPY frontend ./
+RUN corepack pnpm@12.16.1 run build
+
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="subtitle-guard" \
@@ -14,6 +22,7 @@ COPY requirements/docker.txt ./requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
+COPY --from=front /build/src/subtitle_guard/api/static ./src/subtitle_guard/api/static
 RUN pip install --no-cache-dir --no-deps --no-build-isolation . \
     && useradd --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin guard \
     && mkdir -p /config /backup && chown guard:guard /config /backup

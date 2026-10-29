@@ -78,3 +78,12 @@ def test_imported_rows_with_impossible_values_are_skipped():
     with open(storage.state_path("report.tsv"), "w") as handle:
         handle.write(good + "\n")
     assert len(reports.report_history()) == 1
+
+
+def test_a_dry_run_is_its_own_result_and_never_counts_as_fixed(tmp_path):
+    subtitle = str(tmp_path / "Movie.fr.srt")
+    reports.report(subtitle, "scan", {"decision": "fixed", "confidence": 100, "confidence_band": "high"}, applied=False)
+    reports.report(subtitle, "scan", {"decision": "fixed", "confidence": 100, "confidence_band": "high"})
+    assert reports.decision_counts() == {"dry-run": 1, "fixed": 1}
+    assert [row["applied"] for row in reports.report_history(decisions=("fixed",))] == [1]
+    assert [row["applied"] for row in reports.report_history(decisions=("dry-run",))] == [0]

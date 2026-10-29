@@ -50,6 +50,11 @@ def test_lines_move_and_any_saved_version_comes_back(client, proposed):
     answer = client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": -0.5})
     assert answer.status_code == 200 and subtitle.read_bytes() != before
     assert client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": "nan"}).status_code == 422
+    moved = subtitle.read_bytes()
+    for refused in ({"first": 0, "last": 9999, "offset": -600}, {"first": 100, "last": 10, "offset": 1}):
+        answer = client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), **refused})
+        assert answer.status_code == 422 and answer.json()["code"] == "refused"
+    assert subtitle.read_bytes() == moved
     saved = next(item for item in client.get(f"/api/subtitles/{identity}").json()["versions"] if item["label"] == "before-manual")
     assert client.post(f"/api/subtitles/{identity}/restore", json={"version": file_hash(str(subtitle)), "saved": "../../etc/passwd"}).status_code == 422
     answer = client.post(f"/api/subtitles/{identity}/restore", json={"version": file_hash(str(subtitle)), "saved": saved["id"]})

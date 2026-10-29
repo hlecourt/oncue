@@ -11,13 +11,13 @@ from starlette.exceptions import HTTPException
 
 from .. import __version__, configuration, logs
 from ..logs import log
-from ..web.auth import configure
+from .auth import configure
 from .front import add_front
 from .routes import activity, commands, media, review, session, settings, status, subtitles, system
 from .security import SECURITY_HEADERS, guard
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
-PORT = int(os.environ.get("SUBTITLE_GUARD_API_PORT", "8485"))
+PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
 MAX_CONNECTIONS = 32
 KEEP_ALIVE_SECONDS = 5
 
@@ -41,9 +41,9 @@ def create_app(host=HOST):
 
 
 def serve_api(host=HOST, port=PORT):
-    logs.settings["source"] = "api"
+    logs.settings["source"] = "web"
     app = create_app(host)
-    log("api.listening", f"API listening on {host}:{port} auth={'password' if app.state.login_required else 'none (loopback only)'}", host=host, port=port)
+    log("web.listening", f"HTTP listening on {host}:{port} auth={'password' if app.state.login_required else 'none (loopback only)'}", host=host, port=port)
     uvicorn.run(app, host=host, port=port, proxy_headers=False, server_header=False, date_header=False, limit_concurrency=MAX_CONNECTIONS,
                 timeout_keep_alive=KEEP_ALIVE_SECONDS, log_config=None, access_log=False)
 

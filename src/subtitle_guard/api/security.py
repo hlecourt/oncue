@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 from ..configuration import AUTH_MODE
 from ..storage import state_path
-from ..web.auth import LOOPBACK_HOSTS, session_for
+from .auth import LOOPBACK_HOSTS, session_for
 
 SESSION_COOKIE = "subtitle_guard_session"
 CSRF_COOKIE = "subtitle_guard_csrf"

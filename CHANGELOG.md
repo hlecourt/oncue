@@ -17,9 +17,17 @@ First public version.
 - Backups only when something is written, with retention (first version, last 5, last 30 days), and a delete action for a
   subtitle that belongs to another episode, which is no longer moved.
 
-- Listen and edit: a subtitle editor with the lines, a picture of the video with the current line, a waveform with the lines
-  as blocks and the video's own subtitles under them, playback by one-minute clips, and moves of every line or a selection,
-  by buttons or by dragging, applied with a backup and a check that the file did not change.
+- Web UI built with React and shadcn/ui, served by a FastAPI API from the same process (the `web` extra): Review as the home
+  page with bulk keep, check again and ask Bazarr for another; one screen per subtitle with its decision, the fix found and
+  the editor; History, Log, System (health, Bazarr setup check, library scan, backups) and Settings. Light and dark themes,
+  a `Ctrl K` search, phone layouts.
+- Listen and edit: the lines with the video's own line next to each, a still of the video with the current line, and a
+  waveform of a cached light copy of the sound with the lines as blocks and the video's subtitles under them; moves of every
+  line or a selection, by buttons or by dragging, saved with a backup and a check that the file did not change.
+- Settings in the UI, stored next to the state; an environment variable always wins and the allowed folders and the
+  confidence threshold stay set by the environment. A URL base for reverse proxies, login modes like the *arr apps (always,
+  not from private addresses, or a proxy that authenticates), an API key for scripts, a webhook digest of what reached
+  Review, and library scans started from the UI.
 
 - Check of external SRT, WebVTT and ASS/SSA subtitles against a text or bitmap subtitle track embedded in the video, read from
   the Matroska Cues index when possible, with a piecewise-constant alignment (offsets, ad breaks, cuts, framerate and speed
@@ -30,14 +38,13 @@ First public version.
 - Bazarr post-processing hook with blacklist and retry of rejected subtitles, library scans through the Bazarr API, and a
   standalone mode that watches media folders.
 - SQLite job queue with parallel workers, supervision, crash recovery, heartbeats and `/ready`.
-- Web UI in plain words: overview, the subtitles that need a look with one-click fixes, a page per subtitle with the wrong parts,
-  a timeline and a line-by-line view, history of every check with what changed, and a technical log with copyable metadata.
 - Global JSON-lines log with component.past-tense events, startup and health reports.
-- Docker image running as a non-root user, with pinned bases, a hashed dependency lock and a health check.
+- Docker image for amd64 and arm64 running as a non-root user, with pinned bases, a hashed dependency lock and a health check;
+  the web UI is built in a separate stage, so Node is never in the image.
 
 ### Security
 
 - Web UI login with a user name and a password (scrypt hash, generated on first start beyond loopback, `set-password` to change
-  it), expiring server-side sessions, a lockout after failed logins, CSRF tokens bound to the session, origin and host checks,
-  a script-hash CSP and strict security headers, request size and time limits.
+  it), expiring server-side sessions, a lockout after failed logins, CSRF tokens bound to the session and sent in a header,
+  origin and host checks, a CSP with no inline script and strict security headers, request size and time limits.
 - Every subtitle read and write is confined to `SUBTITLE_GUARD_ROOTS`, never follows a symlink and only touches regular files.
