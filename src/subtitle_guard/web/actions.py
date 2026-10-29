@@ -6,14 +6,15 @@ import os
 import urllib.parse
 
 from .. import jobs, review
-from ..errors import SubtitleGuardError
+from ..errors import EditRefusedError, SubtitleGuardError
 from ..files import inside_roots
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
 from .context import notice
-from .parts import seconds, short_clock, subtitle_link
+from .parts import editor_link, seconds, short_clock, subtitle_link
 
 MAX_MANUAL_SHIFT_SECONDS = 3600
+SELECTION_MARGIN_SECONDS = 0.05
 
 
 def perform(form):
@@ -33,10 +34,13 @@ def perform(form):
         try:
             first, last, shift = seconds(form.get("first", "")), seconds(form.get("last", "")), float(form.get("offset", "").replace(",", "."))
         except ValueError:
-            return subtitle_link(path, form.get("minute", "0"), "Nothing was changed: the times must look like 2:03 or 1:02:03.50, and the move like -1.5.")
+            return back_to(form, path, "Nothing was changed: the times must look like 2:03 or 1:02:03.50, and the move like -1.5.")
         if not all(math.isfinite(value) for value in (first, last, shift)) or abs(shift) > MAX_MANUAL_SHIFT_SECONDS:
-            return subtitle_link(path, form.get("minute", "0"), f"Nothing was changed: a move must be a number of seconds up to {MAX_MANUAL_SHIFT_SECONDS}.")
-        review.shift_range(video, path, first - 0.05, last + 0.05, shift)
+            return back_to(form, path, f"Nothing was changed: a move must be a number of seconds up to {MAX_MANUAL_SHIFT_SECONDS}.")
+        try:
+            review.shift_range(video, path, first - SELECTION_MARGIN_SECONDS, last + SELECTION_MARGIN_SECONDS, shift, form.get("hash") or None)
+        except EditRefusedError as error:
+            return back_to(form, path, f"Nothing was changed: {error}.")
         message = f"Done. The lines from {short_clock(first)} to {short_clock(last)} now appear {abs(shift):.1f} s {'earlier' if shift < 0 else 'later'}."
     elif action == "fix-all":
         fixed = review.fix_everything(video, path)["decision"] == "fixed"
@@ -65,7 +69,15 @@ def perform(form):
         message = "Nothing was changed."
     if form.get("back") == "review":
         return "/review?" + urllib.parse.urlencode({"notice": notice(f"{os.path.basename(path)}: {message}")})
-    return subtitle_link(path, None if action == "move" else form.get("minute", "0"), message)
+    if action == "move":
+        return subtitle_link(path, None, message)
+    return back_to(form, path, message)
+
+
+def back_to(form, path, message):
+    if form.get("back") == "edit":
+        return editor_link(path, form.get("at"), message)
+    return subtitle_link(path, form.get("minute", "0"), message)
 
 
 def known_subtitle(path):

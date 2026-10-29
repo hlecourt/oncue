@@ -8,15 +8,19 @@ from synthetic import dialogue
 from subtitle_guard.subtitles import timestamp
 
 
-def video_with_reference(folder, name="Movie (2020)/Movie.2020.mkv", seed=8, minutes=6):
+def video_with_reference(folder, name="Movie (2020)/Movie.2020.mkv", seed=8, minutes=6, with_audio=False):
     starts, ends = dialogue(seed, minutes=minutes)
     folder.mkdir(parents=True, exist_ok=True)
     reference = folder / "reference.srt"
     reference.write_text("\n".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1)))
     video = folder / "library" / name
     video.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=size=64x64:rate=25:duration={int(ends[-1]) + 5}",
-                    "-i", str(reference), "-map", "0", "-map", "1", "-c:v", "mpeg4", "-c:s", "srt", "-metadata:s:s:0", "language=eng", str(video)], check=True)
+    length = int(ends[-1]) + 5
+    sound = ["-f", "lavfi", "-i", f"sine=frequency=440:duration={length}"] if with_audio else []
+    sound_map = ["-map", "2", "-c:a", "aac"] if with_audio else []
+    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=size=64x64:rate=25:duration={length}",
+                    "-i", str(reference), *sound, "-map", "0", "-map", "1", *sound_map, "-c:v", "mpeg4", "-c:s", "srt", "-metadata:s:s:0", "language=eng", str(video)],
+                   check=True)
     return video, starts, ends
 
 
