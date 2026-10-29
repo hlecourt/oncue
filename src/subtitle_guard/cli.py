@@ -11,8 +11,7 @@ Commands:
   scan-folder PATH [--apply] [--queue]                                      every external subtitle under a media folder, without Bazarr
   watch PATH... [--apply]                                                   queue every new or changed subtitle under media folders
   worker [--workers N]                                                      run queued jobs with N parallel workers
-  ui                                                                        web UI only
-  api                                                                       the new HTTP API only (web extra), on SUBTITLE_GUARD_API_PORT
+  ui                                                                        web UI only (web extra)
   serve [--workers N] [--apply]                                             workers, web UI, and watch of SUBTITLE_GUARD_LIBRARY folders
   status                                                                    jobs by status and confidence band
   jobs [STATUS]                                                             latest jobs, optionally one status
@@ -38,6 +37,7 @@ import sys
 import tempfile
 
 from . import configuration, jobs
+from .api.auth import DEFAULT_USER, save_credentials
 from .bazarr import (
     bazarr_get,
     handle_download,
@@ -57,10 +57,6 @@ from .logs import LEVEL, event_level, event_message, log, recent_events, setting
 from .outcome import describe
 from .reports import print_needs_human, report
 from .storage import check_state_folder
-from .web import HOST as UI_HOST
-from .web import PORT as UI_PORT
-from .web import serve_ui
-from .web.auth import DEFAULT_USER, save_credentials
 from .worker import run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
@@ -105,20 +101,22 @@ def main():
     if command == "worker":
         report_startup(command, workers=workers)
         return run_workers(workers)
-    if command == "api":
-        from .api.app import serve_api
-        report_startup(command)
-        serve_api()
-        return 0
+    if command in ("ui", "serve"):
+        try:
+            from .api import app as web
+        except ImportError:
+            print("subtitle-guard: the web UI needs the web extra: pip install 'subtitle-guard[web]'", file=sys.stderr)
+            return 2
     if command == "ui":
-        report_startup(command, ui_host=UI_HOST, ui_port=UI_PORT)
-        return serve_ui()
+        report_startup(command, ui_host=web.HOST, ui_port=web.PORT)
+        web.serve_api()
+        return 0
     if command == "serve":
         if os.environ.get("SUBTITLE_GUARD_HOOK_DIR"):
             install_hook_package(os.environ["SUBTITLE_GUARD_HOOK_DIR"])
-        report_startup(command, workers=configuration.value("workers"), ui_host=UI_HOST, ui_port=UI_PORT, roots=configuration.value("watched_folders"),
+        report_startup(command, workers=configuration.value("workers"), ui_host=web.HOST, ui_port=web.PORT, roots=configuration.value("watched_folders"),
                        applied=apply or configuration.value("mode") == MODE["fix"], queue=queue_enabled())
-        return supervise(serve_roles(apply, workers), lambda: serve_roles(apply, workers))
+        return supervise(serve_roles(apply, workers, web.serve_api), lambda: serve_roles(apply, workers, web.serve_api))
     if command == "calibrate-audio" and arguments:
         calibrate_audio(arguments[0], int(arguments[1]) if len(arguments) > 1 and arguments[1].isdigit() else None)
         return 0
@@ -223,8 +221,8 @@ def install_hook_package(folder):
     log("service.hook-installed", f"package copied for the Bazarr hook into {folder}", folder=folder)
 
 
-def serve_roles(apply, workers):
-    roles = {**worker_roles(workers or configuration.value("workers")), "web": (serve_ui, ())}
+def serve_roles(apply, workers, serve_web):
+    roles = {**worker_roles(workers or configuration.value("workers")), "web": (serve_web, ())}
     folders = configuration.value("watched_folders")
     if folders:
         roles["watch"] = (watch, (tuple(folders), apply or configuration.value("mode") == MODE["fix"]))

@@ -65,6 +65,9 @@ def test_history_pages_newest_first_with_counts_per_result(client, proposed):
     groups = {group["key"]: group["count"] for group in first["groups"]}
     assert groups["proposals"] == 1 and groups["in-sync"] == 1
     assert [row["decision"] for row in client.get("/api/history", params={"result": "proposals"}).json()["rows"]] == ["proposed"]
+    reports.report(str(subtitle), "scan", {"decision": "fixed", "confidence": 100, "confidence_band": "high"}, applied=False)
+    dry_run = client.get("/api/history", params={"result": "dry-runs"}).json()
+    assert dry_run["rows"][0]["changes"][0] == "Not written:" and {group["key"]: group["count"] for group in dry_run["groups"]}["fixed"] == 0
 
 
 def test_jobs_and_the_log_are_readable_and_searchable(client, proposed):
@@ -85,3 +88,11 @@ def test_a_subtitle_that_became_a_symlink_is_never_served(client, proposed, tmp_
     subtitle.unlink()
     subtitle.symlink_to(outside)
     assert client.get(f"/api/subtitles/{identity}").status_code == 404 and client.get(f"/api/subtitles/{identity}/lines").status_code == 404
+
+
+def test_a_dry_run_never_reads_as_if_the_file_was_written():
+    from subtitle_guard.api.presentation import result_words
+    row = {"decision": "fixed", "applied": 0, "note": "", "band": "high", "weak_minutes": ""}
+    assert result_words(row)[0] == "A sure fix was found, not written (dry run)"
+    assert result_words({**row, "decision": "kept"})[0] == "In sync"
+    assert result_words({**row, "applied": 1})[0] == "Fixed automatically"

@@ -20,6 +20,9 @@ LATER_FORMAT_FIELDS = (11, 12, 13, 14)
 DECISION_PATTERN = re.compile(r"[a-z][a-z-]{1,30}")
 WEAK_MINUTES_PATTERN = re.compile(r"(\d+(,\d+)*)?")
 BANDS = ("", "high", "medium", "low", "none")
+DRY_RUN = "dry-run"
+WRITING_DECISIONS = (DECISION["fixed"], DECISION["audio_synced"], DECISION["best_effort"])
+RESULT = f"case when applied = 0 and decision in ({', '.join(repr(decision) for decision in WRITING_DECISIONS)}) then '{DRY_RUN}' else decision end"
 COLUMNS = ("time", "subtitle", "provider", "decision", "reference", "matched_before", "matched", "weak_minutes", "note", "confidence", "band", "changes",
            "applied")
 
@@ -48,7 +51,7 @@ def report_history(subtitle=None, limit=None, decisions=None, before=None):
         conditions.append("id < ?")
         parameters.append(before)
     if decisions:
-        conditions.append(f"decision in ({', '.join('?' * len(decisions))})")
+        conditions.append(f"{RESULT} in ({', '.join('?' * len(decisions))})")
         parameters += list(decisions)
     query = "select * from reports" + (" where " + " and ".join(conditions) if conditions else "") + " order by id desc"
     if limit:
@@ -59,7 +62,7 @@ def report_history(subtitle=None, limit=None, decisions=None, before=None):
 
 def decision_counts():
     with closing(connect()) as connection:
-        return dict(connection.execute("select decision, count(*) from reports group by decision").fetchall())
+        return dict(connection.execute(f"select {RESULT}, count(*) from reports group by 1").fetchall())
 
 
 def has_report(subtitle):
