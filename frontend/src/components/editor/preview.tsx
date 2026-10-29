@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { cn } from "cn"
 import { useEffect, useState } from "react"
 
 import { mediaUrl } from "@/lib/api/client"
 
 const FRAME_DELAY_MS = 250
 
-export function Preview({ subtitleId, time, playing, caption }: { subtitleId: string; time: number; playing: boolean; caption: string }) {
+export function Preview({ subtitleId, time, playing, caption, className }: { subtitleId: string; time: number; playing: boolean; caption: string; className?: string }) {
   const [frame, setFrame] = useState<string | null>(null)
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export function Preview({ subtitleId, time, playing, caption }: { subtitleId: st
   }, [subtitleId, time, playing])
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-black">
+    <div className={cn("relative aspect-video w-full overflow-hidden rounded-md bg-black", className)}>
       {frame && <img src={frame} alt="The video at the current time" className="absolute inset-0 size-full object-contain" />}
       {!frame && <div className="absolute inset-0 flex items-center justify-center text-xs text-white/50">The picture shows when you pause.</div>}
       {caption && (

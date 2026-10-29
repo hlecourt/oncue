@@ -44,7 +44,7 @@ Merged from two independent plans (Claude, Codex), then challenged with the owne
   - Phone order: preview, timeline, move, lines.
   - Selection, playing row and changed timing are distinct states.
   - Only cue blocks are draggable.
-  - Waveform: wavesurfer.js from server-side peaks, over a cached light audio copy (ADR 0005), after a spike.
+  - Waveform: drawn from server-side peaks, over a cached light audio copy (ADR 0005, amended: the editor draws its own tracks).
 - **Other pages.**
   - History: every check, filters, tasks with retry.
   - Log: aligned mono columns, JSON, copy, export.

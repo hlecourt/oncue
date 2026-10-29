@@ -105,3 +105,33 @@ def test_without_allowed_folders_the_ui_changes_no_file(client, proposed, monkey
         assert answer.status_code == 409 and answer.json()["code"] == "no_allowed_folders"
     assert subtitle.read_bytes() == before
     assert client.get("/api/system").json()["checks"]["allowed_folders"]["ok"] is False
+
+
+def test_the_guard_fix_and_changes_by_hand_are_written_once_with_one_backup(client, proposed):
+    identity, subtitle, _ = proposed
+    proposal = client.get(f"/api/subtitles/{identity}/lines").json()["proposal"]
+    version = file_hash(str(subtitle))
+    answer = client.post(f"/api/subtitles/{identity}/retime", json={"version": version, "use_proposal": True, "changes": [{"first": 0, "last": 9, "offset": 0.5}]})
+    assert answer.status_code == 200 and answer.json()["decision"] == "manual"
+    starts = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"]]
+    assert starts[0] == pytest.approx(proposal[0][0] + 0.5, abs=0.002) and starts[10] == pytest.approx(proposal[10][0], abs=0.002)
+    labels = [item["label"] for item in client.get(f"/api/subtitles/{identity}").json()["versions"]]
+    assert labels == ["original"] and client.get(f"/api/subtitles/{identity}/lines").json()["proposal"] is None
+
+
+def test_the_guard_fix_alone_reads_as_applied(client, proposed):
+    identity, subtitle, _ = proposed
+    answer = client.post(f"/api/subtitles/{identity}/retime", json={"version": file_hash(str(subtitle)), "use_proposal": True, "changes": []})
+    assert answer.status_code == 200 and answer.json()["decision"] == "approved"
+
+
+def test_a_retime_that_cannot_be_written_changes_nothing(client, proposed):
+    identity, subtitle, _ = proposed
+    before = subtitle.read_bytes()
+    version = file_hash(str(subtitle))
+    stale = client.post(f"/api/subtitles/{identity}/retime", json={"version": "0" * 40, "use_proposal": False, "changes": [{"first": 0, "last": 1, "offset": 1}]})
+    assert stale.status_code == 409 and stale.json()["code"] == "stale_version"
+    for changes in ([{"first": 0, "last": 5, "offset": -600}], [{"first": 0, "last": 99999, "offset": 1}], [{"first": 4, "last": 2, "offset": 1}], []):
+        answer = client.post(f"/api/subtitles/{identity}/retime", json={"version": version, "use_proposal": False, "changes": changes})
+        assert answer.status_code == 422 and answer.json()["code"] == "refused", changes
+    assert subtitle.read_bytes() == before and client.get(f"/api/subtitles/{identity}").json()["versions"] == []

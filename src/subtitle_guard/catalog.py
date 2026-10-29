@@ -19,6 +19,11 @@ def subtitle_id(path, video=""):
         return connection.execute("select id from subtitles where path = ?", (path,)).fetchone()["id"]
 
 
+def known_ids():
+    with closing(jobs.connect()) as connection:
+        return {row["path"]: row["id"] for row in connection.execute("select path, id from subtitles").fetchall()}
+
+
 def path_for(identity):
     with closing(jobs.connect()) as connection:
         row = connection.execute("select path from subtitles where id = ?", (identity,)).fetchone()

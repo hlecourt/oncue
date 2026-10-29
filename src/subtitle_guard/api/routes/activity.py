@@ -11,6 +11,7 @@ from ... import jobs
 from ...catalog import subtitle_id
 from ...logs import event_level, event_message, log_file, recent_events
 from ...reports import decision_counts, report_history
+from ..lookup import known_path
 from ..presentation import DRY_RUN_WORDS, HISTORY_GROUPS, change_sentences, folder_label, result_words, started_by
 from ..schemas import History, HistoryGroup, HistoryRow, Job, LogEvent
 from ..security import require_user
@@ -21,9 +22,9 @@ LOG_FIELDS = ("time", "level", "source", "event", "message")
 
 
 @router.get("/history", operation_id="getHistory")
-def get_history(result: str | None = None, before: int | None = None, limit: int = Query(50, ge=1, le=MAX_ROWS)) -> History:
+def get_history(result: str | None = None, before: int | None = None, limit: int = Query(50, ge=1, le=MAX_ROWS), subtitle: str | None = None) -> History:
     decisions = HISTORY_GROUPS[result][1] if result in HISTORY_GROUPS else None
-    rows = report_history(limit=limit + 1, decisions=decisions, before=before)
+    rows = report_history(subtitle=known_path(subtitle) if subtitle else None, limit=limit + 1, decisions=decisions, before=before)
     counts = decision_counts()
     groups = [HistoryGroup(key=key, label=label, count=sum(counts.get(decision, 0) for decision in members)) for key, (label, members) in HISTORY_GROUPS.items()]
     shown = rows[:limit]
