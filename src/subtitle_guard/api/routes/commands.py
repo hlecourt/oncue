@@ -6,7 +6,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ... import jobs, review
+from ... import files, jobs, review
 from ...errors import EditRefusedError, StaleVersionError
 from ...files import file_hash, inside_roots
 from ..lookup import known_path
@@ -19,7 +19,7 @@ SELECTION_MARGIN_SECONDS = 0.05
 
 @router.post("/subtitles/{subtitle_id}/apply", operation_id="applyProposal")
 def apply_proposal(subtitle_id: str, body: VersionGuard) -> CommandResult:
-    path, video = located(subtitle_id)
+    path, video = writable(subtitle_id)
     outcome = refused_or(lambda: review.apply_proposal(video, path, body.version))
     if outcome is None:
         raise HTTPException(409, {"code": "nothing_to_apply", "message": "There is no fix to apply for this subtitle."})
@@ -28,7 +28,7 @@ def apply_proposal(subtitle_id: str, body: VersionGuard) -> CommandResult:
 
 @router.post("/subtitles/{subtitle_id}/shift", operation_id="shiftLines")
 def shift_lines(subtitle_id: str, body: Shift) -> CommandResult:
-    path, video = located(subtitle_id)
+    path, video = writable(subtitle_id)
     outcome = refused_or(lambda: review.shift_range(video, path, body.first - SELECTION_MARGIN_SECONDS, body.last + SELECTION_MARGIN_SECONDS, body.offset,
                                                     body.version))
     return CommandResult(message=f"The lines now appear {abs(body.offset):.2f} s {'earlier' if body.offset < 0 else 'later'}.", decision=outcome["decision"])
@@ -36,7 +36,7 @@ def shift_lines(subtitle_id: str, body: Shift) -> CommandResult:
 
 @router.post("/subtitles/{subtitle_id}/restore", operation_id="restoreVersion")
 def restore(subtitle_id: str, body: Restore) -> CommandResult:
-    path, _ = located(subtitle_id)
+    path, _ = writable(subtitle_id)
     refused_or(lambda: review.restore_saved_version(path, body.saved, body.version))
     return CommandResult(message="That version is back, and the one it replaced was backed up.", decision="reverted")
 
@@ -64,7 +64,7 @@ def replacement(subtitle_id: str) -> CommandResult:
 
 @router.post("/subtitles/{subtitle_id}/delete", operation_id="deleteSubtitle")
 def delete(subtitle_id: str, body: VersionGuard) -> CommandResult:
-    path, _ = located(subtitle_id)
+    path, _ = writable(subtitle_id)
     if file_hash(path) != body.version:
         raise HTTPException(409, {"code": "stale_version", "message": "The subtitle changed since this page was opened, reload it and try again."})
     review.delete_subtitle(path)
@@ -98,6 +98,13 @@ def retry_job(job_id: int) -> CommandResult:
     if item is None or not all(inside_roots(path) for path in paths) or not jobs.requeue(job_id):
         raise HTTPException(409, {"code": "not_retryable", "message": "Only a finished task inside the allowed folders can be run again."})
     return CommandResult(message="It will run again shortly.", job=job_id)
+
+
+def writable(subtitle_id):
+    if not files.ROOTS:
+        raise HTTPException(409, {"code": "no_allowed_folders", "message": "Set SUBTITLE_GUARD_ROOTS to your media folders before changing subtitles "
+                                                                           "from the UI."})
+    return located(subtitle_id)
 
 
 def located(subtitle_id):

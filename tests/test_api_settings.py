@@ -8,12 +8,13 @@ from fastapi.testclient import TestClient
 from subtitle_guard import configuration, files, storage
 from subtitle_guard.api.app import create_app
 from subtitle_guard.api.security import API_KEY_HEADER, CSRF_HEADER
+from subtitle_guard.errors import ConfigError
 
 PASSWORD = "a long enough password"
 
 
 def local_client():
-    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1")
+    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
     client.headers.update({CSRF_HEADER: client.get("/api/session").json()["csrf"]})
     return client
 
@@ -80,20 +81,61 @@ def test_local_addresses_can_skip_the_login_only_when_asked(monkeypatch):
     monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
     monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "local")
     app = create_app("0.0.0.0")
-    assert TestClient(app, base_url="http://guard.lan", client=("192.168.1.20", 50000)).get("/api/status").status_code == 200
+    neighbour = TestClient(app, base_url="http://guard.lan", client=("192.168.1.20", 50000))
+    assert neighbour.get("/api/status").status_code == 200 and neighbour.get("/api/session").json()["login_required"] is False
+    assert TestClient(app, base_url="http://192.168.1.5:8484", client=("192.168.1.20", 50000)).get("/api/status").status_code == 200
     assert TestClient(app, base_url="http://guard.lan", client=("8.8.8.8", 50000)).get("/api/status").status_code == 401
 
 
-def test_external_authentication_trusts_the_reverse_proxy(monkeypatch):
+def test_local_mode_lets_no_one_in_through_a_proxy_or_a_rebound_name(monkeypatch):
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "local")
+    app = create_app("0.0.0.0")
+    proxied = TestClient(app, base_url="https://subtitles.example.com", client=("172.17.0.1", 50000))
+    assert proxied.get("/api/settings/api-key", headers={"X-Forwarded-For": "8.8.8.8"}).status_code == 401
+    assert proxied.get("/api/session", headers={"X-Forwarded-For": "8.8.8.8"}).json() == {"login_required": True, "user": None, "csrf": None}
+    rebound = TestClient(app, base_url="http://attacker.example", client=("192.168.1.20", 50000))
+    assert rebound.get("/api/settings/api-key").status_code == 401
+    forged = {"Cookie": "subtitle_guard_csrf=chosen", CSRF_HEADER: "chosen"}
+    assert rebound.patch("/api/settings", json={"changes": {"keep_days": 7}}, headers=forged).status_code == 401
+
+
+def test_local_mode_behind_a_trusted_proxy_judges_the_real_client(monkeypatch):
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "local")
+    monkeypatch.setenv("SUBTITLE_GUARD_TRUSTED_PROXIES", "172.17.0.0/16")
+    proxy = TestClient(create_app("0.0.0.0"), base_url="http://guard.lan", client=("172.17.0.1", 50000))
+    assert proxy.get("/api/status", headers={"X-Forwarded-For": "192.168.1.20"}).status_code == 200
+    assert proxy.get("/api/status", headers={"X-Forwarded-For": "192.168.1.20, 8.8.8.8"}).status_code == 401
+
+
+def test_external_authentication_trusts_only_the_listed_proxies(monkeypatch):
     monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
     monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "external")
-    client = TestClient(create_app("0.0.0.0"), base_url="https://subtitles.example.com")
-    assert client.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 200
+    monkeypatch.setenv("SUBTITLE_GUARD_TRUSTED_PROXIES", "10.0.0.2")
+    app = create_app("0.0.0.0")
+    through_proxy = TestClient(app, base_url="https://subtitles.example.com", client=("10.0.0.2", 50000))
+    assert through_proxy.get("/api/status", headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 200
+    direct = TestClient(app, base_url="http://192.168.1.5:8484", client=("192.168.1.30", 50000))
+    assert direct.get("/api/status").status_code == 401 and direct.get("/api/session").json()["login_required"] is True
+
+
+def test_a_wrong_trusted_proxy_list_stops_the_start(monkeypatch):
+    monkeypatch.setenv("SUBTITLE_GUARD_TRUSTED_PROXIES", "not an address")
+    with pytest.raises(ConfigError):
+        create_app("127.0.0.1")
+
+
+def test_a_new_bazarr_address_needs_its_key_again(monkeypatch):
+    client = local_client()
+    refused = client.patch("/api/settings", json={"changes": {"bazarr_url": "http://attacker.example:6767"}})
+    assert refused.status_code == 422 and refused.json()["code"] == "bazarr_key_needed"
+    assert client.patch("/api/settings", json={"changes": {"bazarr_url": "http://bazarr:6767", "bazarr_api_key": "new-key"}}).status_code == 200
 
 
 def test_everything_moves_under_the_url_base_but_the_health_probes(monkeypatch):
     monkeypatch.setenv("SUBTITLE_GUARD_URL_BASE", "/subtitle-guard")
-    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1")
+    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
     assert client.get("/subtitle-guard/api/status").status_code == 200 and client.get("/api/status").status_code == 404
     assert client.get("/health").status_code == 200 and client.get("/subtitle-guard/ready").status_code in (200, 503)
     assert client.get("/subtitle-guard/api/openapi.json").status_code == 200
