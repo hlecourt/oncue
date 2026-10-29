@@ -100,6 +100,12 @@ words, and fits phones, tablets and large screens.
   only colours, and a text summary), and a line-by-line view puts each moment of the video next to the line of your subtitle
   that goes with it. Lines can be realigned by hand from the keyboard. For a fixed subtitle, the page shows what was changed
   and where each line was.
+- **Listen and edit**: an editor to check a subtitle by ear, most useful when the video has no subtitles of its own. The lines
+  are listed on the left, a picture of the video (updated when paused) shows the current line on top of it, and a waveform of
+  the sound shows your lines as blocks, with the video's own subtitles in a grey lane under them when there are some. Play,
+  move every line or a selection earlier or later (buttons, a number, or by dragging the blocks), listen again, then apply:
+  the file is backed up first and the change is refused if the file changed meanwhile. The sound is cut into one-minute
+  clips by ffmpeg on demand, one at a time, and never stored.
 - **History**: every check, newest first, with what started it, the result, the confidence and what changed (speed corrected,
   which lines moved, how far and which way), and the tasks waiting, running or failed with **Run again**.
 - **Log**: the technical log, one line per event; each line opens on its full metadata as JSON with a Copy button. The raw log

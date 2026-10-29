@@ -22,6 +22,7 @@ from ..logs import (
 from .actions import perform
 from .auth import DEFAULT_USER, LOCKOUT_SECONDS, LOOPBACK_HOSTS, SESSION_SECONDS, SESSIONS, configure, locked_out, open_session, record_failure, session_for, verify
 from .context import AUTH, REQUEST, notice
+from .editor import api_audio, api_frame, editor_page
 from .pages import (
     api_jobs,
     api_log,
@@ -46,9 +47,9 @@ MAX_CONNECTIONS = 32
 REQUEST_TIMEOUT_SECONDS = 30
 REQUEST_DEADLINE_SECONDS = 60
 PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP")
-SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
-                    "Content-Security-Policy": f"default-src 'none'; script-src {' '.join(SCRIPT_HASHES)}; style-src 'unsafe-inline'; img-src data:; "
-                                               "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
+SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cache-Control": "no-store",
+                    "Content-Security-Policy": f"default-src 'none'; script-src {' '.join(SCRIPT_HASHES)}; style-src 'unsafe-inline'; img-src data: blob:; "
+                                               "media-src blob:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
 
 
 def serve_ui(host=HOST, port=PORT):
@@ -134,6 +135,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(401, login_page())
         if not form.get("csrf") or not hmac.compare_digest(form["csrf"], REQUEST.csrf):
             return self.respond(403, layout("Form expired", '<p>This form expired. <a href="/">Reload the page</a> and try again.</p>'))
+        if self.path in MEDIA:
+            return self.respond(*MEDIA[self.path](form))
         if self.path == "/logout":
             SESSIONS.pop(self.cookies().get(SESSION_COOKIE, ""), None)
             return self.redirect("/", [f"{SESSION_COOKIE}=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/"])
@@ -197,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
         return dict(part.strip().split("=", 1) for part in self.headers.get("Cookie", "").split(";") if "=" in part)
 
     def respond(self, status, body, content_type="text/html; charset=utf-8"):
-        data = body.encode()
+        data = body if isinstance(body, bytes) else body.encode()
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
@@ -258,4 +261,5 @@ def ready_page():
 
 
 PAGES = {"/": dashboard_page, "/review": review_page, "/history": history_page, "/jobs": history_page, "/log": log_page, "/log.jsonl": raw_log,
-         "/subtitle": subtitle_page, "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
+         "/subtitle": subtitle_page, "/edit": editor_page, "/api/status": api_status, "/api/jobs": api_jobs, "/api/review": api_review, "/api/log": api_log}
+MEDIA = {"/api/audio": api_audio, "/api/frame": api_frame}
