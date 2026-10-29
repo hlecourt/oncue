@@ -40,6 +40,7 @@ def rejected_download(tmp_path, monkeypatch):
     video.write_bytes(b"video")
     subtitle.write_text("subtitle")
     monkeypatch.setenv("BAZARR_API_KEY", "key")
+    monkeypatch.setenv("SUBTITLE_GUARD_MODE", "fix")
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {"decision": "rejected", "reason": "no match"})
     monkeypatch.setattr(bazarr, "series_neighbours", lambda series, video: ())
     return str(video), str(subtitle)
@@ -158,3 +159,8 @@ def test_a_movie_scan_reports_each_result_and_goes_on_after_an_error(monkeypatch
     printed = capsys.readouterr().out
     assert "Broken fr: error Invalid data" in printed and "Fine fr: subtitle-guard: kept" in printed
     assert [row["subtitle"] for row in report_history()] == ["/media/Fine.fr.srt"]
+
+
+def test_a_hook_for_a_subtitle_that_is_already_gone_answers_instead_of_crashing(tmp_path):
+    outcome = bazarr.handle_download(str(tmp_path / "Movie.mkv"), str(tmp_path / "Movie.fr.srt"), "fr", "opensubtitles", "1", "2")
+    assert outcome["decision"] == "unverified" and "cannot be read" in outcome["reason"]

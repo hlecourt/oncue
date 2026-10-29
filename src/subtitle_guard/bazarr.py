@@ -13,7 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import jobs
+from . import configuration, jobs
+from .configuration import MODE
 from .errors import ConfigError, SubtitleGuardError
 from .files import file_hash, read_regular, restore_version, save_backup, subtitle_lock
 from .guard import AUTOMATIC_BAND, evaluate_and_fix
@@ -24,9 +25,7 @@ from .reports import report
 from .state import load_state, update_state
 from .storage import now, state_path
 
-BAZARR_URL = os.environ.get("BAZARR_URL", "http://localhost:6767")
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")
-MAX_SUBTITLES_PER_MEDIA = 4
 RETRY_WAIT_SECONDS = 900
 BLACKLIST_DELAY_SECONDS = 20
 API_KEY_HEADER = "X-API-KEY"
@@ -39,6 +38,9 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
         received = file_hash(subtitle)
     except SubtitleGuardError as error:
         return {"decision": DECISION["unverified"], "reason": f"refused: {error}"}
+    except OSError as error:
+        log("bazarr.hook-unreadable", f"the subtitle Bazarr announced cannot be read: {error.strerror}", LEVEL["warning"], subtitle=subtitle)
+        return {"decision": DECISION["unverified"], "reason": f"the subtitle cannot be read: {error.strerror}"}
     if content_hash and content_hash != received:
         log("bazarr.stale-hook", "subtitle replaced since this hook was queued, skipped; the newer download has its own hook", LEVEL["warning"],
             subtitle=subtitle, provider=provider, subtitle_id=subtitle_id)
@@ -46,8 +48,9 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     series_number = int(series_id) if series_id.isdigit() else None
     media_number = int(media_id) if media_id.isdigit() else None
     neighbours = series_neighbours(series_number, video) if series_number else ()
-    outcome = evaluate_and_fix(video, subtitle, apply=True, neighbours=neighbours)
-    replace = media_number is not None and wants_replacement(outcome)
+    fixing = configuration.value("mode") == MODE["fix"]
+    outcome = evaluate_and_fix(video, subtitle, apply=fixing, neighbours=neighbours)
+    replace = fixing and media_number is not None and wants_replacement(outcome)
     attempt = {"time": now(), "provider": provider, "subtitle_id": subtitle_id, "subtitle": subtitle, "language": language, "media_id": media_number,
                "series_id": series_number, "content_hash": received, **outcome, "copy": keep_attempt_copy(subtitle) if replace else None}
 
@@ -64,7 +67,7 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
     if not replace:
         forget_attempt_copies(subtitle)
         return outcome
-    if len(state["attempts"]) >= MAX_SUBTITLES_PER_MEDIA:
+    if len(state["attempts"]) > configuration.value("replacements"):
         restore_best(video, subtitle, state)
         return outcome
     pending = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number, "subtitle": subtitle,
@@ -150,6 +153,38 @@ def scan_one(label, video, subtitle, apply, neighbours, queue=False):
         return
     report(subtitle["path"], "scan", outcome, applied=apply)
     print(f"{label} {subtitle['code2']}: {describe(outcome)}", flush=True)
+
+
+def library_subtitles():
+    for series in bazarr_get("/api/series?start=0&length=-1")["data"]:
+        episodes = sorted((episode for episode in bazarr_get(f"/api/episodes?seriesid[]={series['sonarrSeriesId']}")["data"] if episode.get("path")),
+                          key=lambda item: (item["season"], item["episode"]))
+        for position, episode in enumerate(episodes):
+            neighbours = [(f"S{other['season']:02d}E{other['episode']:02d}", other["path"]) for other in nearby(episodes, position)]
+            for subtitle in episode.get("subtitles", []):
+                if subtitle.get("path"):
+                    yield episode["path"], subtitle["path"], neighbours
+    for movie in bazarr_get("/api/movies?start=0&length=-1")["data"]:
+        for subtitle in movie.get("subtitles", []):
+            if movie.get("path") and subtitle.get("path"):
+                yield movie["path"], subtitle["path"], []
+
+
+def setup_warnings():
+    current = bazarr_get("/api/system/settings")
+    general, subsync = current.get("general", {}), current.get("subsync", {})
+    warnings = []
+    if not general.get("use_postprocessing"):
+        warnings.append({"code": "postprocessing_off", "message": "Post-processing is off in Bazarr, so new downloads never reach the guard."})
+    elif "subtitle_guard" not in general.get("postprocessing_cmd", ""):
+        warnings.append({"code": "command_not_guard", "message": "Bazarr's post-processing command does not call subtitle_guard."})
+    if general.get("use_postprocessing_threshold") or general.get("use_postprocessing_threshold_movie"):
+        warnings.append({"code": "postprocessing_threshold", "message": "A post-processing threshold is on in Bazarr: subtitles scored above it never "
+                                                                         "reach the guard. Turn it off for series and movies."})
+    if subsync.get("use_subsync"):
+        warnings.append({"code": "bazarr_sync_on", "message": "Subtitle synchronization is on in Bazarr: it rewrites each download before the guard sees "
+                                                              "it, without a confidence check. Turn it off."})
+    return warnings
 
 
 def series_neighbours(series_id, video):
@@ -250,7 +285,7 @@ def rescan(pending):
 
 
 def bazarr_get(path):
-    with call_bazarr(urllib.request.Request(BAZARR_URL + path, headers={API_KEY_HEADER: api_key()}), 60) as response:
+    with call_bazarr(urllib.request.Request(configuration.value("bazarr_url") + path, headers={API_KEY_HEADER: api_key()}), 60) as response:
         return json.load(response)
 
 
@@ -263,7 +298,7 @@ def bazarr_patch(path, form):
 
 
 def bazarr_send(path, form, method):
-    request = urllib.request.Request(BAZARR_URL + path, data=urllib.parse.urlencode(form).encode(), method=method,
+    request = urllib.request.Request(configuration.value("bazarr_url") + path, data=urllib.parse.urlencode(form).encode(), method=method,
                                      headers={API_KEY_HEADER: api_key()})
     with call_bazarr(request, 900) as response:
         return response.status
@@ -283,8 +318,8 @@ def call_bazarr(request, timeout):
 
 
 def api_key():
-    if os.environ.get("BAZARR_API_KEY"):
-        return os.environ["BAZARR_API_KEY"]
+    if configuration.value("bazarr_api_key"):
+        return configuration.value("bazarr_api_key")
     with open(BAZARR_CONFIG) as handle:
         match = re.search(r"^auth:\n(?:[ \t]+.*\n)*?[ \t]+apikey: *(\S+)", handle.read(), re.MULTILINE)
     if match is None:

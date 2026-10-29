@@ -6,7 +6,7 @@
 pip install "subtitle-guard[audio] @ git+https://github.com/hlecourt/subtitle-guard"
 ```
 
-It needs Python 3.10 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
+It needs Python 3.11 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
 locks. The `audio` extra adds ffsubsync for videos without any embedded subtitle track.
 
 ## The Bazarr hook
@@ -54,13 +54,23 @@ review, with its proposal when there is one; nothing is downloaded.
 
 ## Settings
 
+Every setting below except the folders, the state and the backups can also be changed in the UI; a variable that is set always
+wins and shows as locked there.
+
 | Variable | Default |
 |---|---|
 | `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, UI account |
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
 | `SUBTITLE_GUARD_AUDIO_AUTOMATIC` | unset; `1` lets a high-confidence audio sync be written without a person, once `calibrate-audio` found no false positive |
 | `SUBTITLE_GUARD_KEEP_VERSIONS` / `SUBTITLE_GUARD_KEEP_DAYS` | `5` / `30`: backups kept per subtitle besides its first version |
+| `SUBTITLE_GUARD_MODE` | `report`; `fix` lets the guard write high-confidence fixes on its own |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
+| `SUBTITLE_GUARD_REPLACEMENTS` | `3`: other subtitles asked from Bazarr before keeping the best version |
+| `SUBTITLE_GUARD_WEBHOOK_URL` / `SUBTITLE_GUARD_WEBHOOK_MINUTES` | unset / `15`: a digest of what reached Review, at most once per interval |
+| `SUBTITLE_GUARD_URL_BASE` | unset; for example `/subtitle-guard` behind a reverse proxy, applied on restart |
+| `SUBTITLE_GUARD_AUTH` | `forms`; `local` skips the login from private addresses, `external` trusts a reverse proxy that authenticates |
+| `SUBTITLE_GUARD_API_PORT` | `8485`, the new API while it is built beside the current UI |
+| `SUBTITLE_GUARD_AUDIO_CACHE_MB` | `2048`: light audio copies the editor plays, least recently played removed first |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |

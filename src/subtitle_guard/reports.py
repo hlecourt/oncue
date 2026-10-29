@@ -40,10 +40,13 @@ def latest_reports():
     return [as_report(row) for row in rows if os.path.exists(row["subtitle"])]
 
 
-def report_history(subtitle=None, limit=None, decisions=None):
+def report_history(subtitle=None, limit=None, decisions=None, before=None):
     conditions, parameters = [], []
     if subtitle:
         conditions, parameters = ["subtitle = ?"], [subtitle]
+    if before:
+        conditions.append("id < ?")
+        parameters.append(before)
     if decisions:
         conditions.append(f"decision in ({', '.join('?' * len(decisions))})")
         parameters += list(decisions)

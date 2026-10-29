@@ -3,7 +3,7 @@
 services:
   subtitle-guard:
     image: ghcr.io/hlecourt/subtitle-guard:0.1.0
-    command: serve --workers 2          # add --apply to let the folder watch write fixes, not only report them
+    command: serve --workers 2          # report only until the mode is set to fix, in the UI or with SUBTITLE_GUARD_MODE
     restart: unless-stopped
     user: "1000:1000"                   # the user that owns your media
     ports:

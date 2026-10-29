@@ -27,7 +27,7 @@ from .alignment import (
 from .bazarr import RETRY_STAGE, request_another
 from .catalog import discard_proposal, proposal_for
 from .confidence import confidence
-from .errors import EditRefusedError, MatroskaError, ToolError
+from .errors import EditRefusedError, MatroskaError, StaleVersionError, ToolError
 from .files import file_hash, inside_roots, restore_version, save_backup, subtitle_lock
 from .guard import evaluate_and_fix
 from .heartbeats import worker_health
@@ -204,7 +204,7 @@ def diagnosis_from(cues, decision, original, weak, attempt):
 def apply_proposal(video, subtitle, expected_version=None):
     version = file_hash(subtitle)
     if expected_version and expected_version != version:
-        raise EditRefusedError("the subtitle changed since this page was opened, reload it and try again")
+        raise StaleVersionError("the subtitle changed since this page was opened, reload it and try again")
     proposal = proposal_for(subtitle, version)
     if proposal is None:
         evaluate_and_fix(video, subtitle, False)
@@ -213,7 +213,7 @@ def apply_proposal(video, subtitle, expected_version=None):
         return None
     with subtitle_lock(subtitle):
         if file_hash(subtitle) != version:
-            raise EditRefusedError("the subtitle changed while the proposal was applied, nothing was written")
+            raise StaleVersionError("the subtitle changed while the proposal was applied, nothing was written")
         document = parse_subtitle(subtitle)
         if len(document["cues"]) != len(proposal["timings"]):
             raise EditRefusedError("the proposal does not match this file any more, nothing was written")
@@ -278,7 +278,7 @@ def shift_range(video, subtitle, first, last, offset, expected_hash=None):
         raise EditRefusedError("the part ends before it starts")
     with subtitle_lock(subtitle):
         if expected_hash and file_hash(subtitle) != expected_hash:
-            raise EditRefusedError("the subtitle changed since this page was opened, reload it and try again")
+            raise StaleVersionError("the subtitle changed since this page was opened, reload it and try again")
         document = parse_subtitle(subtitle)
         timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
         if any(start < 0 for start, _, _ in timings):
@@ -312,6 +312,21 @@ def revert(subtitle):
     report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the original from {os.path.basename(os.path.dirname(original))}"})
     log("review.reverted", f"original restored from {original}", subtitle=subtitle, original=original)
     return True
+
+
+def restore_saved_version(subtitle, saved, expected_version):
+    folder_name, file_name = saved.split("/", 1) if saved.count("/") == 1 else ("", "")
+    source = next((os.path.join(folder, file_name) for folder in backup_folders(subtitle) if os.path.basename(folder) == folder_name), None)
+    if source is None or os.sep in file_name or not os.path.isfile(source) or os.path.islink(source):
+        raise EditRefusedError("that saved version does not exist")
+    with subtitle_lock(subtitle):
+        if file_hash(subtitle) != expected_version:
+            raise StaleVersionError("the subtitle changed since this page was opened, reload it and try again")
+        save_backup(subtitle, "before-restore")
+        restore_version(subtitle, source)
+    discard_proposal(subtitle)
+    report(subtitle, "revert", {"decision": DECISION["reverted"], "reason": f"restored the {os.path.splitext(file_name)[0]} version of {folder_name}"})
+    log("review.version-restored", f"saved version restored from {source}", subtitle=subtitle, source=source)
 
 
 def has_backup(subtitle):
