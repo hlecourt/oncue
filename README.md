@@ -24,11 +24,15 @@ which cannot fix a different cut, and they sometimes report success on a wrong r
   then +/-1200 s at 0.1 s steps when that fails), using line starts and ends, after picking the framerate ratio;
 - accepts the result only if it clearly beats the same search against a time-mirrored reference (a null with the same density
   but no relation to the subtitle), and only if every part of the result is supported by the reference;
-- otherwise leaves the file untouched, flags a subtitle that matches a neighbouring episode or has wrong end times, or asks
-  Bazarr for another subtitle.
+- writes the fix on its own only when its confidence is high (80 or more); any other fix is kept as a proposal that a person
+  listens to and applies or discards, and the file stays as it is meanwhile;
+- with Bazarr, asks for another subtitle first whenever a download is not in sync with high confidence (a proposal, a subtitle
+  that cannot be fixed, or one that belongs to a neighbouring episode), keeps the best version tried, and only then leaves it
+  for a person.
 
 Every change to a subtitle is made by one writer at a time, after a backup, atomically, and only if the file did not change
-during the check. Only the timing lines change: text, styles, encoding and line endings are kept. `check`, the scans, `watch`
+during the check. Backups are only made when something is written; each subtitle keeps its first version, its last 5 versions
+(`SUBTITLE_GUARD_KEEP_VERSIONS`) and anything from the last 30 days (`SUBTITLE_GUARD_KEEP_DAYS`). Only the timing lines change: text, styles, encoding and line endings are kept. `check`, the scans, `watch`
 and `serve` are dry runs unless `--apply` is given; the Bazarr `hook` always applies, since it runs on a subtitle Bazarr has
 just downloaded.
 
@@ -86,7 +90,8 @@ To check that it works, download a subtitle from Bazarr and look at the Log page
 `scan-folder` checks every video under a folder against its external subtitles (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`...).
 Samples and hidden folders are skipped, and episode neighbours for the wrong-episode check come from `SxxEyy` or `NxNN` file
 names. `watch` queues every new or changed subtitle under one or more folders; `serve` does the same for the folders in
-`SUBTITLE_GUARD_LIBRARY`. Without Bazarr a rejected subtitle stays as it is and shows up for review; nothing is downloaded.
+`SUBTITLE_GUARD_LIBRARY`. Without Bazarr a subtitle that is not in sync with high confidence stays as it is and shows up for
+review, with its proposal when there is one; nothing is downloaded.
 
 ## Web UI
 
@@ -100,8 +105,8 @@ words, and fits phones, tablets and large screens.
 - **Needs a look**: the subtitles the guard was not sure about, one sentence each ("Out of sync around 25:00", "Belongs to
   S01E03"), with the obvious fix as one button. It stays in a sidebar on every page.
 - **One page per subtitle**: what is going on in one sentence, each wrong part ("25:03 to 31:38: 79 lines appear 2.3 s too
-  late") with **Fix this part**, and **Fix everything**, **It looks fine, keep it**, **Restore the original file**, **Try another
-  subtitle** (Bazarr) and **Move it to S01E03** (wrong episode) when they apply. A timeline shows every minute (patterns, not
+  late") with **Fix this part**, and **Fix everything** (applies the proposal), **It looks fine, keep it**, **Restore the original
+  file**, **Try another subtitle** (Bazarr) and **Delete this subtitle** (wrong episode) when they apply. A timeline shows every minute (patterns, not
   only colours, and a text summary), and a line-by-line view puts each moment of the video next to the line of your subtitle
   that goes with it. Lines can be realigned by hand from the keyboard. For a fixed subtitle, the page shows what was changed
   and where each line was.
@@ -142,8 +147,9 @@ the server is up and `/ready` checks the database and every worker.
 `subtitle-guard serve` runs a supervisor, `SUBTITLE_GUARD_WORKERS` worker processes (2 by default), the web UI and the folder
 watch. Only one supervisor can run on a state directory. A worker that dies is restarted and its job requeued; a job that killed
 its worker three times is marked failed. SIGTERM stops every role and the tools they started. Alignment runs in parallel; full
-file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A rejected subtitle becomes a
-`blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found nothing else.
+file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A Bazarr download that is not
+trusted becomes a `blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found
+nothing else.
 
 ```
 subtitle-guard status                     # jobs by status and confidence band
@@ -171,6 +177,8 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 |---|---|
 | `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, UI account |
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
+| `SUBTITLE_GUARD_AUDIO_AUTOMATIC` | unset; `1` lets a high-confidence audio sync be written without a person, once `calibrate-audio` found no false positive |
+| `SUBTITLE_GUARD_KEEP_VERSIONS` / `SUBTITLE_GUARD_KEEP_DAYS` | `5` / `30`: backups kept per subtitle besides its first version |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
@@ -189,11 +197,20 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 | Decision | Meaning |
 |---|---|
 | `kept` | already in sync, nothing written |
-| `fixed` | realigned and verified, original backed up |
+| `fixed` | realigned and verified with high confidence, written, original backed up (in a dry run: would be written) |
+| `proposed` | a fix was found but its confidence is not high, or it comes from the audio while automatic audio writes are off; nothing written, it waits for a person |
+| `approved` | a proposal applied by a person, original backed up |
 | `rejected` | could not be realigned with confidence, or the end times are wrong; with Bazarr, another subtitle is requested |
-| `wrong-episode` | the subtitle matches a neighbouring episode; it can be moved there from the UI |
-| `audio-synced` | no embedded track; synced to the audio with ffsubsync, not verified |
+| `wrong-episode` | the subtitle matches a neighbouring episode; with Bazarr, another subtitle is requested, it is never moved |
+| `deleted` | deleted by a person, a copy is kept in the backups |
 | `unverified` | nothing to compare with, too few lines, the video could not be read, or the file changed during the check |
+
+An audio sync has no reference track to compare with, so its confidence comes from the sound itself: the synced subtitle is cut
+into up to eight parts of at least twenty lines, each part is searched on its own against the speech that ffsubsync's voice
+detector finds, and the confidence is the share of parts that land within 0.3 s of where the sync put them (below four parts it
+stays at 30). `subtitle-guard calibrate-audio PATH [N]` measures how far that can be trusted on your own library, without writing
+anything: for videos whose reference track gives the truth, it shifts a copy of the subtitle by a known amount, syncs it to the
+audio as if there were no track, and counts the confident results that are wrong.
 
 Each decision carries a confidence from 0 to 100 and a band: `high` (80 and up), `medium` (60 to 79), `low` (below 60), `none`
 (nothing accepted). It takes the weakest of three measures (the margin over noise or over the null alignment, the margin of the

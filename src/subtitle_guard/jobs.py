@@ -26,6 +26,9 @@ SCHEMA = (
     "create index if not exists reports_subtitle on reports (subtitle, id)",
     "create index if not exists reports_decision on reports (decision, id)",
     "create table if not exists migrations (name text primary key, applied text not null)",
+    "create table if not exists subtitles (id text primary key, path text not null unique, video text not null default '', updated text not null)",
+    ("create table if not exists proposals (subtitle_id text primary key references subtitles (id), version text not null, kind text not null, "
+     "timings text not null, details text not null, created text not null)"),
 )
 
 

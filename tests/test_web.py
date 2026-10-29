@@ -190,7 +190,7 @@ def test_fix_this_part_and_fix_everything(server, tmp_path):
     assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180], strict=False)) < 0.25
     write_subtitle_file(subtitle, starts, ends, lambda value: value * 23.976 / 25 + 6)
     code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "minute": "0"})
-    assert "The whole subtitle is back in sync." in notice_text(location)
+    assert "The fix was applied and the previous file was backed up." in notice_text(location)
     _status, page, _ = get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))
     assert "This subtitle is in sync with the video." in page
 
@@ -226,9 +226,10 @@ def test_the_review_list_offers_the_obvious_fix(server, tmp_path):
     _status, page, _ = get(server + "/review")
     assert "Fix it</button>" in page
     _code, location = post(server + "/", {"action": "fix-all", "path": str(subtitle), "back": "review"})
-    assert location.startswith("/review?") and "back in sync" in notice_text(location)
+    assert location.startswith("/review?") and "The fix was applied" in notice_text(location)
     reports.report(str(subtitle), "hook", {"decision": "wrong-episode", "matches": "S01E03", "confidence": 0, "confidence_band": "none"})
-    assert "Move it to S01E03</button>" in get(server + "/review")[1]
+    assert "Move it to" not in get(server + "/review")[1]
+    assert "Delete this subtitle</button>" in get(server + "/subtitle?" + urllib.parse.urlencode({"path": str(subtitle)}))[1]
 
 
 

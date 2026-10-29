@@ -5,17 +5,21 @@ import errno
 import fcntl
 import hashlib
 import os
+import shutil
 import stat
 import tempfile
+import time
 from contextlib import ExitStack, contextmanager
 
 from .errors import SubtitleTooLargeError, UnsafePathError
 from .logs import LEVEL, log
-from .storage import state_path
+from .storage import backup_folders, backup_path, state_path
 
 MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
 ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
 TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
+KEEP_VERSIONS = int(os.environ.get("SUBTITLE_GUARD_KEEP_VERSIONS", "5"))
+KEEP_DAYS = int(os.environ.get("SUBTITLE_GUARD_KEEP_DAYS", "30"))
 
 
 def inside_roots(path):
@@ -87,6 +91,27 @@ def keep_owner_and_mode(temporary, previous, path):
         os.chown(temporary, previous.st_uid, previous.st_gid)
     except PermissionError as error:
         log("file.owner-not-kept", f"could not keep owner {previous.st_uid}:{previous.st_gid}: {error}", LEVEL["warning"], subtitle=path)
+
+
+def file_hash(path):
+    return hashlib.sha1(read_regular(path)).hexdigest()
+
+
+def save_backup(subtitle, label):
+    folder = backup_path(subtitle)
+    save_version(subtitle, folder, label)
+    prune_backups(subtitle)
+    return folder
+
+
+def prune_backups(subtitle):
+    folders = backup_folders(subtitle)
+    oldest_kept = time.time() - KEEP_DAYS * 86400
+    kept = {folders[0], *folders[-KEEP_VERSIONS:]} if folders else set()
+    for folder in folders:
+        if folder not in kept and os.path.getmtime(folder) < oldest_kept:
+            shutil.rmtree(folder)
+            log("backup.pruned", f"old backup removed: {folder}", LEVEL["debug"], subtitle=subtitle, folder=folder)
 
 
 def save_version(subtitle, folder, label):
