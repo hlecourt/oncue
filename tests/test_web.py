@@ -58,7 +58,7 @@ def notice_text(location):
 def test_dashboard_jobs_and_api(server):
     job_id = jobs.enqueue(jobs.KIND["check"], {"subtitle": "/media/a.fr.srt"})
     jobs.claim(1)
-    jobs.fail(job_id, "OSError: gone")
+    jobs.fail(job_id, 1, "OSError: gone")
     status, page, _ = get(server + "/")
     assert status == 200 and "Overview" in page and "OSError: gone" in page and "need a look" in page
     assert json.loads(get(server + "/api/status")[1])["status"] == {"failed": 1}
@@ -160,7 +160,7 @@ def test_a_first_start_off_loopback_generates_a_password_once(capsys):
 def test_posts_need_the_form_token_and_the_same_origin_and_stay_small(server):
     job_id = jobs.enqueue(jobs.KIND["check"], {"subtitle": "/media/a.fr.srt"})
     jobs.claim(1)
-    jobs.fail(job_id, "boom")
+    jobs.fail(job_id, 1, "boom")
     assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, csrf=None)[0] == 403
     assert post(server + "/", {"action": "retry-job", "job": str(job_id)}, {"Origin": "http://evil.example"})[0] == 403
     assert jobs.job(job_id)["status"] == "failed"

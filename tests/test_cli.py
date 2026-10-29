@@ -22,7 +22,7 @@ def test_retry_only_requeues_finished_jobs(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["subtitle-guard", "retry", str(job_id)])
     assert cli.main() == 1
     jobs.claim(1)
-    jobs.fail(job_id, "boom")
+    jobs.fail(job_id, 1, "boom")
     assert cli.main() == 0 and jobs.job(job_id)["status"] == "queued"
 
 

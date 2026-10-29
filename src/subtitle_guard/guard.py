@@ -103,7 +103,11 @@ def summarize(reference_kind, decision, original, weak, attempt):
 
 def find_better_episode(cues, hearing_impaired, neighbours):
     for label, video in neighbours:
-        reference = load_reference(video, hearing_impaired, len(cues))
+        try:
+            reference = load_reference(video, hearing_impaired, len(cues))
+        except (ToolError, OSError) as error:
+            log("guard.neighbour-skipped", f"neighbour {label} unreadable, skipped: {error}", LEVEL["warning"], video=video)
+            continue
         if reference and assess(cues, reference, wide_retry=False)["fixed"]:
             return label
     return None

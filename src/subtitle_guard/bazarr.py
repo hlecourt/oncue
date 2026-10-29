@@ -118,7 +118,7 @@ def scan_one(label, video, subtitle, apply, neighbours, queue=False):
         return
     try:
         outcome = evaluate_and_fix(video, subtitle["path"], apply, neighbours)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, SubtitleGuardError) as error:
         print(f"{label} {subtitle['code2']}: error {error}", flush=True)
         return
     report(subtitle["path"], "scan", outcome, applied=apply)

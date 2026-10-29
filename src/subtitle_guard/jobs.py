@@ -7,7 +7,7 @@ import sqlite3
 import time
 from contextlib import closing
 
-from .logs import log
+from .logs import LEVEL, log
 from .storage import now, state_path
 
 PREPARED = set()
@@ -51,16 +51,30 @@ def claim(worker):
         return {**as_job(row), "status": STATUS["running"], "attempts": row["attempts"] + 1}
 
 
-def finish(job_id, outcome):
+def finish(job_id, worker, outcome):
     with closing(connect()) as connection:
-        connection.execute("update jobs set status = ?, finished = ?, decision = ?, confidence = ?, confidence_band = ?, summary = ?, error = null "
-                           "where id = ?", (STATUS["done"], now(), outcome.get("decision"), outcome.get("confidence"),
-                                            outcome.get("confidence_band"), outcome.get("summary"), job_id))
+        updated = connection.execute("update jobs set status = ?, finished = ?, decision = ?, confidence = ?, confidence_band = ?, summary = ?, error = null "
+                                     "where id = ? and status = ? and worker = ?", (STATUS["done"], now(), outcome.get("decision"), outcome.get("confidence"),
+                                                                                  outcome.get("confidence_band"), outcome.get("summary"), job_id, STATUS["running"], worker))
+    if not updated.rowcount:
+        log("job.ownership-lost", f"job {job_id} was taken back while worker {worker} ran it, result not recorded", LEVEL["warning"], job=job_id, worker=worker)
 
 
-def fail(job_id, error):
+def fail(job_id, worker, error):
     with closing(connect()) as connection:
-        connection.execute("update jobs set status = ?, finished = ?, error = ? where id = ?", (STATUS["failed"], now(), error, job_id))
+        connection.execute("update jobs set status = ?, finished = ?, error = ? where id = ? and status = ? and worker = ?",
+                           (STATUS["failed"], now(), error, job_id, STATUS["running"], worker))
+
+
+def has_open_job(subtitle):
+    with closing(connect()) as connection:
+        return connection.execute("select 1 from jobs where json_extract(arguments, '$.subtitle') = ? and status in (?, ?) limit 1",
+                                  (subtitle, STATUS["queued"], STATUS["running"])).fetchone() is not None
+
+
+def forget(path):
+    with closing(connect()) as connection:
+        connection.execute("delete from seen where path = ?", (path,))
 
 
 def requeue(job_id):

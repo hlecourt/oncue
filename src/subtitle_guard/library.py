@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 
 from . import jobs
+from .errors import SubtitleGuardError
 from .guard import evaluate_and_fix
 from .logs import log, settings
 from .outcome import describe
@@ -33,7 +34,7 @@ def scan_folder(root, apply, queue=False):
             continue
         try:
             outcome = evaluate_and_fix(video, subtitle, apply, neighbours)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, SubtitleGuardError) as error:
             print(f"{label}: error {error}", flush=True)
             continue
         report(subtitle, "scan", outcome, applied=apply)
@@ -60,7 +61,7 @@ def queue_if_changed(video, subtitle, neighbours, apply):
     except FileNotFoundError:
         return 0
     remembered, updated = jobs.seen(subtitle)
-    if remembered in (signature, PENDING + signature):
+    if remembered == signature or (remembered == PENDING + signature and jobs.has_open_job(subtitle)):
         return 0
     if remembered == FAILED + signature and time.time() - datetime.fromisoformat(updated).timestamp() < FAILED_RETRY_SECONDS:
         return 0

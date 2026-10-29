@@ -12,8 +12,8 @@ WORRYING_DECISIONS = (DECISION["rejected"], DECISION["wrong_episode"], DECISION[
 
 
 def describe(outcome):
-    if outcome["decision"] in (DECISION["unverified"], DECISION["reverted"]):
-        return f"subtitle-guard: {outcome['decision']} ({outcome['reason']})"
+    if outcome["decision"] in (DECISION["unverified"], DECISION["reverted"]) or not outcome.get("before"):
+        return f"subtitle-guard: {outcome['decision']} ({outcome.get('reason') or outcome.get('summary') or 'no detail'})"
     if outcome["decision"] == DECISION["audio_synced"]:
         return f"subtitle-guard: {outcome['decision']} ({outcome['reason']}) | confidence {outcome.get('confidence', 0)} ({outcome.get('confidence_band', 'low')})"
     before, after = outcome["before"], outcome["after"]

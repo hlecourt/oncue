@@ -70,3 +70,36 @@ def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path):
     assert done["status"] == "done" and done["decision"] == "fixed" and done["confidence_band"] == "high", (done["error"], done["summary"])
     fixed = numpy.array([start for start, _, _ in parse_subtitle(str(subtitle))["cues"]])
     assert numpy.max(numpy.abs(fixed - starts)) < 0.31
+
+
+def test_a_rejection_with_only_a_reason_completes_as_a_job(tmp_path):
+    from subtitle_guard.subtitles import timestamp
+    subtitle = tmp_path / "late-ends.fr.srt"
+    subtitle.write_text("".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 600)}\nline {number}\n\n" for number in range(1, 150)))
+    job_id = jobs.enqueue(jobs.KIND["check"], {"video": "/missing.mkv", "subtitle": str(subtitle), "apply": True})
+    worker.work_once(1)
+    done = jobs.job(job_id)
+    assert done["status"] == "done" and done["decision"] == "rejected" and "end times are wrong" in done["summary"]
+
+
+def test_an_abandoned_watch_job_does_not_block_the_subtitle_forever(tmp_path):
+    from subtitle_guard import library
+    video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
+    video.write_bytes(b"v")
+    subtitle.write_text("s")
+    assert library.queue_if_changed(str(video), str(subtitle), [], True) == 1
+    for _ in range(3):
+        jobs.claim(1)
+        jobs.recover_running(3, worker=1)
+    assert jobs.recent()[0]["status"] == "failed"
+    assert library.queue_if_changed(str(video), str(subtitle), [], True) == 1
+
+
+def test_an_unreadable_neighbour_is_skipped(monkeypatch):
+    from subtitle_guard import guard
+    from subtitle_guard.errors import ProbeError
+
+    def unreadable(video, hearing_impaired, count):
+        raise ProbeError("Input/output error")
+    monkeypatch.setattr(guard, "load_reference", unreadable)
+    assert guard.find_better_episode([(1.0, 2.0, "x")], False, [("S01E02", "/media/E02.mkv")]) is None
