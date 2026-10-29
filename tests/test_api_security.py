@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import os
 import subprocess
 import sys
 import time
@@ -6,9 +7,11 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from subtitle_guard import storage
+from subtitle_guard.api import auth
 from subtitle_guard.api.app import create_app
 from subtitle_guard.api.security import CSRF_HEADER, SESSION_COOKIE
-from subtitle_guard.web import auth
+from subtitle_guard.errors import ConfigError
 
 LOCAL = "http://127.0.0.1"
 PASSWORD = "a long enough password"
@@ -22,7 +25,7 @@ def local():
 @pytest.fixture
 def protected(monkeypatch):
     monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
-    return TestClient(create_app("0.0.0.0"), base_url="http://guard.example:8485")
+    return TestClient(create_app("0.0.0.0"), base_url="http://guard.example:8484")
 
 
 def log_in(client):
@@ -90,3 +93,20 @@ def test_the_engine_cli_and_bazarr_hook_never_import_the_web_stack():
     script = blocked + "import subtitle_guard.cli, subtitle_guard.bazarr, subtitle_guard.worker\nprint('ok')"
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
     assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_an_empty_or_broken_credentials_file_refuses_to_serve():
+    os.makedirs(storage.state_path(), exist_ok=True)
+    open(storage.state_path(auth.CREDENTIALS_FILE), "w").close()
+    with pytest.raises(ConfigError):
+        create_app("0.0.0.0")
+    with pytest.raises(ConfigError):
+        create_app("127.0.0.1")
+
+
+def test_a_first_start_off_loopback_generates_a_password_once(capsys):
+    assert create_app("0.0.0.0").state.login_required is True
+    password = capsys.readouterr().out.split("with the password ")[1].split(" ")[0]
+    assert auth.verify("admin", password) and oct(os.stat(storage.state_path(auth.CREDENTIALS_FILE)).st_mode & 0o777) == "0o600"
+    assert create_app("0.0.0.0").state.login_required is True and "with the password" not in capsys.readouterr().out
+    assert create_app("127.0.0.1").state.login_required is True

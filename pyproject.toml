@@ -46,6 +46,12 @@ subtitle-guard = "subtitle_guard.cli:main"
 [tool.hatch.version]
 path = "src/subtitle_guard/__init__.py"
 
+[tool.hatch.build]
+artifacts = ["src/subtitle_guard/api/static/"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["frontend/node_modules", "frontend/test-results", "frontend/playwright-report"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/subtitle_guard"]
 
@@ -61,6 +67,5 @@ select = ["E", "W", "F", "I", "B", "SIM", "UP", "RUF", "PLW", "BLE", "ISC"]
 ignore = ["E501", "SIM108"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/subtitle_guard/web/server.py" = ["BLE001"]
 "src/subtitle_guard/worker.py" = ["BLE001"]
 "tests/test_subtitles.py" = ["RUF001"]

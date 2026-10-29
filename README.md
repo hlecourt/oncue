@@ -10,7 +10,7 @@ editor. It works on the folders of a Jellyfin, Plex or Emby library, and can als
 
 Status: alpha.
 
-![A subtitle with two parts out of sync](docs/screenshots/out-of-sync.png)
+![A subtitle in the editor](docs/screenshots/subtitle.png)
 
 ## Why
 
@@ -72,6 +72,8 @@ In plain words, light or dark, on a phone or a large screen.
 - **Subtitle screen**: the fix the guard found, the sound to listen to the lines, and the actions to apply the fix, move lines
   or restore a saved version.
 - **History**, **Log**, **System** and **Settings** for everything else.
+
+![Review](docs/screenshots/review.png)
 
 Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an `X-Api-Key` header.
 
