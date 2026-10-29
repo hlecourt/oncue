@@ -28,7 +28,7 @@ from .bazarr import RETRY_STAGE, request_another
 from .catalog import discard_proposal, proposal_for
 from .confidence import confidence
 from .errors import EditRefusedError, MatroskaError, StaleVersionError, ToolError
-from .files import file_hash, inside_roots, restore_version, save_backup, subtitle_lock
+from .files import file_hash, inside_roots, remove_file, restore_version, save_backup, subtitle_lock
 from .guard import evaluate_and_fix
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
@@ -348,7 +348,7 @@ def recheck(video, subtitle):
 def delete_subtitle(subtitle):
     with subtitle_lock(subtitle):
         backup_folder = save_backup(subtitle, "deleted")
-        os.remove(subtitle)
+        remove_file(subtitle)
     discard_proposal(subtitle)
     report(subtitle, "ui", {"decision": DECISION["deleted"], "reason": f"deleted by hand, a copy is in {backup_folder}"})
     log("review.deleted", f"subtitle deleted by hand, backup={backup_folder}", subtitle=subtitle, backup=backup_folder)

@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import guard, jobs, reports, storage
+from subtitle_guard import files, guard, jobs, reports, storage
 from subtitle_guard.api.app import create_app
 from subtitle_guard.api.security import CSRF_HEADER
 from subtitle_guard.files import file_hash
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ff
 
 @pytest.fixture
 def client():
-    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1")
+    client = TestClient(create_app("127.0.0.1"), base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
     client.headers.update({CSRF_HEADER: client.get("/api/session").json()["csrf"]})
     return client
 
@@ -27,6 +27,7 @@ def proposed(tmp_path, monkeypatch, client):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
+    monkeypatch.setattr(files, "ROOTS", [os.path.realpath(tmp_path)])
     monkeypatch.setattr(guard, "confidence", lambda outcome: (65, "medium"))
     reports.report(str(subtitle), "scan", guard.evaluate_and_fix(str(video), str(subtitle), True))
     return client.get("/api/review").json()[0]["id"], subtitle, starts
@@ -83,8 +84,24 @@ def test_bulk_actions_report_what_was_done_and_what_was_skipped(client, proposed
 
 def test_only_a_finished_job_inside_the_allowed_folders_runs_again(client, proposed):
     _, subtitle, _ = proposed
-    job = jobs.enqueue(jobs.KIND["check"], {"video": "/v.mkv", "subtitle": str(subtitle), "apply": True})
+    outside = jobs.enqueue(jobs.KIND["check"], {"video": "/v.mkv", "subtitle": str(subtitle), "apply": True})
+    job = jobs.enqueue(jobs.KIND["check"], {"video": str(subtitle.parent / "Movie.2020.mkv"), "subtitle": str(subtitle), "apply": True})
     assert client.post(f"/api/jobs/{job}/retry").json()["code"] == "not_retryable"
+    jobs.claim(1)
+    jobs.finish(outside, 1, {"decision": "kept"})
+    assert client.post(f"/api/jobs/{outside}/retry").json()["code"] == "not_retryable"
     jobs.claim(1)
     jobs.finish(job, 1, {"decision": "kept"})
     assert client.post(f"/api/jobs/{job}/retry").status_code == 202 and jobs.job(job)["status"] == "queued"
+
+
+def test_without_allowed_folders_the_ui_changes_no_file(client, proposed, monkeypatch):
+    identity, subtitle, _ = proposed
+    monkeypatch.setattr(files, "ROOTS", [])
+    before = subtitle.read_bytes()
+    for action, body in (("apply", {"version": file_hash(str(subtitle))}), ("delete", {"version": file_hash(str(subtitle))}),
+                         ("shift", {"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": 1})):
+        answer = client.post(f"/api/subtitles/{identity}/{action}", json=body)
+        assert answer.status_code == 409 and answer.json()["code"] == "no_allowed_folders"
+    assert subtitle.read_bytes() == before
+    assert client.get("/api/system").json()["checks"]["allowed_folders"]["ok"] is False

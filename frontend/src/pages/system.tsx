@@ -13,7 +13,7 @@ import { api, unwrap } from "@/lib/api/client"
 import { bytes, when } from "@/lib/format"
 
 const CHECK_WORDS: Record<string, string> = { ffmpeg: "ffmpeg", ffprobe: "ffprobe", ffsubsync: "ffsubsync (audio sync)", state_writable: "State folder",
-  backups_writable: "Backup folder", bazarr: "Bazarr" }
+  backups_writable: "Backup folder", bazarr: "Bazarr", allowed_folders: "Allowed folders" }
 
 export function SystemPage() {
   const queryClient = useQueryClient()
