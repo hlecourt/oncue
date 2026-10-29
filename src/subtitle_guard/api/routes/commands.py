@@ -10,7 +10,7 @@ from ... import files, jobs, review
 from ...errors import EditRefusedError, StaleVersionError
 from ...files import file_hash, inside_roots
 from ..lookup import known_path
-from ..schemas import BulkAction, BulkResult, CommandResult, Restore, Shift, VersionGuard
+from ..schemas import BulkAction, BulkResult, CommandResult, Restore, Retime, Shift, VersionGuard
 from ..security import require_csrf
 
 router = APIRouter(tags=["commands"], dependencies=[Depends(require_csrf)])
@@ -32,6 +32,14 @@ def shift_lines(subtitle_id: str, body: Shift) -> CommandResult:
     outcome = refused_or(lambda: review.shift_range(video, path, body.first - SELECTION_MARGIN_SECONDS, body.last + SELECTION_MARGIN_SECONDS, body.offset,
                                                     body.version))
     return CommandResult(message=f"The lines now appear {abs(body.offset):.2f} s {'earlier' if body.offset < 0 else 'later'}.", decision=outcome["decision"])
+
+
+@router.post("/subtitles/{subtitle_id}/retime", operation_id="retimeLines")
+def retime(subtitle_id: str, body: Retime) -> CommandResult:
+    path, video = writable(subtitle_id)
+    changes = [(change.first, change.last, change.offset) for change in body.changes]
+    outcome = refused_or(lambda: review.retime(video, path, body.version, body.use_proposal, changes))
+    return CommandResult(message="Saved. The previous file was backed up.", decision=outcome["decision"])
 
 
 @router.post("/subtitles/{subtitle_id}/restore", operation_id="restoreVersion")

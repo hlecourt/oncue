@@ -33,7 +33,7 @@ def test_review_lists_the_proposal_with_an_opaque_id_and_plain_words(client, pro
     item = items[0]
     assert item["name"] == subtitle.name and item["folder"] == "library / Movie (2020)" and item["decision"] == "proposed"
     assert item["proposal"]["kind"] == "aligned" and item["proposal"]["confidence"] == 65 and " s earlier" in item["proposal"]["changes"][0]
-    assert item["reason"] == "A fix from the video's subtitles is ready, confidence 65" and item["tone"] == "warn"
+    assert item["reason"] == "A fix from the video's subtitles is ready" and item["tone"] == "warn"
 
 
 def test_a_subtitle_has_its_detail_its_lines_and_the_proposed_timings(client, proposed):
@@ -66,8 +66,9 @@ def test_history_pages_newest_first_with_counts_per_result(client, proposed):
     assert groups["proposals"] == 1 and groups["in-sync"] == 1
     assert [row["decision"] for row in client.get("/api/history", params={"result": "proposals"}).json()["rows"]] == ["proposed"]
     reports.report(str(subtitle), "scan", {"decision": "fixed", "confidence": 100, "confidence_band": "high"}, applied=False)
-    dry_run = client.get("/api/history", params={"result": "dry-runs"}).json()
-    assert dry_run["rows"][0]["changes"][0] == "Not written:" and {group["key"]: group["count"] for group in dry_run["groups"]}["fixed"] == 0
+    dry_run = client.get("/api/history", params={"result": "proposals"}).json()
+    groups = {group["key"]: group["count"] for group in dry_run["groups"]}
+    assert dry_run["rows"][0]["changes"][0] == "Not written:" and groups["fixed"] == 0 and groups["proposals"] == 2
 
 
 def test_jobs_and_the_log_are_readable_and_searchable(client, proposed):
@@ -96,3 +97,33 @@ def test_a_dry_run_never_reads_as_if_the_file_was_written():
     assert result_words(row)[0] == "A sure fix was found, not written (dry run)"
     assert result_words({**row, "decision": "kept"})[0] == "In sync"
     assert result_words({**row, "applied": 1})[0] == "Fixed automatically"
+
+
+def test_the_other_subtitles_of_the_same_video_are_listed(client, proposed):
+    _, subtitle, _ = proposed
+    sibling = subtitle.with_name("Movie.2020.en.srt")
+    sibling.write_text(subtitle.read_text())
+    reports.report(str(sibling), "scan", {"decision": "kept", "confidence": 95, "confidence_band": "high"})
+    subtitle.with_name("Movie.2020.es.srt").write_text(subtitle.read_text())
+    identity = client.get("/api/review").json()[0]["id"]
+    siblings = client.get(f"/api/subtitles/{identity}").json()["siblings"]
+    assert [(item["name"], item["words"]) for item in siblings] == [("Movie.2020.en.srt", "In sync")]
+    assert client.get(f"/api/subtitles/{siblings[0]['id']}").json()["siblings"][0]["name"] == subtitle.name
+
+
+def test_every_known_subtitle_is_listed_and_searchable_and_its_own_history_can_be_read(client, proposed):
+    _, subtitle, _ = proposed
+    identity = client.get("/api/review").json()[0]["id"]
+    other = subtitle.with_name("Other.2021.fr.srt")
+    other.write_text(subtitle.read_text())
+    reports.report(str(other), "scan", {"decision": "kept", "confidence": 95, "confidence_band": "high"})
+    listing = client.get("/api/subtitles").json()
+    assert listing["total"] == 2 and [row["name"] for row in listing["rows"]] == ["Movie.2020.fr.srt", "Other.2021.fr.srt"]
+    found = client.get("/api/subtitles", params={"q": "other fr"}).json()
+    assert found["total"] == 1 and found["rows"][0]["words"] == "In sync"
+    assert client.get("/api/subtitles", params={"limit": 1, "offset": 1}).json()["rows"][0]["name"] == "Other.2021.fr.srt"
+    answer = client.get("/api/history", params={"subtitle": identity})
+    assert answer.status_code == 200, answer.text
+    own = answer.json()["rows"]
+    assert own and all(row["name"] == "Movie.2020.fr.srt" for row in own)
+    assert client.get("/api/history", params={"subtitle": "deadbeef0000"}).status_code == 404

@@ -21,9 +21,11 @@ First public version.
   page with bulk keep, check again and ask Bazarr for another; one screen per subtitle with its decision, the fix found and
   the editor; History, Log, System (health, Bazarr setup check, library scan, backups) and Settings. Light and dark themes,
   a `Ctrl K` search, phone layouts.
-- Listen and edit: the lines with the video's own line next to each, a still of the video with the current line, and a
-  waveform of a cached light copy of the sound with the lines as blocks and the video's subtitles under them; moves of every
-  line or a selection, by buttons or by dragging, saved with a backup and a check that the file did not change.
+- Listen and edit, laid out like a video editor: the video, the lines with the video's own line under each, and a docked
+  timeline with your subtitle, the sound and the video's subtitle as separate tracks over a cached light copy of the sound.
+  Anchor a line where its voice starts, or nudge by 0.1 s and 1 s, on every line, from a line on, or on a selection; changes
+  add up into a list with the guard's fix (which can be turned off), undo with Ctrl Z, and one save writes them all with a
+  backup and a check that the file did not change. Full keyboard control, phone layout.
 - Settings in the UI, stored next to the state; an environment variable always wins and the allowed folders and the
   confidence threshold stay set by the environment. A URL base for reverse proxies, login modes like the *arr apps (always,
   not from private addresses, or a proxy that authenticates), an API key for scripts, a webhook digest of what reached

@@ -59,6 +59,9 @@ synthetic case in `tests/` (see `tests/media.py` and `tests/synthetic.py`), and 
 - Descriptive names without abbreviations, early returns, small functions that read top-down, no comments that repeat the code.
 - Typed errors from `errors.py` for expected failures; never swallow an exception.
 - UI copy in plain English for people who are not technical; the Log page is the technical view.
+- In the front, controls have two heights: the default (36 px) for page actions, forms and tabs, `sm` (32 px) for filters, table
+  toolbars and the editor. One filled button per screen, for the action that writes; the tone dot says what a row needs, the
+  confidence badge stays neutral.
 - In the front, the shadcn/ui components in `src/components/ui` are vendored: change them there. JSON goes through the typed
   client in `src/lib/api`; media (audio, peaks, frames) through its `mediaUrl`, so the URL base applies.
 - Every change to a subtitle file goes through `files.py`.

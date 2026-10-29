@@ -3,7 +3,12 @@ import { useSyncExternalStore } from "react"
 
 export type Theme = "light" | "dark" | "system"
 const STORAGE_KEY = "theme"
+const SYSTEM_DARK = "(prefers-color-scheme: dark)"
 const listeners = new Set<() => void>()
+
+matchMedia(SYSTEM_DARK).addEventListener("change", () => {
+  if (chosenTheme() === "system") chooseTheme("system")
+})
 
 export function chosenTheme(): Theme {
   try {
@@ -21,7 +26,7 @@ export function chooseTheme(theme: Theme) {
   } catch {
     // a blocked storage only loses the choice on reload
   }
-  const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
+  const dark = theme === "dark" || (theme === "system" && matchMedia(SYSTEM_DARK).matches)
   document.documentElement.classList.toggle("dark", dark)
   listeners.forEach((listener) => listener())
 }
@@ -33,5 +38,15 @@ export function useTheme(): Theme {
       return () => listeners.delete(listener)
     },
     chosenTheme,
+  )
+}
+
+export function useDark(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    () => document.documentElement.classList.contains("dark"),
   )
 }

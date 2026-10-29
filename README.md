@@ -110,12 +110,15 @@ the subtitles.
 - **Review**, the home page: the subtitles waiting for a person, one sentence each ("A fix from the video's subtitles is ready,
   confidence 72", "Out of sync around 25:00", "Belongs to S01E03"), with counts, a filter, and **Keep as is**, **Check again** and
   **Ask Bazarr for another** for several at once. A fix is never applied in bulk.
-- **One screen per subtitle**: the decision, the confidence, the fix the guard found and the parts it moves, then the editor.
-  The lines are listed with the video's own line next to each one, a still of the video shows the current line, and a waveform
-  of the sound shows your lines as blocks, with the video's subtitles in a lane under them when there are some. Play, start from
-  the fix or from the current file, move every line or a selection earlier or later (buttons, a number, or by dragging the
-  blocks), listen again, then save: the file is backed up first and the save is refused if the file changed meanwhile. The
-  editor plays a light copy of the sound made once by ffmpeg and cached (`SUBTITLE_GUARD_AUDIO_CACHE_MB`). The same screen
+- **One screen per subtitle, an editor**: the video in the middle, your lines on the right with the video's own line under
+  each, and a timeline docked at the bottom with three tracks: your subtitle, the sound, and the video's subtitle (the
+  reference, often in another language: what matters is when each line starts, not its words). To fix the timing, choose a
+  line, play, and press **It starts here** where the voice starts (or drag its block); or move by -1 s, -0.1 s, +0.1 s, +1 s.
+  A change applies to every line, to the lines from this one on, or to the selected lines, and changes add up: fix the whole
+  file, then a part after an ad break, then one scene. They are listed under **Changes** with the guard's fix, which can be
+  turned off, nothing is written until **Save**, and Ctrl Z undoes the last one. Saving writes everything once, after a backup,
+  and is refused if the file changed meanwhile. The keyboard does it all (press ? for the list), and phones get the same tools.
+  The editor plays a light copy of the sound made once by ffmpeg and cached (`SUBTITLE_GUARD_AUDIO_CACHE_MB`). The same screen
   keeps the subtitle as it is, checks it again, asks Bazarr for another, restores a saved version or deletes it.
 - **History**: every check, newest first, with what started it, the result, the confidence and what changed, filtered by result;
   and the tasks waiting, running or failed, with **Run again**.

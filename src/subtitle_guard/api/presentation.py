@@ -14,8 +14,8 @@ UNSURE_WORDS = {"kept": "Looks in sync, not sure", "fixed": "Fixed, not sure", "
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, in the UI",
               "revert": "You, restore"}
-HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed", "approved")), "proposals": ("Proposals", ("proposed",)), "in-sync": ("In sync", ("kept",)),
-                  "dry-runs": ("Dry runs", ("dry-run",)), "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")), "not-checked": ("Cannot be checked", ("unverified", "audio-synced")),
+HISTORY_GROUPS = {"fixed": ("Fixed", ("fixed", "approved")), "proposals": ("Proposals", ("proposed", "dry-run")), "in-sync": ("In sync", ("kept",)),
+                  "not-fixed": ("Not fixed", ("rejected", "wrong-episode", "best-effort")), "not-checked": ("Cannot be checked", ("unverified", "audio-synced")),
                   "by-hand": ("By hand", ("manual", "reverted", "deleted"))}
 UNCHANGED_DECISIONS = ("kept", "rejected", "wrong-episode", "unverified", "proposed", "deleted")
 CHANGES_SHOWN = 3
@@ -36,7 +36,7 @@ def result_words(row):
 def review_reason(row, proposal):
     if proposal:
         source = "the sound" if proposal["kind"] == "audio" else "the video's subtitles"
-        return f"A fix from {source} is ready, confidence {proposal.get('confidence') or 0}"
+        return f"A fix from {source} is ready"
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
         return f"Belongs to {row['note']}"
     if row["weak_minutes"]:
