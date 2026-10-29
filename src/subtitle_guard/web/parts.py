@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Building blocks of the pages: layout, tables, badges, timeline, line-by-line view and formatting helpers."""
 
+import base64
+import hashlib
 import html
 import json
 import os
@@ -76,6 +78,7 @@ COPY = asset("copy.js")
 
 PICKER = asset("picker.js")
 REFRESH = asset("refresh.js")
+SCRIPT_HASHES = [f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'" for script in (KEYS, PICKER, COPY, REFRESH)]
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 
 
@@ -413,7 +416,7 @@ def layout(title, body, refresh=None, page="", current=None, navigation=True):
     live = f' data-status="{escape(live_status())}"' if refresh else ""
     links = "".join(navigation_link(link, label, page == key) for key, link, label in (("dashboard", "/", "Overview"), ("review", "/review", "Needs a look"), ("history", "/history", "History"),
                                                     ("log", "/log", "Log")))
-    logout = ('<form method="post" action="/logout" class="logout"><button class="small">Log out</button></form>' if AUTH["token"] and navigation else "")
+    logout = ('<form method="post" action="/logout" class="logout"><button class="small">Log out</button></form>' if AUTH["required"] and navigation else "")
     navigation_html = f'<nav aria-label="Pages">{links}</nav>{sidebar(current)}{logout}' if navigation else ""
     page_html = (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
                  f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body{live}>'

@@ -38,12 +38,13 @@ during the check. Only the timing lines change: text, styles, encoding and line 
 ```
 curl -O https://raw.githubusercontent.com/hlecourt/subtitle-guard/main/examples/docker-compose.yml
 docker compose up -d
-docker compose logs subtitle-guard | grep token
+docker compose logs subtitle-guard | grep password
 ```
 
-Open `http://<host>:8484` and paste the token from the logs, or set your own with `SUBTITLE_GUARD_UI_TOKEN`. The image
-(`ghcr.io/hlecourt/subtitle-guard`, amd64 and arm64) runs as uid 1000: set `user:` to the owner of your media and of Bazarr's
-files. Both containers must mount the media and Bazarr's `/config` at the same paths. Then set up the hook below.
+Open `http://<host>:8484` and log in as `admin` with the password printed in the logs on first start, or set the account
+with `SUBTITLE_GUARD_UI_USER` and `SUBTITLE_GUARD_UI_PASSWORD`, or later with `docker compose exec subtitle-guard subtitle-guard
+set-password`. The image (`ghcr.io/hlecourt/subtitle-guard`, amd64 and arm64) runs as uid 1000: set `user:` to the owner of your
+media and of Bazarr's files. Both containers must mount the media and Bazarr's `/config` at the same paths. Then set up the hook below.
 
 ### With pip
 
@@ -111,9 +112,11 @@ the server is up and `/ready` checks the database and every worker.
 
 ## Security
 
-- On loopback the UI needs no login. Anywhere else it needs a token: `SUBTITLE_GUARD_UI_TOKEN`, or one generated at first start,
-  stored in the state directory with mode 600 and printed in the logs. Logging in opens a session cookie (HttpOnly,
-  SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`).
+- On loopback the UI needs no login. Anywhere else it needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
+  `SUBTITLE_GUARD_UI_PASSWORD`, or an account set with `subtitle-guard set-password` (stored as a scrypt hash with mode 600), or on
+  first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
+  opening it. Five wrong attempts lock a client out for 10 minutes. Logging in opens a session that expires on the server after
+  30 days (HttpOnly, SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`); logging out ends it.
 - Every action is a POST with a CSRF token, from the same origin; without a token only loopback host names are accepted. Pages
   send a strict Content-Security-Policy and refuse to be framed. Requests are size- and time-limited.
 - The UI only acts on subtitles the guard already checked, never through a symlink, and only under `SUBTITLE_GUARD_ROOTS` (or the
@@ -152,7 +155,7 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 
 | Variable | Default |
 |---|---|
-| `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, token |
+| `SUBTITLE_GUARD_STATE` | `/config/subtitle-guard` (`/config` in the image): queue, history, log, caches, UI account |
 | `SUBTITLE_GUARD_BACKUPS` | `/data/backup/subtitle-guard` (`/backup` in the image) |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
@@ -160,7 +163,7 @@ the decision, confidence, alignment figures and changes), `guard.rewritten`, `jo
 | `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
 | `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only acts on subtitles under these folders |
 | `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` (`0.0.0.0` in the image) |
-| `SUBTITLE_GUARD_UI_TOKEN` | unset; required beyond loopback, generated when unset |
+| `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / unset; beyond loopback a password is required, generated once when unset |
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs`, where the linuxserver.io Bazarr image keeps ffsubsync; empty in the image, which installs it |
 | `BAZARR_URL` | `http://localhost:6767` |
 | `BAZARR_API_KEY` | read from `BAZARR_CONFIG` |

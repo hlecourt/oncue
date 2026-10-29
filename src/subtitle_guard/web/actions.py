@@ -6,19 +6,20 @@ import urllib.parse
 
 from .. import jobs, review
 from ..errors import SubtitleGuardError
+from ..files import inside_roots
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
 from .context import notice
 from .parts import seconds, short_clock, subtitle_link
 
-ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
-
 
 def perform(form):
     action, path = form.get("action", ""), form.get("path", "")
     if action == "retry-job":
-        job = form.get("job", "")
-        message = "It will run again shortly." if job.isdigit() and jobs.requeue(int(job)) else "Only a finished task can be run again."
+        number = form.get("job", "")
+        item = jobs.job(int(number)) if number.isascii() and number.isdigit() else None
+        allowed = item is not None and all(inside_roots(item["arguments"][key]) for key in ("video", "subtitle") if item["arguments"].get(key))
+        message = "It will run again shortly." if allowed and jobs.requeue(item["id"]) else "Only a finished task can be run again."
         return "/history?" + urllib.parse.urlencode({"notice": notice(message)})
     if not known_subtitle(path):
         return "/review?" + urllib.parse.urlencode({"notice": notice("Unknown subtitle, nothing was changed.")})
@@ -65,6 +66,6 @@ def perform(form):
 def known_subtitle(path):
     if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path) or os.path.islink(path):
         return False
-    if ROOTS and not any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS):
+    if not inside_roots(path):
         return False
     return has_report(path) or bool(jobs.for_subtitle(path, limit=1))

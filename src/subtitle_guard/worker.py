@@ -19,7 +19,7 @@ from .bazarr import (
 )
 from .errors import UnknownJobKindError
 from .guard import evaluate_and_fix
-from .heartbeats import HEARTBEAT_SECONDS
+from .heartbeats import HEARTBEAT_SECONDS, SUPERVISED_VARIABLE
 from .library import FAILED, watch_signature
 from .logs import LEVEL, log, settings
 from .outcome import describe
@@ -52,6 +52,7 @@ def supervise(roles):
     log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} requeued_jobs={requeued} abandoned_jobs={abandoned}", roles=sorted(roles),
         requeued=requeued, abandoned=abandoned)
     write_json(state_path("supervisor.json"), {"pid": os.getpid(), "workers": sorted(name for name in roles if name.startswith("worker-"))})
+    os.environ[SUPERVISED_VARIABLE] = "1"
     processes = {name: start(*role) for name, role in roles.items()}
     for stop_signal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(stop_signal, lambda number, frame: shut_down(processes, signal.Signals(number).name))

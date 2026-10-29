@@ -13,7 +13,12 @@ from .logs import LEVEL, log
 from .storage import state_path
 
 MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
+ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
 TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
+
+
+def inside_roots(path):
+    return not ROOTS or any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS)
 
 
 @contextmanager

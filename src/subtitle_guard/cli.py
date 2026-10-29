@@ -18,14 +18,16 @@ Commands:
   job ID                                                                    one job in full
   retry ID                                                                  run a finished or failed job again
   needs-human                                                               subtitles whose last check needs a person
+  set-password [USER]                                                       set the UI account (default user admin); reads the password from stdin when piped
   log [N] [--problems]                                                      the last N events of the global log (default 50), or only warnings and errors
   try-another VIDEO SUBTITLE                                                internal: blacklist and let Bazarr retry
 
 Settings (environment): SUBTITLE_GUARD_STATE, SUBTITLE_GUARD_BACKUPS, SUBTITLE_GUARD_FFSUBSYNC_PATH, SUBTITLE_GUARD_QUEUE=1 (hook queues),
 SUBTITLE_GUARD_WORKERS, SUBTITLE_GUARD_WATCH_SECONDS, SUBTITLE_GUARD_LIBRARY,
-SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_TOKEN, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
+SUBTITLE_GUARD_ROOTS, SUBTITLE_GUARD_UI_HOST, SUBTITLE_GUARD_UI_PORT, SUBTITLE_GUARD_UI_USER, SUBTITLE_GUARD_UI_PASSWORD, BAZARR_URL, BAZARR_API_KEY or BAZARR_CONFIG.
 """
 
+import getpass
 import json
 import os
 import shutil
@@ -42,6 +44,7 @@ from .bazarr import (
     scan_series,
     try_another_subtitle,
 )
+from .errors import ConfigError
 from .guard import evaluate_and_fix
 from .health import report_startup
 from .library import scan_folder, watch
@@ -51,6 +54,7 @@ from .reports import print_needs_human, report
 from .web import HOST as UI_HOST
 from .web import PORT as UI_PORT
 from .web import serve_ui
+from .web.auth import DEFAULT_USER, save_credentials
 from .worker import WORKERS, run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
@@ -118,6 +122,8 @@ def main():
         return 0 if requeued else 1
     if command == "needs-human":
         return print_needs_human()
+    if command == "set-password":
+        return set_password(arguments[0] if arguments else DEFAULT_USER)
     if command == "log":
         return print_log(int(arguments[0]) if arguments else 50, flags["--problems"])
     if command == "try-another" and len(arguments) == 2:
@@ -149,6 +155,21 @@ def hook(arguments, queue):
         print(f"subtitle-guard: queued job {jobs.enqueue(jobs.KIND['hook'], {**fields, 'content_hash': file_hash(fields['subtitle']) if os.path.isfile(fields['subtitle']) else None})}")
         return 0
     print(describe(handle_download(*arguments)))
+    return 0
+
+
+def set_password(user):
+    interactive = sys.stdin.isatty()
+    password = getpass.getpass(f"New UI password for {user}: ") if interactive else sys.stdin.readline().rstrip("\n")
+    if interactive and getpass.getpass("The same password again: ") != password:
+        print("The two passwords differ, nothing was changed.")
+        return 1
+    try:
+        save_credentials(user, password)
+    except ConfigError as error:
+        print(f"subtitle-guard: {error}")
+        return 1
+    print(f"Password saved for {user}. A running UI uses it at once and signs everyone out.")
     return 0
 
 

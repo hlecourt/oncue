@@ -62,7 +62,7 @@ def fail(job_id, error):
 
 def requeue(job_id):
     with closing(connect()) as connection:
-        cursor = connection.execute("update jobs set status = ?, run_after = ?, error = null where id = ? and status in (?, ?)",
+        cursor = connection.execute("update jobs set status = ?, run_after = ?, error = null, attempts = 0 where id = ? and status in (?, ?)",
                                     (STATUS["queued"], time.time(), job_id, STATUS["done"], STATUS["failed"]))
         return cursor.rowcount == 1
 
