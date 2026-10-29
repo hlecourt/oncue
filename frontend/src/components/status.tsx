@@ -9,7 +9,6 @@ export type Tone = "good" | "warn" | "bad" | "neutral"
 const DOT = { good: "bg-success", warn: "bg-warning", bad: "bg-destructive", neutral: "bg-muted-foreground" } as const
 const TEXT = { good: "text-success", warn: "text-warning", bad: "text-destructive", neutral: "text-muted-foreground" } as const
 const BAND_WORDS: Record<string, string> = { high: "High", medium: "Medium", low: "Low", none: "None" }
-const BAND_TONE: Record<string, Tone> = { high: "good", medium: "warn", low: "bad", none: "neutral" }
 
 export function toneOf(value: string): Tone {
   return value in DOT ? (value as Tone) : "neutral"
@@ -25,10 +24,8 @@ export function ToneText({ tone, children, className }: { tone: Tone; children: 
 
 export function ConfidenceBadge({ confidence, band }: { confidence: number | null | undefined; band: string }) {
   if (confidence == null) return <span className="text-xs text-muted-foreground">-</span>
-  const tone = BAND_TONE[band] ?? "neutral"
   return (
-    <Badge variant="outline" className="gap-1.5 font-mono tabular-nums" title={`${BAND_WORDS[band] ?? band} confidence`}>
-      <ToneDot tone={tone} />
+    <Badge variant="outline" className="font-mono tabular-nums" title={`${BAND_WORDS[band] ?? band} confidence`}>
       {confidence}
     </Badge>
   )
@@ -59,9 +56,9 @@ export function EmptyState({ icon, title, children, action }: { icon: ReactNode;
 
 export function Stat({ label, value, tone = "neutral" }: { label: string; value: ReactNode; tone?: Tone }) {
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 font-mono text-2xl font-semibold tabular-nums", tone !== "neutral" && TEXT[tone])}>{value}</div>
+    <div className="min-w-0 rounded-lg border bg-card px-3 py-2 sm:px-4 sm:py-3">
+      <div className="flex items-center gap-1.5 text-xs leading-tight text-muted-foreground">{tone !== "neutral" && <ToneDot tone={tone} />}{label}</div>
+      <div className="mt-1 font-mono text-xl font-semibold tabular-nums sm:text-2xl">{value}</div>
     </div>
   )
 }

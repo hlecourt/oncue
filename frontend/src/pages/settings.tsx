@@ -29,7 +29,7 @@ type Setting = Schemas["SettingView"]
 type Draft = Record<string, unknown>
 
 const GROUPS = [
-  { title: "Behaviour", description: "What the guard does on its own.", names: ["mode", "audio_automatic", "watched_folders", "watch_seconds", "workers"] },
+  { title: "Behaviour", description: "What the guard does on its own.", names: ["mode", "workers", "watched_folders", "watch_seconds", "audio_automatic"] },
   { title: "Backups", description: "How many saved versions each subtitle keeps.", names: ["keep_versions", "keep_days"] },
   { title: "Bazarr", description: "Where the guard asks for subtitles and lists the library.", names: ["bazarr_url", "bazarr_api_key", "replacements"] },
   { title: "Notifications", description: "A message to a webhook when subtitles reach Review.", names: ["webhook_url", "webhook_minutes"] },
@@ -61,8 +61,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="A setting set in the environment always wins and shows as locked here."
-        actions={<Button disabled={!changed || save.isPending} onClick={() => save.mutate()}>{changed ? `Save ${changed} change${changed > 1 ? "s" : ""}` : "Saved"}</Button>} />
+      <PageHeader title="Settings" description="A setting set in the environment always wins and shows as locked here." />
       <div className="space-y-4">
         {GROUPS.map((group) => (
           <Card key={group.title}>
@@ -86,6 +85,15 @@ export function SettingsPage() {
         </Card>
         <ApiKey />
       </div>
+      {changed > 0 && (
+        <div className="sticky bottom-4 z-10 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur" role="region" aria-label="Unsaved changes">
+          <span className="text-sm">{changed} unsaved change{changed > 1 ? "s" : ""}</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" disabled={save.isPending} onClick={() => setDraft({})}>Discard</Button>
+            <Button disabled={save.isPending} onClick={() => save.mutate()}>Save {changed} change{changed > 1 ? "s" : ""}</Button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -95,10 +103,20 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
   const change = (next: unknown) => setDraft((current) => ({ ...current, [setting.name]: next }))
   const id = `setting-${setting.name}`
   const note = setting.locked ? `Set by the environment.` : setting.restart ? "Applies after a restart." : setting.note
+  if (setting.kind === "switch") {
+    return (
+      <div className="flex items-start justify-between gap-4 rounded-md border p-3 md:col-span-2">
+        <div className="space-y-1">
+          <Label htmlFor={id} className="flex items-center gap-1.5">{LABELS[setting.name] ?? setting.name}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
+          {note && <p className="text-xs text-muted-foreground">{note}</p>}
+        </div>
+        <Switch id={id} checked={Boolean(value)} disabled={setting.locked} onCheckedChange={change} />
+      </div>
+    )
+  }
   return (
     <div className="space-y-2">
       <Label htmlFor={id} className="flex items-center gap-1.5">{LABELS[setting.name] ?? setting.name}{setting.locked && <LockIcon className="size-3 text-muted-foreground" />}</Label>
-      {setting.kind === "switch" && <div><Switch id={id} checked={Boolean(value)} disabled={setting.locked} onCheckedChange={change} /></div>}
       {setting.kind === "choice" && (
         <Select value={String(value)} disabled={setting.locked} onValueChange={change}>
           <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>

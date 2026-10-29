@@ -13,6 +13,7 @@ import { ReviewPage } from "@/pages/review"
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     title?: string
+    editor?: boolean
   }
   interface Register {
     router: typeof router
@@ -37,7 +38,8 @@ function Gate() {
 const root = createRootRoute({ component: Gate })
 const routes = [
   createRoute({ getParentRoute: () => root, path: "/", component: ReviewPage, staticData: { title: "Review" } }),
-  createRoute({ getParentRoute: () => root, path: "/subtitles/$subtitleId", component: lazyRouteComponent(() => import("@/pages/subtitle"), "SubtitlePage"), staticData: { title: "Subtitle" } }),
+  createRoute({ getParentRoute: () => root, path: "/subtitles", component: lazyRouteComponent(() => import("@/pages/subtitles"), "SubtitlesPage"), staticData: { title: "Subtitles" } }),
+  createRoute({ getParentRoute: () => root, path: "/subtitles/$subtitleId", component: lazyRouteComponent(() => import("@/pages/subtitle"), "SubtitlePage"), staticData: { title: "Subtitle", editor: true } }),
   createRoute({ getParentRoute: () => root, path: "/history", component: lazyRouteComponent(() => import("@/pages/history"), "HistoryPage"), staticData: { title: "History" } }),
   createRoute({ getParentRoute: () => root, path: "/log", component: lazyRouteComponent(() => import("@/pages/log"), "LogPage"), staticData: { title: "Log" } }),
   createRoute({ getParentRoute: () => root, path: "/system", component: lazyRouteComponent(() => import("@/pages/system"), "SystemPage"), staticData: { title: "System" } }),
