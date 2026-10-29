@@ -46,7 +46,7 @@ DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "rejected":
 BAND_TONES = {"high": "good", "medium": "warn", "low": "bad", "none": "neutral"}
 
 
-STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "Check", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
+STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, Fix everything", "revert": "You, restore"}
 
 
 KIND_WORDS = {"hook": "Check a subtitle from Bazarr", "check": "Check", "blacklist": "Ask Bazarr for another subtitle", "retry-check": "Wait for the other subtitle"}
@@ -70,7 +70,6 @@ TICK_MINUTES = (1, 2, 5, 10, 15, 30, 60)
 STYLE = asset("style.css")
 
 
-KEYS = asset("keys.js")
 
 
 COPY = asset("copy.js")
@@ -78,7 +77,9 @@ COPY = asset("copy.js")
 
 PICKER = asset("picker.js")
 REFRESH = asset("refresh.js")
-SCRIPT_HASHES = [f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'" for script in (KEYS, PICKER, COPY, REFRESH)]
+SCRIPT_HASHES = [f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'" for script in (PICKER, COPY, REFRESH)]
+UNSURE_WORDS = {"kept": "Looks in sync, not sure", "fixed": "Fixed, not sure", "manual": "Adjusted by hand, still off in places"}
+TAB_NAMES = {"result": "Filter by result", "latest": "Which checks"}
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 
 
@@ -87,7 +88,7 @@ def tasks_now():
     if not items:
         return ""
     rows = "".join(task_row(item) for item in items)
-    return f'<h2 id="tasks">Tasks right now</h2><table class="history">{columns(14, 30, 22, 22, 12)}<tr><th>Since</th><th>Subtitle</th><th>Task</th><th>Status</th><th></th></tr>{rows}</table>'
+    return f'<h2 id="tasks">Tasks right now</h2><table class="history">{columns(14, 30, 22, 22, 12)}<tr><th>Since</th><th>Subtitle</th><th>Task</th><th>Status</th><th><span class="visually-hidden">Action</span></th></tr>{rows}</table>'
 
 
 def task_row(item):
@@ -117,14 +118,24 @@ def columns(*widths):
 
 def history_row(row):
     belongs_elsewhere = row["decision"] == "wrong-episode" and row["note"]
-    words = f"Belongs to {row['note']}" if belongs_elsewhere else DECISION_WORDS.get(row["decision"], row["decision"])
-    dry_run = not row.get("applied", 1)
-    tone_name = "neutral" if dry_run else DECISION_TONES.get(row["decision"], "neutral")
-    result = f'<span class="badge {tone_name}">{escape(("Dry run, " + words.lower()) if dry_run else words)}</span>'
-    note = f'<div class="muted">{escape(row["note"])}</div>' if row["note"] and not belongs_elsewhere else ""
+    words, tone_name = result_words(row)
+    result = f'<span class="badge {tone_name}">{escape(words)}</span>'
+    note = f'<div class="muted">{escape(row["note"])}</div>' if row["note"] and not belongs_elsewhere and row["decision"] != DECISION["manual"] else ""
     return (f'<tr><td class="time">{escape(row["time"][11:16])}</td><td>{subtitle_cell(row["subtitle"])}</td>'
             f'<td>{result}{note}<div class="muted">Started by: {escape(started_by(row["provider"]))}</div></td><td>{changes_text(row["changes"], row["decision"])}</td>'
             f'<td>{confidence_badge(row)}{lines_matching(row)}</td></tr>')
+
+
+def result_words(row):
+    if row["decision"] == "wrong-episode" and row["note"]:
+        return f"Belongs to {row['note']}", "bad"
+    words = DECISION_WORDS.get(row["decision"], row["decision"])
+    if not row.get("applied", 1):
+        return "Dry run, " + words.lower(), "neutral"
+    unsure = row["band"] == "low" or bool(row["weak_minutes"])
+    if unsure and row["decision"] in UNSURE_WORDS:
+        return UNSURE_WORDS[row["decision"]], "warn"
+    return words, DECISION_TONES.get(row["decision"], "neutral")
 
 
 def changes_text(changes, decision):
@@ -208,8 +219,9 @@ def tab_links(base, key, current, options, keep=None):
             query[key] = value
         href = base + ("?" + urllib.parse.urlencode(query) if query else "")
         badge = f'<span class="count">{number}</span>' if number is not None else ""
-        links += f'<a class="tab{" active" if value == current else ""}" href="{href}">{escape(label)}{badge}</a>'
-    return f'<nav class="tabs">{links}</nav>'
+        marker = ' class="tab active" aria-current="page"' if value == current else ' class="tab"'
+        links += f'<a{marker} href="{href}">{escape(label)}{badge}</a>'
+    return f'<nav class="tabs" aria-label="{escape(TAB_NAMES.get(key, key))}">{links}</nav>'
 
 
 def day_label(moment):
@@ -218,7 +230,7 @@ def day_label(moment):
         return "Today"
     if day == date.today() - timedelta(days=1):
         return "Yesterday"
-    return f"{day.strftime('%A')} {day.day} {day.strftime('%B %Y')}"
+    return f"{day.day} {day.strftime('%B %Y')}"
 
 
 def status_box(diagnosis, latest, fix):
@@ -274,12 +286,14 @@ def parts_list(path, diagnosis, hidden):
     rows = ""
     for part in diagnosis["parts"]:
         direction = "too late" if part["shift"] < 0 else "too early"
+        span = f"{short_clock(part['first'])} to {short_clock(part['last'])}"
         fields = (f'<input type="hidden" name="first" value="{part["first"]:.3f}"><input type="hidden" name="last" value="{part["last"]:.3f}">'
                   f'<input type="hidden" name="offset" value="{part["shift"]:.2f}">')
         rows += (f'<tr><td class="time">{short_clock(part["first"])} to {short_clock(part["last"])}</td>'
                  f'<td>{part["lines"]} lines appear <b>{abs(part["shift"]):.1f} s {direction}</b></td>'
-                 f'<td class="actions"><a href="{subtitle_link(path, int(part["first"] // 60))}">Show</a>'
-                 f'<form class="inline" method="post">{hidden}{fields}<input type="hidden" name="action" value="fix-part"><button class="small">Fix this part</button></form></td></tr>')
+                 f'<td class="actions"><a href="{subtitle_link(path, int(part["first"] // 60))}">Show<span class="visually-hidden"> {span}</span></a>'
+                 f'<form class="inline" method="post">{hidden}{fields}<input type="hidden" name="action" value="fix-part"><button class="small">Fix this part'
+                 f'<span class="visually-hidden"> {span}</span></button></form></td></tr>')
     count = len(diagnosis["parts"])
     return f'<h2>What is wrong ({count} part{"s" if count != 1 else ""})</h2><table class="parts">{rows}</table>'
 
@@ -306,9 +320,11 @@ def timeline_summary(minutes):
             ranges.append(current)
         current = None
     ranges += [current] if current else []
+    fixed = [number for number, _, state in minutes if state == "fixed"]
+    fixed_text = f" Put back on time by the guard: {short_clock(fixed[0] * 60)} to {short_clock((fixed[-1] + 1) * 60)}." if fixed else ""
     if not ranges:
-        return "Every minute is on time."
-    return "Out of sync: " + ", ".join(f"{duration_label(first)} to {duration_label(last + 1)}" for first, last in ranges) + "."
+        return "Every minute is on time." + fixed_text
+    return "Out of sync: " + ", ".join(f"{short_clock(first * 60)} to {short_clock((last + 1) * 60)}" for first, last in ranges) + "." + fixed_text
 
 
 def strip(path, minutes, minute):
@@ -321,7 +337,7 @@ def strip(path, minutes, minute):
 
 def minute_link(path, number, share, state, current):
     title = escape(minute_title(number, share))
-    marker = ' aria-current="true"' if current else ""
+    marker = ' aria-current="true"' if current else ' tabindex="-1"'
     return f'<a class="{state}{" current" if current else ""}" title="{title}" aria-label="{title}"{marker} href="{subtitle_link(path, number)}"></a>'
 
 
@@ -359,9 +375,11 @@ def reading(path, view, diagnosis, minute, fix):
 def minute_links(path, view, minute):
     known = [number for number, _, state in view["minutes"] if state != "quiet"]
     earlier, later = [number for number in known if number < minute], [number for number in known if number > minute]
-    links = f'<a id="previous-minute" href="{subtitle_link(path, earlier[-1])}">Previous minute</a>' if earlier else ""
-    links += f'<a id="next-minute" href="{subtitle_link(path, later[0])}">Next minute</a>' if later else ""
-    return f'<span class="minute-links">{links}</span>'
+    links = f'<a href="{subtitle_link(path, earlier[-1])}">Previous minute</a>' if earlier else ""
+    links += f'<a href="{subtitle_link(path, later[0])}">Next minute</a>' if later else ""
+    go = (f'<form class="go-minute"><input type="hidden" name="path" value="{escape(path)}"><label for="go-minute">Go to minute</label>'
+          f'<input type="number" id="go-minute" name="minute" min="0" max="{len(view["minutes"])}" value="{minute}"><button class="small">Go</button></form>')
+    return f'<span class="minute-links">{links}{go}</span>'
 
 
 def moment_row(moment, diagnosis, fix):
@@ -377,9 +395,9 @@ def moment_row(moment, diagnosis, fix):
     if abs(moved) >= NOTICEABLE_SECONDS:
         label += f'<div class="muted">was at {short_clock(moment["shown_at"] - moved)}, moved {abs(moved):.1f} s {"later" if moved > 0 else "earlier"}</div>'
     if moment["video"] is not None:
-        video_cell = f'<button type="button" class="pick" data-time="{moment["time"]:.3f}">{video_cell}</button>'
+        video_cell = f'<button type="button" class="pick" aria-describedby="hint" data-time="{moment["time"]:.3f}">{video_cell}</button>'
     if moment["subtitle"] is not None:
-        subtitle_cell = f'<button type="button" class="pick" data-time="{moment["shown_at"]:.3f}">{subtitle_cell}</button>'
+        subtitle_cell = f'<button type="button" class="pick" aria-describedby="hint" data-time="{moment["shown_at"]:.3f}">{subtitle_cell}</button>'
     return (f'<tr class="{state}"><td class="time">{short_clock(moment["time"])}</td><td class="video">{video_cell}</td>'
             f'<td class="yours">{subtitle_cell}</td><td class="state {state}">{label}</td></tr>')
 
@@ -404,13 +422,13 @@ def technical(path, video, view, latest):
 
 
 def queue_links(path):
-    links = ""
     queue = [item["subtitle"] for item in cached("review", review.review_items)]
-    if path in queue and queue.index(path) > 0:
-        links += f'<a id="previous-item" href="{subtitle_link(queue[queue.index(path) - 1])}" hidden></a>'
-    if path in queue and queue.index(path) + 1 < len(queue):
-        links += f'<a id="next-item" href="{subtitle_link(queue[queue.index(path) + 1])}" hidden></a>'
-    return links
+    if path not in queue:
+        return ""
+    position = queue.index(path)
+    links = f'<a href="{subtitle_link(queue[position - 1])}">Previous subtitle that needs a look</a>' if position > 0 else ""
+    links += f'<a href="{subtitle_link(queue[position + 1])}">Next subtitle that needs a look</a>' if position + 1 < len(queue) else ""
+    return f'<nav class="queue-links" aria-label="Subtitles that need a look">{links}</nav>' if links else ""
 
 
 def layout(title, body, refresh=None, page="", current=None, navigation=True):
@@ -423,7 +441,7 @@ def layout(title, body, refresh=None, page="", current=None, navigation=True):
                  f'<title>{escape(title)} - subtitle-guard</title><link rel="icon" href="{FAVICON}"><style>{STYLE}</style></head><body{live}>'
                  '<a class="skip" href="#content">Skip to the content</a><div class="shell">'
                  f'<aside><a class="brand" href="/">subtitle-guard</a>{navigation_html}</aside>'
-                 f'<main id="content"><h1>{escape(title)}</h1>{body}</main></div><script>{KEYS}</script>{f"<script>{REFRESH}</script>" if refresh else ""}</body></html>')
+                 f'<main id="content"><h1>{escape(title)}</h1>{body}</main></div>{f"<script>{REFRESH}</script>" if refresh else ""}</body></html>')
     csrf = escape(getattr(REQUEST, "csrf", ""))
     return re.sub(r'(<form\b[^>]*method="post"[^>]*>)', lambda match: match.group(1) + f'<input type="hidden" name="csrf" value="{csrf}">', page_html)
 
@@ -477,10 +495,6 @@ def subtitle_link(path, minute=None, message=None):
     return "/subtitle?" + urllib.parse.urlencode(query)
 
 
-def keys_help():
-    return '<p class="keys">Keyboard: <kbd>j</kbd> <kbd>k</kbd> next or previous subtitle, <kbd>Left</kbd> <kbd>Right</kbd> previous or next minute.</p>'
-
-
 def message_box(query):
     message = NOTICES.pop(query.get("notice", ""), "")
     return f'<div class="message" role="status">{escape(message)}</div>' if message else ""
@@ -493,7 +507,7 @@ def human_time(moment):
         return f"today at {clock_time}"
     if day == date.today() - timedelta(days=1):
         return f"yesterday at {clock_time}"
-    return f"on {day.day} {day.strftime('%b %Y')} at {clock_time}"
+    return f"on {day.day} {day.strftime('%B %Y')} at {clock_time}"
 
 
 def live_status():

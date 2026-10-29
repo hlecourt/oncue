@@ -316,3 +316,11 @@ def test_scripts_are_allowed_by_hash_and_bad_requests_get_a_clean_answer(server,
     monkeypatch.setenv("SUBTITLE_GUARD_SUPERVISED", "1")
     status, body, _ = get(server + "/ready")
     assert status == 503 and json.loads(body)["ready"] is False
+
+
+def test_unsure_results_read_as_unsure_and_tabs_mark_the_current_one(server):
+    reports.report("/media/Unsure.fr.srt", "scan", {"decision": "kept", "confidence": 41, "confidence_band": "low", "before": {"matched": 0.7}, "after": {"matched": 0.7}})
+    page = get(server + "/history")[1]
+    assert '<span class="badge warn">Looks in sync, not sure</span>' in page
+    assert 'aria-label="Filter by result"' in page and 'aria-current="page"' in page
+    assert "keys.js" not in page and "Started by: Library scan" in page
