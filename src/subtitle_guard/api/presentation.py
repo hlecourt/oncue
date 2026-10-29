@@ -38,7 +38,7 @@ def review_reason(row, proposal):
         source = "the sound" if proposal["kind"] == "audio" else "the video's subtitles"
         return f"A fix from {source} is ready, confidence {proposal.get('confidence') or 0}"
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
-        return f"Belongs to {row['note']}, another subtitle was asked for when possible"
+        return f"Belongs to {row['note']}"
     if row["weak_minutes"]:
         return f"Out of sync around {clock(int(row['weak_minutes'].split(',')[0]) * 60)}"
     if row["decision"] == DECISION["rejected"]:

@@ -5,11 +5,11 @@ import errno
 import fcntl
 import hashlib
 import os
+import secrets
 import shutil
 import stat
-import tempfile
 import time
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, suppress
 
 from . import configuration
 from .errors import SubtitleTooLargeError, UnsafePathError
@@ -61,33 +61,76 @@ def read_regular(path, confined=True):
 
 
 def replace_file(path, data):
-    if not inside_roots(path):
-        raise UnsafePathError(f"refusing to write outside SUBTITLE_GUARD_ROOTS: {path}")
-    if os.path.islink(path):
-        raise UnsafePathError(f"refusing to write through a symlink: {path}")
-    previous = os.stat(path) if os.path.exists(path) else None
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", suffix=TEMPORARY_SUFFIX, dir=os.path.dirname(os.path.abspath(path)))
+    folder, name = confined(path)
+    with open_folder(folder) as folder_descriptor:
+        previous = regular_or_none(name, folder_descriptor, path)
+        temporary = f".{name}.{secrets.token_hex(4)}{TEMPORARY_SUFFIX}"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder_descriptor)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                if previous:
+                    keep_owner_and_mode(handle.fileno(), previous, path)
+                os.fsync(handle.fileno())
+            os.replace(temporary, name, src_dir_fd=folder_descriptor, dst_dir_fd=folder_descriptor)
+        except BaseException:
+            with suppress(FileNotFoundError):
+                os.unlink(temporary, dir_fd=folder_descriptor)
+            raise
+
+
+def remove_file(path):
+    folder, name = confined(path)
+    with open_folder(folder) as folder_descriptor:
+        if regular_or_none(name, folder_descriptor, path) is None:
+            raise FileNotFoundError(errno.ENOENT, "no such subtitle", path)
+        os.unlink(name, dir_fd=folder_descriptor)
+
+
+def confined(path):
+    absolute = os.path.abspath(path)
+    folder, name = os.path.realpath(os.path.dirname(absolute)), os.path.basename(absolute)
+    if not inside_roots(os.path.join(folder, name)):
+        raise UnsafePathError(f"refusing to change a file outside SUBTITLE_GUARD_ROOTS: {path}")
+    return folder, name
+
+
+@contextmanager
+def open_folder(folder):
+    descriptor = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if previous:
-            keep_owner_and_mode(temporary, previous, path)
-        os.replace(temporary, path)
-    except BaseException:
-        if os.path.exists(temporary):
-            os.remove(temporary)
-        raise
+        for part in [part for part in folder.split(os.sep) if part]:
+            try:
+                inner = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            except OSError as error:
+                if error.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise UnsafePathError(f"refusing a folder that is or became a link: {folder}") from error
+                raise
+            os.close(descriptor)
+            descriptor = inner
+        yield descriptor
+    finally:
+        os.close(descriptor)
 
 
-def keep_owner_and_mode(temporary, previous, path):
-    os.chmod(temporary, stat.S_IMODE(previous.st_mode))
-    created = os.stat(temporary)
+def regular_or_none(name, folder_descriptor, path):
+    try:
+        existing = os.stat(name, dir_fd=folder_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(existing.st_mode):
+        raise UnsafePathError(f"refusing to change something that is not a regular file: {path}")
+    return existing
+
+
+def keep_owner_and_mode(descriptor, previous, path):
+    os.fchmod(descriptor, stat.S_IMODE(previous.st_mode))
+    created = os.fstat(descriptor)
     if (created.st_uid, created.st_gid) == (previous.st_uid, previous.st_gid):
         return
     try:
-        os.chown(temporary, previous.st_uid, previous.st_gid)
+        os.fchown(descriptor, previous.st_uid, previous.st_gid)
     except PermissionError as error:
         log("file.owner-not-kept", f"could not keep owner {previous.st_uid}:{previous.st_gid}: {error}", LEVEL["warning"], subtitle=path)
 

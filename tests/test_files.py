@@ -115,3 +115,21 @@ def test_a_same_size_change_with_the_mtime_put_back_is_still_seen(tmp_path):
     subtitle.write_text(SRT.replace("line 1\n", "LINE 1\n", 1))
     os.utime(subtitle, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert os.stat(subtitle).st_size == before.st_size and file_signature(str(subtitle)) != signature
+
+
+def test_a_folder_that_became_a_link_after_the_check_is_never_written_through(tmp_path, monkeypatch):
+    library, outside = tmp_path / "library", tmp_path / "outside"
+    (library / "Movie").mkdir(parents=True)
+    outside.mkdir()
+    monkeypatch.setattr(files, "ROOTS", [os.path.realpath(library)])
+    subtitle = library / "Movie" / "Movie.fr.srt"
+    subtitle.write_text("x")
+    checked = os.path.realpath(library / "Movie")
+    (library / "Movie").rename(library / "Moved")
+    (library / "Movie").symlink_to(outside)
+    monkeypatch.setattr(files, "confined", lambda path: (checked, "Movie.fr.srt"))
+    with pytest.raises(UnsafePathError):
+        files.replace_file(str(subtitle), b"y")
+    with pytest.raises(UnsafePathError):
+        files.remove_file(str(subtitle))
+    assert list(outside.iterdir()) == []
