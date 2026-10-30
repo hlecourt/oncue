@@ -1,9 +1,9 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com),
-and the project uses [Semantic Versioning](https://semver.org).
+From 0.1.0 on, the notes of each release are on the [releases page](https://github.com/hlecourt/oncue/releases), generated
+from the pull requests it merged. The project uses [Semantic Versioning](https://semver.org); below is the first version.
 
-## [Unreleased]
+## [0.1.0] - 2026-10-30
 
 First public version.
 
@@ -56,9 +56,12 @@ First public version.
   sound track, speed and zoom in the menu.
 - In `report` mode, Review says that nothing is written. Forced subtitles stay out of Review. Pages that fail to load say so
   and offer to try again.
+- The image is also published to Docker Hub as `hlecourt/oncue`, with its pull count in the README (#19).
 
 ### Fixed
 
+- Two instances on one machine no longer log each other out: each names its session cookie after an id kept in its own
+  state folder, so two containers that both listen on 8484 get two cookies (#22).
 - Check again wrote fixes in `report` mode and without allowed folders; it now follows the mode like every other check.
 - A finished library scan, or one whose listing failed, kept new scans from starting.
 - The lines shown in the editor and the version they are saved against now come from the same read of the file, and a delete

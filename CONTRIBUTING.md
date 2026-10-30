@@ -69,5 +69,9 @@ Contributions are licensed under GPL-3.0-or-later, like the rest of the project.
 
 ## Releases
 
-For maintainers: update `CHANGELOG.md` and the version in `src/oncue/__init__.py`, then push a `vX.Y.Z` tag. The release
-workflow publishes the image to `ghcr.io/hlecourt/oncue` and attaches the wheel to the GitHub release.
+Release notes are written by GitHub from the titles of the merged pull requests, grouped by label: give each pull request a
+clear title and one of the labels `enhancement`, `bug`, `documentation` or `dependencies`.
+
+For maintainers, a release is a pull request that sets the new version in `src/oncue/__init__.py`. Once it is merged, the
+release workflow publishes the image to `ghcr.io/hlecourt/oncue` and Docker Hub, tags the merge `vX.Y.Z` and creates the GitHub
+release with the wheel and the generated notes. Running the workflow by hand only rehearses it.
