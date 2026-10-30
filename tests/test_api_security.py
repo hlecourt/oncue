@@ -94,6 +94,19 @@ def test_the_session_cookie_is_http_only_and_strict(protected):
     assert SESSION_COOKIE in cookie and "HttpOnly" in cookie and "SameSite=strict" in cookie
 
 
+def test_two_instances_on_one_host_keep_separate_session_cookies(tmp_path, monkeypatch):
+    first = create_app("127.0.0.1").state.session_cookie
+    assert create_app("127.0.0.1").state.session_cookie == first
+    monkeypatch.setattr(storage, "STATE_DIRECTORY", str(tmp_path / "other-instance"))
+    second = create_app("127.0.0.1").state.session_cookie
+    assert first != second and first.startswith(SESSION_COOKIE + "_") and second.startswith(SESSION_COOKIE + "_")
+
+
+def test_logging_in_sets_the_cookie_of_this_instance(protected):
+    answer = protected.post("/api/session", json={"user": "admin", "password": PASSWORD})
+    assert answer.headers["set-cookie"].startswith(protected.app.state.session_cookie + "=")
+
+
 def test_the_engine_cli_and_bazarr_hook_never_import_the_web_stack():
     blocked = "import sys\nfor name in ('fastapi', 'uvicorn', 'starlette', 'pydantic'):\n    sys.modules[name] = None\n"
     script = blocked + "import oncue.cli, oncue.bazarr, oncue.worker\nprint('ok')"

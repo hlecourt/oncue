@@ -8,7 +8,7 @@ from ...logs import log
 from ..auth import SESSION_SECONDS, SESSIONS, open_session
 from ..i18n import tr
 from ..schemas import Credentials, Problem, SessionState
-from ..security import SESSION_COOKIE, client_address, current_session, from_trusted_proxy, login_needed, password_accepted, require_csrf
+from ..security import client_address, current_session, from_trusted_proxy, login_needed, password_accepted, require_csrf
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -31,15 +31,15 @@ def log_in(credentials: Credentials, request: Request) -> SessionState:
     session = open_session(credentials.user)
     log("api.login", f"user {credentials.user} logged in from {client}", user=credentials.user, client=client)
     response = JSONResponse(SessionState(login_required=True, user=credentials.user, csrf=SESSIONS[session]["csrf"]).model_dump())
-    response.set_cookie(SESSION_COOKIE, session, max_age=SESSION_SECONDS, httponly=True, samesite="strict", secure=secure(request))
+    response.set_cookie(request.app.state.session_cookie, session, max_age=SESSION_SECONDS, httponly=True, samesite="strict", secure=secure(request))
     return response
 
 
 @router.delete("", operation_id="logOut", status_code=204, dependencies=[Depends(require_csrf)])
 def log_out(request: Request) -> Response:
-    SESSIONS.pop(request.cookies.get(SESSION_COOKIE, ""), None)
+    SESSIONS.pop(request.cookies.get(request.app.state.session_cookie, ""), None)
     response = Response(status_code=204)
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(request.app.state.session_cookie)
     return response
 
 
