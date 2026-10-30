@@ -138,6 +138,16 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 - **Files owned by root or not writable**: set `user:` in the compose file to the owner of the media.
 - **`/ready` answers 503**: a worker stopped; the Log page shows `supervisor.role-restarted` or `job.failed`.
 
+## How it is made
+
+OnCue is designed and maintained by one person. Most of the code is written with AI coding assistants (Claude Code and Codex),
+under my direction: I choose the approach, set the rules it must keep (only fix when sure, never write outside the allowed
+folders), and check the results.
+
+What keeps it honest is what runs on every change: the Python tests on 3.11 to 3.13, browser tests of every page in Chromium and
+WebKit with accessibility checks, CodeQL and OpenSSF Scorecard. Changes to how subtitles get aligned also go through the
+benchmark on the Tears of Steel corpus.
+
 ## Development
 
 ```
