@@ -5,7 +5,7 @@ import subprocess
 
 from synthetic import dialogue
 
-from subtitle_guard.subtitles import timestamp
+from oncue.subtitles import timestamp
 
 
 def video_with_reference(folder, name="Movie (2020)/Movie.2020.mkv", seed=8, minutes=6, with_audio=False):

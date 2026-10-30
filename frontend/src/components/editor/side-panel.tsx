@@ -121,8 +121,8 @@ function Changes({ guard, onGuard, onPart, changes, onRemove, onPick, lines }: P
           <li className="py-3">
             <div className="flex items-center gap-2.5">
               <i className="size-2 flex-none rounded-full bg-guard" />
-              <div className="min-w-0 flex-1"><div>{t("The guard's fix")}</div><div className="text-xs text-muted-foreground">{t("confidence {confidence}, nothing written yet", { confidence: guard.confidence ?? "-" })}</div></div>
-              <Switch checked={guard.on} onCheckedChange={onGuard} aria-label={t("Use the guard's fix")} className="data-[state=checked]:bg-guard" />
+              <div className="min-w-0 flex-1"><div>{t("OnCue's fix")}</div><div className="text-xs text-muted-foreground">{t("confidence {confidence}, nothing written yet", { confidence: guard.confidence ?? "-" })}</div></div>
+              <Switch checked={guard.on} onCheckedChange={onGuard} aria-label={t("Use OnCue's fix")} className="data-[state=checked]:bg-guard" />
             </div>
             {guard.parts.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px]">

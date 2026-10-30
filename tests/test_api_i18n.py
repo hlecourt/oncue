@@ -5,7 +5,7 @@ import string
 
 import pytest
 
-from subtitle_guard.api import i18n
+from oncue.api import i18n
 
 LOCALES = [locale for locale in i18n.LOCALES if locale != "en"]
 

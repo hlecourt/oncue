@@ -74,7 +74,7 @@ test.describe.serial("from Review to a fixed subtitle", () => {
     expect(problems.filter((problem) => !problem.includes("409"))).toEqual([])
   })
 
-  test("listening, then saving the guard's fix, writes the file and leaves Review", async ({ page, baseURL }) => {
+  test("listening, then saving OnCue's fix, writes the file and leaves Review", async ({ page, baseURL }) => {
     const problems = await watchProblems(page)
     await page.goto("/")
     await page.getByRole("link", { name: LATE }).click()
@@ -88,7 +88,7 @@ test.describe.serial("from Review to a fixed subtitle", () => {
     await page.keyboard.press("Control+z")
     await expect(page.getByText("1 change, not saved").first()).toBeVisible()
     await page.getByRole("tab", { name: /Changes/ }).click()
-    await expect(page.getByText("The guard's fix")).toBeVisible()
+    await expect(page.getByText("OnCue's fix")).toBeVisible()
     const before = readFileSync(libraryFile(baseURL!, LATE), "utf8")
     await page.getByRole("button", { name: /^Save( Ctrl S)?$/ }).click()
     await expect(page.getByText("Saved. The previous file was backed up.")).toBeVisible()

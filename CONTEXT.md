@@ -1,15 +1,15 @@
-# subtitle-guard
+# OnCue
 
 Checks the timing of external subtitles against the video they belong to, fixes it on its own only when it is sure, and gives a person the tools to fix the rest.
 
 ## Language
 
 **Subtitle**:
-An external subtitle file next to a video (SRT, ASS/SSA or WebVTT), the thing the guard checks and may rewrite; it keeps its identity when the guard itself moves it.
+An external subtitle file next to a video (SRT, ASS/SSA or WebVTT), the thing OnCue checks and may rewrite; it keeps its identity when OnCue itself moves it.
 _Avoid_: Sub, track (a track is inside the video)
 
 **Version**:
-One exact content of a subtitle file; any change on disk, by the guard or by anyone else, makes a new version.
+One exact content of a subtitle file; any change on disk, by OnCue or by anyone else, makes a new version.
 _Avoid_: Revision, hash (how a version is recognised, not what it is)
 
 **Reference track**:
@@ -17,19 +17,19 @@ A subtitle track embedded in the video, used as the timing truth for its subtitl
 _Avoid_: Embedded subtitle, internal sub
 
 **Backup**:
-A saved copy of an earlier version of a subtitle, made only when the guard is about to write, so any version can be restored.
+A saved copy of an earlier version of a subtitle, made only when OnCue is about to write, so any version can be restored.
 _Avoid_: Snapshot, history copy
 
 **Confidence**:
-A 0 to 100 score of how sure the guard is that a subtitle is in sync after a check, with bands high, medium, low and none.
+A 0 to 100 score of how sure OnCue is that a subtitle is in sync after a check, with bands high, medium, low and none.
 _Avoid_: Probability, accuracy
 
 **Automatic fix**:
-A rewrite of a subtitle's timing that the guard writes without a person, allowed only when the confidence is high.
+A rewrite of a subtitle's timing that OnCue writes without a person, allowed only when the confidence is high.
 _Avoid_: Auto-sync, correction
 
 **Proposal**:
-A fix the guard computed but did not write because its confidence is not high; it belongs to one exact version of the file, and a person applies it, adjusts it or discards it.
+A fix OnCue computed but did not write because its confidence is not high; it belongs to one exact version of the file, and a person applies it, adjusts it or discards it.
 _Avoid_: Suggestion, draft, pending fix
 
 **Part**:
@@ -41,15 +41,15 @@ Aligning a subtitle to the speech in the video's sound instead of to a reference
 _Avoid_: ffsubsync (the tool, not the concept), audio fix
 
 **Allowed folder**:
-A folder the guard may read and write subtitles in; nothing outside the allowed folders is ever touched, and they are set only by the environment.
+A folder OnCue may read and write subtitles in; nothing outside the allowed folders is ever touched, and they are set only by the environment.
 _Avoid_: Root, library (a library is what is watched)
 
 **Watched folder**:
-A media folder inside the allowed folders that the guard scans for new or changed subtitles when it runs without Bazarr.
+A media folder inside the allowed folders that OnCue scans for new or changed subtitles when it runs without Bazarr.
 _Avoid_: Library path, source
 
 **Mode**:
-Whether the guard writes automatic fixes ("Fix automatically") or only records what it would do ("Report only").
+Whether OnCue writes automatic fixes ("Fix automatically") or only records what it would do ("Report only").
 _Avoid_: Dry run, apply flag
 
 **Wrong episode**:
@@ -61,7 +61,7 @@ A check of every subtitle of the library, through Bazarr or the watched folders,
 _Avoid_: Sync, refresh, full check
 
 **Replacement**:
-Another subtitle the guard asks Bazarr for, by blacklisting the current one, when a Bazarr download is not in sync with high confidence; replacements are tried before anything reaches Review.
+Another subtitle OnCue asks Bazarr for, by blacklisting the current one, when a Bazarr download is not in sync with high confidence; replacements are tried before anything reaches Review.
 _Avoid_: Retry, re-download
 
 **Best version**:

@@ -10,4 +10,4 @@ build
 frontend/node_modules
 frontend/test-results
 frontend/playwright-report
-src/subtitle_guard/api/static
+src/oncue/api/static

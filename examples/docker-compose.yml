@@ -1,19 +1,19 @@
-# subtitle-guard on its own: it watches your media folders and checks every external subtitle it finds.
+# OnCue on its own: it watches your media folders and checks every external subtitle it finds.
 # For Bazarr, use docker-compose.bazarr.yml instead.
 services:
-  subtitle-guard:
-    image: ghcr.io/hlecourt/subtitle-guard:0.1.0
-    command: serve --workers 2          # report only until the mode is set to fix, in the UI or with SUBTITLE_GUARD_MODE
+  oncue:
+    image: ghcr.io/hlecourt/oncue:0.1.0
+    command: serve --workers 2          # report only until the mode is set to fix, in the UI or with ONCUE_MODE
     restart: unless-stopped
     user: "1000:1000"                   # the user that owns your media
     ports:
       - "8484:8484"                     # web UI
     environment:
-      SUBTITLE_GUARD_STATE: /config
-      SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
-      SUBTITLE_GUARD_UI_PASSWORD: ${SUBTITLE_GUARD_UI_PASSWORD:-}   # empty: a password for admin is generated and printed once in the logs
-      SUBTITLE_GUARD_ROOTS: /data/media                       # the only folders whose subtitles may be changed
-      SUBTITLE_GUARD_LIBRARY: /data/media/movies:/data/media/series   # the folders to watch
+      ONCUE_STATE: /config
+      ONCUE_BACKUPS: /data/backup/oncue
+      ONCUE_UI_PASSWORD: ${ONCUE_UI_PASSWORD:-}   # empty: a password for admin is generated and printed once in the logs
+      ONCUE_ROOTS: /data/media                       # the only folders whose subtitles may be changed
+      ONCUE_LIBRARY: /data/media/movies:/data/media/series   # the folders to watch
     volumes:
-      - ./subtitle-guard:/config
+      - ./oncue:/config
       - /mnt/media:/data

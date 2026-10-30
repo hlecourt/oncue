@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from subtitle_guard import audio, heartbeats, jobs, logs, storage, worker
+from oncue import audio, heartbeats, jobs, logs, storage, worker
 
 
 class Stop(Exception):

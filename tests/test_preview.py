@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from subtitle_guard import preview
+from oncue import preview
 
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 

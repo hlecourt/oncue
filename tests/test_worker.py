@@ -6,9 +6,9 @@ import numpy
 import pytest
 from synthetic import dialogue
 
-from subtitle_guard import jobs, library, worker
-from subtitle_guard.outcome import CHANGED_REASON
-from subtitle_guard.subtitles import parse_subtitle, timestamp
+from oncue import jobs, library, worker
+from oncue.outcome import CHANGED_REASON
+from oncue.subtitles import parse_subtitle, timestamp
 
 
 def test_check_job_records_the_decision(monkeypatch):
@@ -121,7 +121,7 @@ def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path):
 
 
 def test_a_rejection_with_only_a_reason_completes_as_a_job(tmp_path):
-    from subtitle_guard.subtitles import timestamp
+    from oncue.subtitles import timestamp
     subtitle = tmp_path / "late-ends.fr.srt"
     subtitle.write_text("".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 600)}\nline {number}\n\n" for number in range(1, 150)))
     job_id = jobs.enqueue(jobs.KIND["check"], {"video": "/missing.mkv", "subtitle": str(subtitle), "apply": True})
@@ -131,7 +131,7 @@ def test_a_rejection_with_only_a_reason_completes_as_a_job(tmp_path):
 
 
 def test_an_abandoned_watch_job_does_not_block_the_subtitle_forever(tmp_path):
-    from subtitle_guard import library
+    from oncue import library
     video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
     video.write_bytes(b"v")
     subtitle.write_text("s")
@@ -144,8 +144,8 @@ def test_an_abandoned_watch_job_does_not_block_the_subtitle_forever(tmp_path):
 
 
 def test_an_unreadable_neighbour_is_skipped(monkeypatch):
-    from subtitle_guard import guard
-    from subtitle_guard.errors import ProbeError
+    from oncue import guard
+    from oncue.errors import ProbeError
 
     def unreadable(video, hearing_impaired, count):
         raise ProbeError("Input/output error")

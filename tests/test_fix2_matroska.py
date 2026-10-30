@@ -4,8 +4,8 @@ import itertools
 import pytest
 from media import video_with_reference
 
-from subtitle_guard import matroska, review
-from subtitle_guard.errors import MatroskaError
+from oncue import matroska, review
+from oncue.errors import MatroskaError
 
 ID = matroska.MATROSKA_ID
 CLUSTER = 0x1F43B675

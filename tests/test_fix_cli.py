@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from subtitle_guard import cli, jobs
+from oncue import cli, jobs
 
 HOOK = ["/v.mkv", "/v.fr.srt", "fr", "subdl", "41", "7"]
 DISPATCHED = [
@@ -26,14 +26,14 @@ DISPATCHED = [
 
 
 def run(monkeypatch, *arguments):
-    monkeypatch.setattr(sys, "argv", ["subtitle-guard", *arguments])
+    monkeypatch.setattr(sys, "argv", ["oncue", *arguments])
     return cli.main()
 
 
 @pytest.fixture(autouse=True)
 def quiet_start(monkeypatch):
-    monkeypatch.delenv("SUBTITLE_GUARD_QUEUE", raising=False)
-    monkeypatch.delenv("SUBTITLE_GUARD_HOOK_DIR", raising=False)
+    monkeypatch.delenv("ONCUE_QUEUE", raising=False)
+    monkeypatch.delenv("ONCUE_HOOK_DIR", raising=False)
     monkeypatch.setattr(cli, "report_startup", lambda *arguments, **details: None)
 
 

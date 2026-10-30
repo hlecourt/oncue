@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import files, guard, jobs, logs, reports
-from subtitle_guard.api.app import create_app
+from oncue import files, guard, jobs, logs, reports
+from oncue.api.app import create_app
 
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -92,7 +92,7 @@ def test_a_subtitle_that_became_a_symlink_is_never_served(client, proposed, tmp_
 
 
 def test_a_dry_run_never_reads_as_if_the_file_was_written():
-    from subtitle_guard.api.presentation import result_words
+    from oncue.api.presentation import result_words
     row = {"decision": "fixed", "applied": 0, "note": "", "band": "high", "weak_minutes": ""}
     assert result_words(row)[0] == "Sure fix found, not written (report mode)"
     assert result_words({**row, "decision": "kept"})[0] == "In sync"

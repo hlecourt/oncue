@@ -6,10 +6,10 @@ import subprocess
 
 import pytest
 
-from subtitle_guard import audio, files, preview, reference
-from subtitle_guard.errors import ProbeError
-from subtitle_guard.outcome import DECISION
-from subtitle_guard.subtitles import parse_subtitle, timestamp
+from oncue import audio, files, preview, reference
+from oncue.errors import ProbeError
+from oncue.outcome import DECISION
+from oncue.subtitles import parse_subtitle, timestamp
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -53,7 +53,7 @@ def test_a_video_outside_the_allowed_folders_or_reached_through_a_link_is_refuse
     def never(command, timeout, pass_fds):
         raise AssertionError("ffprobe should not run")
     monkeypatch.setattr(reference, "run_tool", never)
-    for video, reason in [(outside / "Movie.mkv", "outside SUBTITLE_GUARD_ROOTS"), (library / "Linked.mkv", "link"),
+    for video, reason in [(outside / "Movie.mkv", "outside ONCUE_ROOTS"), (library / "Linked.mkv", "link"),
                           (library / "Linked folder" / "Movie.mkv", "link"), (library / "Fifo.mkv", "not a regular file")]:
         with pytest.raises(ProbeError, match=reason):
             preview.video_duration(str(video))

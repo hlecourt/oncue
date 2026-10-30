@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from subtitle_guard import reports, review
-from subtitle_guard.api.presentation import review_reason
+from oncue import reports, review
+from oncue.api.presentation import review_reason
 
 
 def test_a_forced_subtitle_is_recorded_but_stays_out_of_review(tmp_path):

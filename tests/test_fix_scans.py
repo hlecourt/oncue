@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from subtitle_guard import jobs, scans
+from oncue import jobs, scans
 
 
 def test_a_finished_scan_lets_a_new_one_start(monkeypatch):

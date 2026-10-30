@@ -26,7 +26,7 @@ export function HistoryPage() {
   const t = useT()
   return (
     <>
-      <PageHeader title={t("History")} description={t("Every check the guard made, newest first: what started it, what it decided, how sure it was and what it changed.")} />
+      <PageHeader title={t("History")} description={t("Every check OnCue made, newest first: what started it, what it decided, how sure it was and what it changed.")} />
       <Tabs defaultValue="checks">
         <TabsList>
           <TabsTrigger value="checks">{t("Checks")}</TabsTrigger>

@@ -5,11 +5,11 @@ import time
 import numpy
 import pytest
 
-from subtitle_guard import bazarr, files, guard, review_actions, state, storage
-from subtitle_guard.catalog import proposal_for
-from subtitle_guard.files import file_hash
-from subtitle_guard.outcome import DECISION
-from subtitle_guard.subtitles import parse_subtitle, timestamp
+from oncue import bazarr, files, guard, review_actions, state, storage
+from oncue.catalog import proposal_for
+from oncue.files import file_hash
+from oncue.outcome import DECISION
+from oncue.subtitles import parse_subtitle, timestamp
 
 LINES = 150
 STARTS = numpy.cumsum(numpy.random.default_rng(3).uniform(1.5, 6.0, LINES))
@@ -81,7 +81,7 @@ def test_a_proposal_from_bazarr_asks_for_a_replacement_and_keeps_a_copy_until_th
     video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
     video.write_bytes(b"v")
     subtitle.write_text(LATE)
-    monkeypatch.setenv("SUBTITLE_GUARD_MODE", "fix")
+    monkeypatch.setenv("ONCUE_MODE", "fix")
     requested = []
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {
         "decision": "proposed", "confidence_band": "medium", "reference": "eng-text", "after": {"matched": 0.7}})
@@ -100,7 +100,7 @@ def test_a_proposal_from_bazarr_asks_for_a_replacement_and_keeps_a_copy_until_th
 def test_backups_keep_the_first_version_the_last_ones_and_anything_recent(tmp_path, monkeypatch):
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(LATE)
-    monkeypatch.setenv("SUBTITLE_GUARD_KEEP_VERSIONS", "2")
+    monkeypatch.setenv("ONCUE_KEEP_VERSIONS", "2")
     folders = []
     for _ in range(6):
         folders.append(files.save_backup(str(subtitle), "original"))
@@ -112,7 +112,7 @@ def test_backups_keep_the_first_version_the_last_ones_and_anything_recent(tmp_pa
 
 
 def test_a_video_without_a_reference_track_still_gets_replacements_and_marks_the_audio_as_its_reference(tmp_path, monkeypatch):
-    from subtitle_guard import audio
+    from oncue import audio
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(LATE)
     monkeypatch.setattr(guard, "load_reference", lambda video, hearing_impaired, count: None)
@@ -139,7 +139,7 @@ def test_the_best_version_among_audio_tries_is_the_most_confident_one(tmp_path, 
 
 
 def test_a_state_folder_that_cannot_be_written_never_stops_a_tool(tmp_path, monkeypatch):
-    from subtitle_guard import tools
+    from oncue import tools
     blocker = tmp_path / "not-a-folder"
     blocker.write_text("x")
     monkeypatch.setattr(tools, "state_path", lambda *parts: str(blocker / "tool-groups" / parts[-1]))

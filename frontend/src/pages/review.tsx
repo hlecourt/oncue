@@ -121,8 +121,8 @@ export function ReviewPage() {
   return (
     <>
       <PageHeader title={t("Review")} description={reportMode
-        ? t("Subtitles waiting for your decision. In report mode every fix waits here, even one the guard is sure about.")
-        : t("Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here.")} />
+        ? t("Subtitles waiting for your decision. In report mode every fix waits here, even one OnCue is sure about.")
+        : t("Subtitles waiting for your decision. A fix OnCue is sure about is written on its own; everything else waits here.")} />
       {reportMode && (
         <Alert className="mb-6">
           <InfoIcon />

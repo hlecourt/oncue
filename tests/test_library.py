@@ -7,8 +7,8 @@ import numpy
 import pytest
 from synthetic import dialogue
 
-from subtitle_guard import jobs, library
-from subtitle_guard.subtitles import parse_subtitle, timestamp
+from oncue import jobs, library
+from oncue.subtitles import parse_subtitle, timestamp
 
 
 def touch(path, content=""):
@@ -23,7 +23,7 @@ def test_finds_external_subtitles_and_episode_neighbours(tmp_path):
         touch(str(season / f"Show.S01E{number:02d}.1080p.mkv"))
     touch(str(season / "Show.S01E03.1080p.fr.srt"))
     touch(str(season / "Show.S01E03.1080p.en.hi.ass"))
-    touch(str(season / "Show.S01E03.1080p.fr.srt.subtitle-guard.tmp"))
+    touch(str(season / "Show.S01E03.1080p.fr.srt.oncue.tmp"))
     touch(str(season / "Show.S01E03.1080p-sample.mkv"))
     touch(str(tmp_path / ".trash" / "Old.S01E01.mkv"))
     touch(str(tmp_path / ".trash" / "Old.S01E01.fr.srt"))
@@ -81,7 +81,7 @@ def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys):
 
 
 def test_the_watcher_queues_once_remembers_after_success_and_retries_failures_later(tmp_path, monkeypatch):
-    from subtitle_guard import jobs, library, worker
+    from oncue import jobs, library, worker
     video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
     video.write_bytes(b"v")
     subtitle.write_text("s")
@@ -106,8 +106,8 @@ def test_the_watcher_queues_once_remembers_after_success_and_retries_failures_la
 
 
 def test_wrong_end_times_are_rejected(tmp_path):
-    from subtitle_guard.guard import evaluate_and_fix
-    from subtitle_guard.subtitles import timestamp
+    from oncue.guard import evaluate_and_fix
+    from oncue.subtitles import timestamp
     subtitle = tmp_path / "late-ends.fr.srt"
     subtitle.write_text("".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 600)}\nline {number}\n\n" for number in range(1, 150)))
     outcome = evaluate_and_fix("/missing.mkv", str(subtitle), True)
@@ -118,7 +118,7 @@ def test_wrong_end_times_are_rejected(tmp_path):
 def test_temporary_files_left_by_an_interrupted_write_are_swept(tmp_path):
     import time
 
-    from subtitle_guard import files, library
+    from oncue import files, library
     (tmp_path / "Movie.mkv").write_bytes(b"v")
     leftover = tmp_path / f".Movie.fr.srt.abc{files.TEMPORARY_SUFFIX}"
     leftover.write_text("partial")

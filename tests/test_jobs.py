@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import threading
 
-from subtitle_guard import jobs
+from oncue import jobs
 
 
 def test_jobs_are_claimed_in_order_and_once():

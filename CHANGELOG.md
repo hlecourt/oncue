@@ -24,7 +24,7 @@ First public version.
 - Listen and edit, laid out like a video editor: the video, the lines with the video's own line under each, and a docked
   timeline with your subtitle, the sound and the video's subtitle as separate tracks over a cached light copy of the sound.
   Anchor a line where its voice starts, or nudge by 0.1 s and 1 s, on every line, from a line on, or on a selection; changes
-  add up into a list with the guard's fix (which can be turned off), undo with Ctrl Z, and one save writes them all with a
+  add up into a list with OnCue's fix (which can be turned off), undo with Ctrl Z, and one save writes them all with a
   backup and a check that the file did not change. Full keyboard control, phone layout.
 - Settings in the UI, stored next to the state; an environment variable always wins and the allowed folders and the
   confidence threshold stay set by the environment. A URL base for reverse proxies, login modes like the *arr apps (always,
@@ -43,7 +43,7 @@ First public version.
 - Global JSON-lines log with component.past-tense events, startup and health reports.
 - Docker image for amd64 and arm64 running as a non-root user, with pinned bases, a hashed dependency lock and a health check;
   the web UI is built in a separate stage, so Node is never in the image.
-- A Dashboard of what the guard did over a period, with subtitle providers ranked by the verdict on arrival, the share of sure
+- A Dashboard of what OnCue did over a period, with subtitle providers ranked by the verdict on arrival, the share of sure
   fixes against those sent to Review, and charts readable with the keyboard and screen readers; a Subtitles page
   listing every checked subtitle, each opening in the editor; the editor's History tab and a menu to switch to another
   subtitle of the same video.
@@ -80,11 +80,11 @@ First public version.
   it), expiring server-side sessions, a lockout after failed logins, CSRF tokens bound to the session and sent in a header,
   origin and host checks, a CSP with no inline script and strict security headers, request size and time limits.
 - Login modes that cannot be fooled by a proxy or a rebound DNS name: `local` needs a private client opening the UI by an IP or
-  a local name, `external` trusts only `SUBTITLE_GUARD_TRUSTED_PROXIES`, and the lockout counts the real client behind a
+  a local name, `external` trusts only `ONCUE_TRUSTED_PROXIES`, and the lockout counts the real client behind a
   trusted proxy. CSRF tokens are always held by the server, bodies need a `Content-Length`, the UI changes files only under
-  `SUBTITLE_GUARD_ROOTS` and through folders opened without following links, and a new Bazarr address needs its key again.
-- Every subtitle read and write is confined to `SUBTITLE_GUARD_ROOTS`, never follows a symlink and only touches regular files.
-- Nothing is written anywhere, from the UI, the hook, the scans or the CLI, until `SUBTITLE_GUARD_ROOTS` is set, and reads go
+  `ONCUE_ROOTS` and through folders opened without following links, and a new Bazarr address needs its key again.
+- Every subtitle read and write is confined to `ONCUE_ROOTS`, never follows a symlink and only touches regular files.
+- Nothing is written anywhere, from the UI, the hook, the scans or the CLI, until `ONCUE_ROOTS` is set, and reads go
   through folders opened without following links, like writes.
 - Bazarr's API key can no longer be redirected: it cannot be emptied while the address comes from Settings, and Bazarr's
   `config.yaml` is only read for the default address. Calls to Bazarr and the webhook refuse link-local and metadata addresses,
@@ -95,11 +95,11 @@ First public version.
   description needs a login.
 - Videos are opened once through folders that refuse links below the allowed folders, and ffprobe, ffmpeg and the Matroska
   reader work on that open file, so a folder swapped for a link after the check cannot redirect them; ffsubsync only gets a
-  sound file and a subtitle copy made by the guard.
+  sound file and a subtitle copy made by OnCue.
 - With a login, the API key is only shown or replaced after the password is entered again. The account lock never applies to
   an address that logged in successfully in the last 30 days, and a request body must arrive within 30 seconds.
-- Hostile files can no longer stall the guard: subtitle markup is stripped in linear time, a FIFO named like a subtitle is
+- Hostile files can no longer stall OnCue: subtitle markup is stripped in linear time, a FIFO named like a subtitle is
   refused instead of blocking a worker, and the Matroska reader ignores repeated index entries and caps what it reads.
 - Changing the login mode or the URL base asks for the password, and the URL base only accepts plain path segments.
-  Leftover temporary files are only cleaned inside the allowed folders, and the guard's sound work folder is emptied at
+  Leftover temporary files are only cleaned inside the allowed folders, and OnCue's sound work folder is emptied at
   start.
