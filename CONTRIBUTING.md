@@ -69,7 +69,9 @@ Contributions are licensed under GPL-3.0-or-later, like the rest of the project.
 
 ## Releases
 
-For maintainers, a release is a pull request: set the version in `src/oncue/__init__.py` and move the `Unreleased` entries of
-`CHANGELOG.md` under a `## [X.Y.Z] - date` heading. Once it is merged, the release workflow publishes the image to
-`ghcr.io/hlecourt/oncue` (and Docker Hub when its secrets are set), tags the merge `vX.Y.Z` and creates the GitHub release with
-the wheel and that CHANGELOG section. Running the workflow by hand only rehearses it.
+Release notes are written by GitHub from the titles of the merged pull requests, grouped by label: give each pull request a
+clear title and one of the labels `enhancement`, `bug`, `documentation` or `dependencies`.
+
+For maintainers, a release is a pull request that sets the new version in `src/oncue/__init__.py`. Once it is merged, the
+release workflow publishes the image to `ghcr.io/hlecourt/oncue` and Docker Hub, tags the merge `vX.Y.Z` and creates the GitHub
+release with the wheel and the generated notes. Running the workflow by hand only rehearses it.

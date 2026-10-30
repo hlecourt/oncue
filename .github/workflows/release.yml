@@ -1,10 +1,10 @@
 name: release
 
-# A release is a merged pull request that sets the version and adds its CHANGELOG section; run by hand, it only rehearses
+# A release is a merged pull request that sets a new version; run by hand, it only rehearses
 on:
   push:
     branches: [main]
-    paths: ["src/oncue/__init__.py", "CHANGELOG.md"]
+    paths: ["src/oncue/__init__.py", ".github/workflows/release.yml"]
   workflow_dispatch:
 
 permissions:
@@ -21,14 +21,11 @@ jobs:
         with:
           persist-credentials: false
       - id: read
-        name: Release a version only once, and only when the CHANGELOG has its section
+        name: Release a version only once
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/oncue/__init__.py)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
-            echo "::notice::CHANGELOG.md has no section for $version yet: nothing to release"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          elif git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
             echo "::notice::v$version is already released"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
@@ -114,11 +111,12 @@ jobs:
         if: github.event_name == 'push'
         with:
           subject-path: dist/*
-      - name: Tag the merge and publish the GitHub release with the wheel, the sdist and the CHANGELOG section
+      - name: Tag the merge and publish the GitHub release with the wheel, the sdist and notes generated from the merged pull requests
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { inside = 1; next } /^## \[/ { inside = 0 } inside' CHANGELOG.md > notes.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="v$VERSION" -f target_commitish="$GITHUB_SHA" --jq .body >> notes.md
           gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

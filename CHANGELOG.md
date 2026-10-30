@@ -1,9 +1,7 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com),
-and the project uses [Semantic Versioning](https://semver.org).
-
-## [Unreleased]
+From 0.1.0 on, the notes of each release are on the [releases page](https://github.com/hlecourt/oncue/releases), generated
+from the pull requests it merged. The project uses [Semantic Versioning](https://semver.org); below is the first version.
 
 ## [0.1.0] - 2026-10-30
 
