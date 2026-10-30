@@ -1,8 +1,8 @@
 ## What and why
 
-## How it was tested
+## Checked
 
-- [ ] `pytest` passes and the change has a test that fails without it
+- [ ] Tests pass, and a test fails without this change
 - [ ] `ruff check src tests benchmarks` is clean
-- [ ] If alignment decisions changed: summary of `benchmarks/torture.py` on the Tears of Steel corpus
-- [ ] `CHANGELOG.md` updated under Unreleased
+- [ ] If alignment changed: the summary of `benchmarks/torture.py` is below
+- [ ] `CHANGELOG.md` is updated
