@@ -33,8 +33,8 @@ export function LoginPage() {
   return (
     <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
       <div className="w-full max-w-sm space-y-4">
-        <div className="flex items-center justify-center gap-2 font-semibold">
-          <OnCueMark className="size-8" />
+        <div className="flex items-center justify-center gap-3 pb-2 text-2xl font-semibold tracking-tight">
+          <OnCueMark className="size-12" />
           OnCue
         </div>
         <Card>

@@ -6,9 +6,7 @@ import { useEffect, useState } from "react"
 
 import { CommandMenu } from "@/components/command-menu"
 import { OnCueMark } from "@/components/oncue-mark"
-import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
   SidebarContent,
@@ -74,6 +72,14 @@ export function AppShell() {
                   <span className="font-semibold group-data-[collapsible=icon]:sr-only">OnCue</span>
                 </Link>
               </SidebarMenuButton>
+              <SidebarTrigger className="absolute top-2.5 right-1 group-data-[collapsible=icon]:hidden" />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip={t("Search")} onClick={() => setSearching(true)}>
+                <SearchIcon />
+                <span>{t("Search")}</span>
+                <kbd className="ml-auto rounded border bg-muted px-1 font-mono text-[10px] text-muted-foreground">Ctrl K</kbd>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
@@ -104,15 +110,10 @@ export function AppShell() {
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-w-0">
-        {!editor && <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+        {!editor && <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
-          <span className="text-sm font-medium">{title}</span>
-          <Button variant="outline" size="sm" className="ml-auto h-8 gap-2 text-muted-foreground" onClick={() => setSearching(true)}>
-            <SearchIcon className="size-3.5" />
-            <span className="hidden sm:inline">{t("Search")}</span>
-            <kbd className="hidden rounded border bg-muted px-1 font-mono text-[10px] sm:inline">Ctrl K</kbd>
-          </Button>
+          <OnCueMark className="size-6" />
+          <span className="font-semibold">OnCue</span>
         </header>}
         <div id="content" className={editor ? "min-w-0 flex-1" : "mx-auto w-full min-w-0 max-w-[1400px] flex-1 p-4 md:p-6"}>
           <Outlet />
