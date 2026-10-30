@@ -3,6 +3,7 @@
 [![tests](https://github.com/hlecourt/oncue/actions/workflows/tests.yml/badge.svg)](https://github.com/hlecourt/oncue/actions/workflows/tests.yml)
 [![codeql](https://github.com/hlecourt/oncue/actions/workflows/codeql.yml/badge.svg)](https://github.com/hlecourt/oncue/actions/workflows/codeql.yml)
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Docker pulls](https://img.shields.io/docker/pulls/hlecourt/oncue)](https://hub.docker.com/r/hlecourt/oncue)
 
 Out-of-sync subtitles, fixed for you. OnCue checks every external subtitle in your media library against the
 subtitle track embedded in the video, fixes the timing on its own when it is sure, and lets you fix the rest by ear in a web
