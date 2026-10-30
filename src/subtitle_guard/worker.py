@@ -4,6 +4,7 @@
 import fcntl
 import multiprocessing
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -12,6 +13,7 @@ import traceback
 from contextlib import suppress
 
 from . import configuration, jobs
+from .audio import AUDIO_WORK_FOLDER
 from .audio_copy import make_copy
 from .bazarr import (
     REPLACEMENT_WAIT_SECONDS,
@@ -54,9 +56,13 @@ def supervise(roles, roles_for=None):
         log("supervisor.refused", "another supervisor already runs on this state directory, exiting", LEVEL["error"], state=state_path())
         return 1
     requeued, abandoned = jobs.recover_running(MAX_ATTEMPTS)
+    # leftovers of killed workers: the lock above means no live worker still uses them
+    with suppress(FileNotFoundError):
+        shutil.rmtree(state_path(AUDIO_WORK_FOLDER))
     log("supervisor.started", f"supervisor started roles={','.join(sorted(roles))} requeued_jobs={requeued} abandoned_jobs={abandoned}", roles=sorted(roles),
         requeued=requeued, abandoned=abandoned)
-    write_json(state_path("supervisor.json"), {"pid": os.getpid(), "started": now(), "workers": sorted(name for name in roles if name.startswith("worker-"))})
+    started = now()
+    write_json(state_path("supervisor.json"), {"pid": os.getpid(), "started": started, "workers": sorted(name for name in roles if name.startswith("worker-"))})
     os.environ[SUPERVISED_VARIABLE] = "1"
     processes = {name: start(*role) for name, role in roles.items()}
     for stop_signal in (signal.SIGTERM, signal.SIGINT):
@@ -70,6 +76,7 @@ def supervise(roles, roles_for=None):
                 stop_role_process(name, processes.pop(name))
             processes.update({name: start(*role) for name, role in wanted.items() if name not in processes})
             roles = wanted
+            write_json(state_path("supervisor.json"), {"pid": os.getpid(), "started": started, "workers": sorted(name for name in roles if name.startswith("worker-"))})
         for name, process in list(processes.items()):
             if not process.is_alive():
                 processes[name] = restart(name, process, roles[name])
@@ -125,6 +132,10 @@ def stop_role_process(name, process):
         signal_group(process, signal.SIGKILL)
         process.join(timeout=STOP_SECONDS)
     kill_recorded_groups(name)
+    if process.is_alive() or not name.startswith("worker-"):
+        return
+    requeued, abandoned = jobs.recover_running(MAX_ATTEMPTS, int(name.split("-")[1]))
+    log("supervisor.role-stopped", f"role {name} stopped requeued_jobs={requeued} abandoned_jobs={abandoned}", role=name, requeued=requeued, abandoned=abandoned)
 
 
 def signal_group(process, number):

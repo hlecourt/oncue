@@ -313,23 +313,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/subtitles/{subtitle_id}/apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Apply Proposal */
-        post: operations["applyProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/subtitles/{subtitle_id}/audio": {
         parameters: {
             query?: never;
@@ -517,23 +500,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/subtitles/{subtitle_id}/shift": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Shift Lines */
-        post: operations["shiftLines"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/system": {
         parameters: {
             query?: never;
@@ -596,6 +562,11 @@ export interface components {
         };
         /** AudioRequest */
         AudioRequest: {
+            /**
+             * Retry
+             * @default false
+             */
+            retry: boolean;
             /** Track */
             track?: number | null;
         };
@@ -603,6 +574,8 @@ export interface components {
         AudioState: {
             /** Duration */
             duration: number;
+            /** Failed */
+            failed: boolean;
             /** Job */
             job: number | null;
             /** Peaks Per Second */
@@ -1032,6 +1005,11 @@ export interface components {
             changes: {
                 [key: string]: unknown;
             };
+            /**
+             * Password
+             * @default
+             */
+            password: string;
         };
         /** SettingsView */
         SettingsView: {
@@ -1046,17 +1024,6 @@ export interface components {
             code: string;
             /** Message */
             message: string;
-        };
-        /** Shift */
-        Shift: {
-            /** First */
-            first: number;
-            /** Last */
-            last: number;
-            /** Offset */
-            offset: number;
-            /** Version */
-            version: string;
         };
         /** Sibling */
         Sibling: {
@@ -1647,6 +1614,15 @@ export interface operations {
                     "application/json": components["schemas"]["SettingsView"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1654,6 +1630,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -1862,41 +1847,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubtitleDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    applyProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                subtitle_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VersionGuard"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommandResult"];
                 };
             };
             /** @description Validation Error */
@@ -2242,41 +2192,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Retime"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommandResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    shiftLines: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                subtitle_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Shift"];
             };
         };
         responses: {

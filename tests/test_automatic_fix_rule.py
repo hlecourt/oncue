@@ -32,7 +32,8 @@ def test_a_fix_below_high_confidence_is_never_written_and_waits_as_a_proposal(la
     assert late_subtitle.read_text() == LATE and not storage.backup_folders(str(late_subtitle))
     proposal = proposal_for(str(late_subtitle), file_hash(str(late_subtitle)))
     assert proposal["kind"] == "aligned" and proposal["confidence"] == 65
-    applied = review_actions.apply_proposal("/movie.mkv", str(late_subtitle))
+    monkeypatch.setattr(review_actions, "load_reference", guard.load_reference)
+    applied = review_actions.retime("/movie.mkv", str(late_subtitle), file_hash(str(late_subtitle)), True, [])
     assert applied["decision"] == DECISION["approved"]
     assert numpy.max(numpy.abs(numpy.array([start for start, _, _ in parse_subtitle(str(late_subtitle))["cues"]]) - (STARTS + 7))) < 0.25
 
@@ -133,7 +134,7 @@ def test_the_best_version_among_audio_tries_is_the_most_confident_one(tmp_path, 
         copies.append(str(copy))
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {"decision": "proposed", "confidence": 30})
     bazarr.restore_best(str(video), str(subtitle), {"attempts": [{"subtitle": str(subtitle), "confidence": 30, "copy": copies[0]},
-                                                                {"subtitle": str(subtitle), "confidence": 55, "copy": copies[1]}]})
+                                                                {"subtitle": str(subtitle), "confidence": 55, "copy": copies[1]}]}, file_hash(str(subtitle)))
     assert subtitle.read_text() == "second"
 
 

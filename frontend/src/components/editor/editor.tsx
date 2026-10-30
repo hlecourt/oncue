@@ -54,9 +54,12 @@ const KEYS: [string, string][] = [["Space", "Play or pause"], ["A", "The chosen 
   ["Left / Right", "0.1 s earlier or later, Shift for 1 s"], ["J / K, Down / Up", "Next or previous line"], ["1 / 2 / 3", "All lines, from this line, selected lines"],
   ["Ctrl Z", "Undo the last change"], ["Ctrl S", "Save"], ["N", "Next in Review"], ["?", "This help"]]
 
-type Props = { detail: Detail; lines: Lines; actions: ReactNode; menuItems: ReactNode; onNext: () => void; onRestore: (version: Schemas["Version"]) => void }
+type Props = {
+  detail: Detail; lines: Lines; actions: ReactNode; menuItems: ReactNode; notice: ReactNode
+  onNext: () => void; onRestore: (version: Schemas["Version"]) => void; onEditing: (editing: boolean) => void
+}
 
-export function Editor({ detail, lines, actions, menuItems, onNext, onRestore }: Props) {
+export function Editor({ detail, lines, actions, menuItems, notice, onNext, onRestore, onEditing }: Props) {
   const t = useT()
   const locale = useLocale()
   const wide = useWide()
@@ -149,6 +152,9 @@ export function Editor({ detail, lines, actions, menuItems, onNext, onRestore }:
     return () => window.removeEventListener("keydown", listener)
   }, [])
 
+  const editing = pending.length > 0
+  useEffect(() => onEditing(editing), [editing, onEditing])
+
   useEffect(() => {
     if (!playing || nearest < 0 || (selection && selection[0] !== selection[1])) return
     setCurrent(nearest)
@@ -228,6 +234,7 @@ export function Editor({ detail, lines, actions, menuItems, onNext, onRestore }:
           <span className="hidden lg:contents">{saveButton}</span>
         </div>
       </header>
+      {notice}
 
       <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:overflow-hidden lg:[grid-template-areas:'stage_panel''toolbar_panel''timeline_timeline']">
         <div className="sticky top-0 z-10 border-b bg-background lg:contents">
@@ -288,9 +295,9 @@ export function Editor({ detail, lines, actions, menuItems, onNext, onRestore }:
           <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto lg:flex-nowrap">
             <ToggleGroup type="single" value={scope} onValueChange={pickScope} aria-label={t("Lines to move")}
               className="rounded-lg bg-muted p-0.5 max-lg:w-full">
-              <ToggleGroupItem value="all" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("All lines")}</ToggleGroupItem>
-              <ToggleGroupItem value="from" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("From line {number}", { number: current + 1 })}</ToggleGroupItem>
-              <ToggleGroupItem value="selected" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">
+              <ToggleGroupItem value="all" className="h-auto min-h-7 rounded-md px-2.5 py-1 text-center leading-tight whitespace-normal data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("All lines")}</ToggleGroupItem>
+              <ToggleGroupItem value="from" className="h-auto min-h-7 rounded-md px-2.5 py-1 text-center leading-tight whitespace-normal data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("From line {number}", { number: current + 1 })}</ToggleGroupItem>
+              <ToggleGroupItem value="selected" className="h-auto min-h-7 rounded-md px-2.5 py-1 text-center leading-tight whitespace-normal data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">
                 {selection && selection[0] !== selection[1] ? t("Lines {first} to {last}", { first: selection[0] + 1, last: selection[1] + 1 }) : t("Selected")}
               </ToggleGroupItem>
             </ToggleGroup>

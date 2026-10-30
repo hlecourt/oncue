@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useQuery } from "@tanstack/react-query"
 import { ChartNoAxesColumnIcon } from "lucide-react"
-import { type PointerEvent, type ReactNode, useState } from "react"
+import { type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode, useState } from "react"
 
 import { EmptyState, LoadError, PageHeader } from "@/components/status"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -31,6 +31,10 @@ const REFERENCES: Record<string, { label: string; tone: string }> = {
   text: { label: "Text track", tone: "bg-bar" }, picture: { label: "Picture track", tone: "bg-bar-soft" }, sound: { label: "Sound", tone: "bg-bar-faint" },
   none: { label: "None", tone: "bg-muted" },
 }
+const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-foreground"
+const CHART_KEYS: Record<string, (rows: number) => number> = {
+  ArrowRight: (rows) => rows, ArrowLeft: (rows) => -rows, ArrowDown: () => 1, ArrowUp: () => -1, Home: () => -Infinity, End: () => Infinity,
+}
 const CARD = "min-w-0 rounded-xl border bg-card px-4 pt-3.5 pb-4"
 
 export function DashboardPage() {
@@ -51,8 +55,14 @@ export function DashboardPage() {
   }
 
   function followTip(event: PointerEvent) {
-    const target = event.target instanceof Element ? event.target.closest("[data-tip]") : null
-    setTip(target ? { text: target.getAttribute("data-tip") ?? "", x: event.clientX, y: event.clientY } : null)
+    const target = event.target instanceof Element ? event.target.closest("[role=img][aria-label]") : null
+    setTip(target ? { text: target.getAttribute("aria-label") ?? "", x: event.clientX, y: event.clientY } : null)
+  }
+
+  function showFocusedTip(event: FocusEvent) {
+    if (!(event.target instanceof HTMLElement) || !event.target.matches("[data-chart] [role=img]")) return
+    const box = event.target.getBoundingClientRect()
+    setTip({ text: event.target.getAttribute("aria-label") ?? "", x: box.left + box.width / 2, y: box.top })
   }
 
   const rangePicker = (
@@ -64,7 +74,7 @@ export function DashboardPage() {
   )
 
   return (
-    <div onPointerMove={followTip} onPointerLeave={() => setTip(null)}>
+    <div onPointerMove={followTip} onPointerLeave={() => setTip(null)} onFocus={showFocusedTip} onBlur={() => setTip(null)} onKeyDown={moveInChart}>
       <PageHeader title={t("Dashboard")} actions={rangePicker} />
       {stats.isPending && <Skeleton className="h-96 w-full" />}
       {stats.error && <LoadError error={stats.error} onRetry={() => stats.refetch()} />}
@@ -165,9 +175,9 @@ function Board({ stats, reportMode, t }: { stats: Stats; reportMode: boolean; t:
 function Hero({ label, value, detail, tone, spark }: { label: string; value: string; detail: string; tone?: string; spark?: number[] }) {
   return (
     <div className={cn(CARD, "relative flex flex-col gap-1 overflow-hidden pb-3.5")}>
-      <span className="flex items-center gap-1.5 truncate text-sm text-muted-foreground">{tone && <i className={cn("size-2 flex-none rounded-full", tone)} />}{label}</span>
-      <span className="font-mono text-3xl font-semibold tracking-tight tabular-nums">{value}</span>
-      <span className="truncate text-xs text-muted-foreground">{detail || " "}</span>
+      <span className="text-sm text-muted-foreground">{tone && <i className={cn("mr-1.5 inline-block size-2 rounded-full align-middle", tone)} />}{label}</span>
+      <span className="mt-auto font-mono text-3xl font-semibold tracking-tight tabular-nums">{value}</span>
+      <span className="line-clamp-2 min-h-8 text-xs text-muted-foreground lg:min-h-0">{detail || " "}</span>
       {spark && <Sparkline values={spark} />}
     </div>
   )
@@ -185,7 +195,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 function CardHead({ title, detail }: { title: string; detail?: ReactNode }) {
   return (
-    <div className="mb-3 flex items-baseline justify-between gap-3 whitespace-nowrap">
+    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
       <h2 className="truncate text-sm font-semibold">{title}</h2>
       {detail && <span className="truncate font-mono text-xs text-muted-foreground">{detail}</span>}
     </div>
@@ -201,10 +211,10 @@ function Heatmap({ days, tag, t }: { days: Stats["per_day"]; tag: string; t: Tra
       <div className="mb-1 grid gap-[3px] font-mono text-[10px] text-muted-foreground" style={columns} aria-hidden="true">
         {months.map((month, index) => <span key={index} className="whitespace-nowrap">{month !== months[index - 1] ? month : ""}</span>)}
       </div>
-      <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={columns}>
-        {days.map((day) => (
-          <i key={day.day} className={cn("aspect-square rounded-[3px]", HEAT[day.checks ? Math.ceil((day.checks / top) * 4) : 0])}
-            data-tip={`${new Date(`${day.day}T12:00:00`).toLocaleDateString(tag, { weekday: "short", day: "numeric", month: "short" })}: ${plural(t, day.checks, "{count} check", "{count} checks", String)}`} />
+      <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={columns} data-chart data-chart-rows={7}>
+        {days.map((day, index) => (
+          <i key={day.day} className={cn("aspect-square rounded-[3px]", FOCUS_RING, HEAT[day.checks ? Math.ceil((day.checks / top) * 4) : 0])}
+            tabIndex={index === 0 ? 0 : -1} role="img" aria-label={`${new Date(`${day.day}T12:00:00`).toLocaleDateString(tag, { weekday: "short", day: "numeric", month: "short" })}: ${plural(t, day.checks, "{count} check", "{count} checks", String)}`} />
         ))}
       </div>
       <div className="mt-2 flex items-center justify-end gap-1 text-xs text-muted-foreground">
@@ -233,11 +243,11 @@ function RightNow({ now, t }: { now: Stats["now"]; t: Translate }) {
 
 function Facts({ rows }: { rows: [string, ReactNode][] }) {
   return (
-    <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm whitespace-nowrap">
+    <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-2.5 text-sm">
       {rows.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="truncate text-muted-foreground">{label}</dt>
-          <dd className="flex min-w-0 items-center justify-end gap-2 truncate font-mono text-[13px] tabular-nums">{value}</dd>
+          <dd className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right font-mono text-[13px] tabular-nums">{value}</dd>
         </div>
       ))}
     </dl>
@@ -247,9 +257,9 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
 function Bars({ bars, rule, height = "h-36" }: { bars: { count: number; tone: string; tip: string }[]; rule?: number; height?: string }) {
   const top = Math.max(...bars.map((bar) => bar.count), 1)
   return (
-    <div className={cn("relative flex items-end gap-[2px] border-b", height)}>
-      {bars.map((bar) => (
-        <div key={bar.tip} className="flex h-full flex-1 items-end" data-tip={bar.tip}>
+    <div className={cn("relative flex items-end gap-[2px] border-b", height)} data-chart>
+      {bars.map((bar, index) => (
+        <div key={bar.tip} className={cn("flex h-full flex-1 items-end", FOCUS_RING)} tabIndex={index === 0 ? 0 : -1} role="img" aria-label={bar.tip}>
           <i className={cn("block w-full rounded-t-[4px]", bar.tone)} style={{ height: bar.count ? `max(2px, ${(bar.count / top) * 100}%)` : 0 }} />
         </div>
       ))}
@@ -300,10 +310,10 @@ function Providers({ providers, number, t }: { providers: Stats["providers"]; nu
                   <td className="px-2.5 py-2 font-medium">{provider.provider}</td>
                   <td className="px-2.5 py-2 text-right font-mono tabular-nums">{number(provider.downloads)}</td>
                   <td className="px-2.5 py-2">
-                    <div className="flex h-2.5 gap-[2px] overflow-hidden rounded bg-muted">
+                    <div className="flex h-2.5 gap-[2px] overflow-hidden rounded bg-muted" data-chart>
                       {VERDICTS.map((verdict) => provider[verdict.key] > 0 && (
-                        <i key={verdict.key} className={cn("block h-full", verdict.tone)} style={{ width: `${(provider[verdict.key] / provider.downloads) * 100}%` }}
-                          data-tip={`${t(verdict.label)}: ${number(provider[verdict.key])}`} />
+                        <i key={verdict.key} className={cn("block h-full", FOCUS_RING, verdict.tone)} style={{ width: `${(provider[verdict.key] / provider.downloads) * 100}%` }}
+                          tabIndex={verdict.key === VERDICTS.find((first) => provider[first.key] > 0)?.key ? 0 : -1} role="img" aria-label={`${t(verdict.label)}: ${number(provider[verdict.key])}`} />
                       ))}
                     </div>
                   </td>
@@ -340,8 +350,9 @@ function References({ references, share, t }: { references: Stats["references"];
   const total = references.reduce((sum, entry) => sum + entry.count, 0)
   return (
     <>
-      <div className="mb-3 flex h-3.5 gap-[2px] overflow-hidden rounded">
-        {references.map((entry) => <i key={entry.name} className={cn("block h-full", REFERENCES[entry.name]?.tone)} style={{ width: `${(entry.count / total) * 100}%` }} data-tip={`${t(REFERENCES[entry.name]?.label ?? entry.name)}: ${share(entry.count, total)}`} />)}
+      <div className="mb-3 flex h-3.5 gap-[2px] overflow-hidden rounded" data-chart>
+        {references.map((entry, index) => <i key={entry.name} className={cn("block h-full", FOCUS_RING, REFERENCES[entry.name]?.tone)} style={{ width: `${(entry.count / total) * 100}%` }}
+          tabIndex={index === 0 ? 0 : -1} role="img" aria-label={`${t(REFERENCES[entry.name]?.label ?? entry.name)}: ${share(entry.count, total)}`} />)}
       </div>
       <ul className="flex flex-col gap-2.5 text-sm">
         {references.map((entry) => (
@@ -393,4 +404,19 @@ function busiestDay(days: Stats["per_day"], tag: string) {
 function uptime(t: Translate, started: string) {
   const hours = Math.max(0, Math.floor((Date.now() - new Date(started).getTime()) / 3_600_000))
   return t("{days} d {hours} h", { days: Math.floor(hours / 24), hours: hours % 24 })
+}
+
+// one tab stop per chart, arrows move between its values (the roving tabindex pattern)
+function moveInChart(event: KeyboardEvent) {
+  const step = CHART_KEYS[event.key]
+  const item = event.target instanceof HTMLElement && event.target.matches("[data-chart] [role=img]") ? event.target : null
+  const chart = item?.closest("[data-chart]")
+  if (!step || !item || !chart) return
+  event.preventDefault()
+  const items = [...chart.querySelectorAll<HTMLElement>("[role=img]")]
+  const next = items[Math.min(items.length - 1, Math.max(0, items.indexOf(item) + step(Number(chart.getAttribute("data-chart-rows")) || 1)))]
+  if (!next || next === item) return
+  item.tabIndex = -1
+  next.tabIndex = 0
+  next.focus()
 }

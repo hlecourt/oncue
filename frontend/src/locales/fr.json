@@ -384,5 +384,8 @@
   "Leave without saving?": "Partir sans enregistrer ?",
   "Your changes to the timing are not saved yet.": "Vos modifications du timing ne sont pas encore enregistrées.",
   "Show the API key": "Afficher la clé API",
-  "Enter your password to see the key.": "Saisissez votre mot de passe pour voir la clé."
+  "Enter your password to see the key.": "Saisissez votre mot de passe pour voir la clé.",
+  "This file changed on disk while you were editing it. Your changes can no longer be saved: reload to get the new version.": "Ce fichier a changé sur le disque pendant que vous le modifiiez. Vos modifications ne peuvent plus être enregistrées : rechargez pour obtenir la nouvelle version.",
+  "Confirm with your password": "Confirmez avec votre mot de passe",
+  "Changing the log in or the URL base needs your password.": "Changer la connexion ou l'URL de base demande votre mot de passe."
 }
