@@ -13,7 +13,8 @@ from .storage import now, state_path
 
 PREPARED = set()
 STATUS = {"queued": "queued", "running": "running", "done": "done", "failed": "failed"}
-KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "retry_check": "retry-check", "scan": "scan", "audio_copy": "audio-copy"}
+KIND = {"hook": "hook", "check": "check", "blacklist": "blacklist", "replacement_check": "replacement-check", "scan": "scan", "audio_copy": "audio-copy"}
+LEGACY_REPLACEMENT_CHECK = "retry-check"
 SCHEMA = (
     ("create table if not exists jobs (id integer primary key, kind text not null, arguments text not null, status text not null, "
      "run_after real not null, created text not null, started text, finished text, attempts integer not null default 0, worker integer, "
@@ -166,6 +167,7 @@ def connect():
                 connection.execute(statement)
             if "seconds" not in {column["name"] for column in connection.execute("pragma table_info(reports)")}:
                 connection.execute("alter table reports add column seconds real")
+            connection.execute("update jobs set kind = ? where kind = ?", (KIND["replacement_check"], LEGACY_REPLACEMENT_CHECK))
         PREPARED.add(database)
     return connection
 

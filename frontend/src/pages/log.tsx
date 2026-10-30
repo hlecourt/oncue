@@ -5,7 +5,7 @@ import { ChevronRightIcon, CopyIcon, ScrollTextIcon } from "lucide-react"
 import { useDeferredValue, useState } from "react"
 import { toast } from "sonner"
 
-import { EmptyState, PageHeader } from "@/components/status"
+import { EmptyState, LoadError, PageHeader } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
@@ -40,6 +40,7 @@ export function LogPage() {
         </Select>
       </div>
       {log.isPending && <Skeleton className="h-96 w-full" />}
+      {log.error && <LoadError error={log.error} onRetry={() => log.refetch()} />}
       {log.data?.length === 0 && <EmptyState icon={<ScrollTextIcon />} title={query || level !== "all" ? t("No log entry matches") : t("Nothing logged yet")} />}
       {log.data && log.data.length > 0 && (
         <div className="overflow-hidden rounded-lg border bg-card font-mono text-xs">

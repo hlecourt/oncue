@@ -10,8 +10,11 @@ import tempfile
 
 import numpy
 
+from .errors import ProbeError
+from .files import read_regular
 from .logs import LEVEL, log
 from .outcome import DECISION
+from .reference import MEDIA_INPUT_OPTIONS, run_on_video
 from .storage import heavy_disk_read, state_path
 from .tools import AUDIO_SYNC_SECONDS, run_tool, stderr_tail
 
@@ -20,6 +23,7 @@ AUDIO_SYNC_MAX_OFFSET_SECONDS = 120
 AUDIO_SYNC_EDGE_SHARE = 0.9
 AUDIO_SYNC_PLAIN_MAX_OFFSET_SECONDS = 30
 AUDIO_SYNC_FORMATS = (".srt", ".ass", ".ssa", ".vtt")
+FFSUBSYNC_FRAME_RATE = 48000
 AUDIO_SYNC_SCRIPT = ("import json, sys\nsys.path.insert(0, sys.argv.pop(1))\nfrom ffsubsync.ffsubsync import make_parser, run\n"
                      "result = run(make_parser().parse_args(sys.argv[1:]))\n"
                      "print(json.dumps({key: result.get(key) for key in ('offset_seconds', 'framerate_scale_factor', 'sync_was_successful')}))")
@@ -43,19 +47,38 @@ def audio_fix(video, subtitle, document):
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, format not supported by ffsubsync"}, None
     work = state_path("audio-work")
     os.makedirs(work, mode=0o700, exist_ok=True)
+    descriptor, soundtrack = tempfile.mkstemp(prefix="soundtrack-", suffix=".flac", dir=work)
+    os.close(descriptor)
     descriptor, output = tempfile.mkstemp(prefix="audio-", suffix=extension, dir=work)
     os.close(descriptor)
+    descriptor, source = tempfile.mkstemp(prefix="subtitle-", suffix=extension, dir=work)
     try:
-        return synced_timings(video, subtitle, document, output)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(read_regular(subtitle, confined=False))
+        extract_soundtrack(video, soundtrack)
+        return synced_timings(soundtrack, source, subtitle, document, output)
+    except ProbeError as error:
+        return {"decision": DECISION["unverified"], "reason": f"could not read the video, nothing changed: {error}"}, None
     finally:
-        if os.path.exists(output):
-            os.remove(output)
+        for leftover in (soundtrack, output, source):
+            if os.path.exists(leftover):
+                os.remove(leftover)
 
 
-def synced_timings(video, subtitle, document, output):
-    result = run_ffsubsync(video, subtitle, output, fix_framerate=True)
+def extract_soundtrack(video, soundtrack):
+    # ffsubsync runs its own unrestricted ffmpeg, so it only reads this copy, decoded the way it decodes its reference to get identical samples
+    with heavy_disk_read():
+        result = run_on_video(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-i", video, "-vn", "-sn", "-dn", "-ac", "1",
+                               "-af", "aresample=async=1", "-ar", str(FFSUBSYNC_FRAME_RATE), "-c:a", "flac", "-sample_fmt", "s16", "-y", soundtrack],
+                              video, AUDIO_SYNC_SECONDS)
+    if result.returncode != 0:
+        raise ProbeError(f"ffmpeg could not read the audio of {video}: {stderr_tail(result) or 'exit code ' + str(result.returncode)}")
+
+
+def synced_timings(soundtrack, source, subtitle, document, output):
+    result = run_ffsubsync(soundtrack, source, subtitle, output, fix_framerate=True)
     if result and abs(result["offset_seconds"]) >= AUDIO_SYNC_EDGE_SHARE * AUDIO_SYNC_MAX_OFFSET_SECONDS:
-        result = run_ffsubsync(video, subtitle, output, fix_framerate=False)
+        result = run_ffsubsync(soundtrack, source, subtitle, output, fix_framerate=False)
         if result and abs(result["offset_seconds"]) > AUDIO_SYNC_PLAIN_MAX_OFFSET_SECONDS:
             result = None
     if not result:
@@ -63,7 +86,7 @@ def synced_timings(video, subtitle, document, output):
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, audio sync not confident"}, None
     scale, offset = result["framerate_scale_factor"], result["offset_seconds"]
     timings = [(start * scale + offset, end * scale + offset, text) for start, end, text in document["cues"]]
-    agreement = part_agreement(timings, speech_mask(video, subtitle))
+    agreement = part_agreement(timings, speech_mask(soundtrack, subtitle))
     starts = [start for start, _, _ in document["cues"]]
     log("audio.synced", f"ffsubsync found offset={result['offset_seconds']:+.2f}s scale={result['framerate_scale_factor']:.4f}", subtitle=subtitle, **result)
     moved = [{"first": starts[0], "last": starts[-1], "lines": len(starts), "shift": round(result["offset_seconds"], 2)}] if starts else []
@@ -72,14 +95,14 @@ def synced_timings(video, subtitle, document, output):
              "changes": {"scale": result["framerate_scale_factor"], "lines": len(starts), "parts": moved}, "agreement": agreement}, timings)
 
 
-def speech_mask(video, subtitle):
+def speech_mask(soundtrack, subtitle):
     work = state_path("audio-work")
     os.makedirs(work, mode=0o700, exist_ok=True)
     descriptor, output = tempfile.mkstemp(prefix="speech-", suffix=".npy", dir=work)
     os.close(descriptor)
     try:
         with heavy_disk_read():
-            finished = run_tool([sys.executable, "-c", SPEECH_SCRIPT, FFSUBSYNC_LIBRARIES, video, output], AUDIO_SYNC_SECONDS)
+            finished = run_tool([sys.executable, "-c", SPEECH_SCRIPT, FFSUBSYNC_LIBRARIES, soundtrack, output], AUDIO_SYNC_SECONDS)
         if finished.returncode != 0:
             log("audio.speech-not-detected", f"speech detection failed exit={finished.returncode}", LEVEL["warning"], subtitle=subtitle, stderr=stderr_tail(finished))
             return None
@@ -118,15 +141,15 @@ def part_measure(cues, cumulative):
     return residual, round(lift, 2)
 
 
-def ffsubsync_arguments(video, subtitle, output, fix_framerate):
-    arguments = [video, "-i", subtitle, "-o", output, "--ffmpegpath", os.path.dirname(shutil.which("ffmpeg") or "/usr/bin/ffmpeg"), "--vad", "webrtc",
+def ffsubsync_arguments(soundtrack, subtitle, output, fix_framerate):
+    arguments = [soundtrack, "-i", subtitle, "-o", output, "--ffmpegpath", os.path.dirname(shutil.which("ffmpeg") or "/usr/bin/ffmpeg"), "--vad", "webrtc",
                  "--max-offset-seconds", str(AUDIO_SYNC_MAX_OFFSET_SECONDS), "--skip-sync-on-low-quality",
                  "--quality-max-offset-seconds", str(AUDIO_SYNC_MAX_OFFSET_SECONDS), "--max-framerate-deviation", "0.05", "--output-encoding", "same"]
     return arguments if fix_framerate else [*arguments, "--no-fix-framerate"]
 
 
-def run_ffsubsync(video, subtitle, output, fix_framerate):
-    command = [sys.executable, "-c", AUDIO_SYNC_SCRIPT, FFSUBSYNC_LIBRARIES, *ffsubsync_arguments(video, subtitle, output, fix_framerate)]
+def run_ffsubsync(soundtrack, source, subtitle, output, fix_framerate):
+    command = [sys.executable, "-c", AUDIO_SYNC_SCRIPT, FFSUBSYNC_LIBRARIES, *ffsubsync_arguments(soundtrack, source, output, fix_framerate)]
     with heavy_disk_read():
         finished = run_tool(command, AUDIO_SYNC_SECONDS)
     lines = finished.stdout.strip().splitlines()

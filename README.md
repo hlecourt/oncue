@@ -35,9 +35,9 @@ docker compose up -d
 docker compose logs subtitle-guard | grep password
 ```
 
-Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, `SUBTITLE_GUARD_ROOTS` the
-folders whose subtitles the web UI may change, and `user:` must own your media. Then open `http://<host>:8484` and log in as
-`admin` with the password printed in the logs.
+Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, `SUBTITLE_GUARD_ROOTS` the only
+folders whose subtitles may be changed, and `user:` must own your media. Then open `http://<host>:8484` and log in as `admin`
+with the password printed in the logs.
 
 The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one
 after that. It starts in `report` mode: it shows what it would do and writes nothing until you switch to `fix` in Settings.
@@ -76,6 +76,8 @@ In plain words, in English, French or Simplified Chinese, light or dark, on a ph
   ranked by how often their downloads arrive in sync.
 - **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
+![The dashboard](docs/screenshots/dashboard.png)
+
 ![Review](docs/screenshots/review.png)
 
 Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an `X-Api-Key` header.
@@ -83,7 +85,7 @@ Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an
 ## Safety
 
 - `report` mode by default: nothing is written until you choose `fix`.
-- The web UI only changes subtitles under `SUBTITLE_GUARD_ROOTS`, and never through a symbolic link.
+- Nothing is written outside `SUBTITLE_GUARD_ROOTS` (the compose examples set it), and never through a symbolic link.
 - Every write is atomic, after a backup, and refused if the file changed since it was checked; saved versions can be restored.
 - A login is required beyond the machine itself. Details: [docs/security.md](docs/security.md); to report a vulnerability,
   [SECURITY.md](SECURITY.md).
@@ -96,7 +98,7 @@ Most settings can be changed in the UI; an environment variable always wins. The
 |---|---|
 | `SUBTITLE_GUARD_MODE` | `report`; `fix` writes sure fixes on its own |
 | `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
-| `SUBTITLE_GUARD_ROOTS` | unset: the folders whose subtitles the web UI may change |
+| `SUBTITLE_GUARD_ROOTS` | unset: the folders the guard may change; nothing is written when unset |
 | `SUBTITLE_GUARD_WORKERS` | `2` |
 | `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / generated on first start |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |

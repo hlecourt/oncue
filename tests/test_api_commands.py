@@ -27,7 +27,7 @@ def proposed(tmp_path, monkeypatch, client):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    monkeypatch.setattr(files, "ROOTS", [os.path.realpath(tmp_path)])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [os.path.realpath(tmp_path)])
     monkeypatch.setattr(guard, "confidence", lambda outcome: (65, "medium"))
     reports.report(str(subtitle), "scan", guard.evaluate_and_fix(str(video), str(subtitle), True))
     return client.get("/api/review").json()[0]["id"], subtitle, starts
@@ -97,7 +97,7 @@ def test_only_a_finished_job_inside_the_allowed_folders_runs_again(client, propo
 
 def test_without_allowed_folders_the_ui_changes_no_file(client, proposed, monkeypatch):
     identity, subtitle, _ = proposed
-    monkeypatch.setattr(files, "ROOTS", [])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [])
     before = subtitle.read_bytes()
     for action, body in (("apply", {"version": file_hash(str(subtitle))}), ("delete", {"version": file_hash(str(subtitle))}),
                          ("shift", {"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": 1})):

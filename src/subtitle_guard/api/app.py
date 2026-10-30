@@ -5,7 +5,7 @@ import ipaddress
 import os
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
@@ -17,7 +17,7 @@ from .auth import configure
 from .front import add_front
 from .i18n import tr
 from .routes import activity, commands, media, review, session, settings, stats, status, subtitles, system
-from .security import SECURITY_HEADERS, guard, new_csrf_token
+from .security import SECURITY_HEADERS, guard, new_csrf_token, require_user
 
 HOST = os.environ.get("SUBTITLE_GUARD_UI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SUBTITLE_GUARD_UI_PORT", "8484"))
@@ -27,7 +27,7 @@ KEEP_ALIVE_SECONDS = 5
 
 def create_app(host=HOST):
     base = configuration.value("url_base")
-    app = FastAPI(title="subtitle-guard", version=__version__, docs_url=None, redoc_url=None, openapi_url=f"{base}/api/openapi.json")
+    app = FastAPI(title="subtitle-guard", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.auth_mode = configuration.value("auth_mode")
     app.state.login_required = configure(host)
     app.state.trusted_proxies = trusted_proxies()
@@ -41,6 +41,7 @@ def create_app(host=HOST):
     app.include_router(status.router, prefix=base)
     for prefix in {"", base}:
         app.include_router(status.probes, prefix=prefix)
+    app.add_api_route(f"{base}/api/openapi.json", app.openapi, include_in_schema=False, dependencies=[Depends(require_user)])
     add_front(app, base)
     return app
 

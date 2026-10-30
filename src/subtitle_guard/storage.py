@@ -54,14 +54,6 @@ def backup_folders(subtitle):
                   if os.path.isdir(folder))
 
 
-def revert_source(subtitle):
-    extension = os.path.splitext(subtitle)[1]
-    folders = backup_folders(subtitle)
-    originals = [os.path.join(folder, "original" + extension) for folder in reversed(folders)]
-    manual = [os.path.join(folder, "before-manual" + extension) for folder in folders]
-    return next((path for path in originals + manual if os.path.exists(path)), None)
-
-
 def read_json(path):
     with open(path) as handle:
         return json.load(handle)

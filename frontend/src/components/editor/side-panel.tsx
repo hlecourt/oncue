@@ -2,7 +2,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "cn"
-import { XIcon } from "lucide-react"
+import { LockIcon, XIcon } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 import type { Block } from "@/components/editor/timeline"
@@ -21,6 +21,7 @@ type Props = {
   lines: Block[]
   videoText: (string | null)[]
   moves: { amount: number; byHand: boolean }[]
+  held: boolean[]
   current: number
   selection: [number, number] | null
   onPick: (index: number, extend: boolean) => void
@@ -64,7 +65,7 @@ function PanelTab({ value, children }: { value: string; children: React.ReactNod
   )
 }
 
-function Script({ lines, videoText, moves, current, selection, onPick }: Props) {
+function Script({ lines, videoText, moves, held, current, selection, onPick }: Props) {
   const t = useT()
   const scroller = useRef<HTMLDivElement>(null)
   const virtual = useVirtualizer({ count: lines.length, getScrollElement: () => scroller.current, estimateSize: () => ROW_ESTIMATE, overscan: 10 })
@@ -92,11 +93,14 @@ function Script({ lines, videoText, moves, current, selection, onPick }: Props) 
                     <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground"><i className="size-1.5 flex-none rounded-[2px] bg-theirs" /><span className="truncate">{videoText[item.index]}</span></span>
                   )}
                 </span>
-                {Math.abs(move.amount) >= 0.01 && (
-                  <span className={cn("h-[18px] rounded px-1 font-mono text-[11px] leading-[18px] tabular-nums", move.byHand ? "bg-ours-soft text-ours-ink" : "bg-guard-soft text-guard-ink")}>
-                    {move.amount > 0 ? "+" : ""}{move.amount.toFixed(1)}
-                  </span>
-                )}
+                <span className="flex items-center gap-1">
+                  {held[item.index] && <LockIcon role="img" aria-label={t("Placed by hand")} className="size-3 text-ours-ink" />}
+                  {Math.abs(move.amount) >= 0.01 && (
+                    <span className={cn("h-[18px] rounded px-1 font-mono text-[11px] leading-[18px] tabular-nums", move.byHand ? "bg-ours-soft text-ours-ink" : "bg-guard-soft text-guard-ink")}>
+                      {move.amount > 0 ? "+" : ""}{move.amount.toFixed(1)}
+                    </span>
+                  )}
+                </span>
               </button>
             </li>
           )

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""UI account: one user with a scrypt password hash, sessions that expire on the server, and a limit on failed logins."""
+"""UI account: one user with a scrypt password hash, the API key, sessions that expire on the server, and limits on failed logins."""
 
 import hashlib
 import hmac
@@ -14,18 +14,24 @@ from ..logs import LEVEL, log
 from ..storage import state_path
 
 CREDENTIALS_FILE = "ui-credentials.json"
+API_KEY_FILE = "api-key"
 DEFAULT_USER = "admin"
 SCRYPT = {"n": 2**14, "r": 8, "p": 1}
 MINIMUM_PASSWORD_LENGTH = 12
 SESSION_SECONDS = 30 * 24 * 3600
 MAX_SESSIONS = 1000
 MAX_FAILED_LOGINS = 5
+MAX_ACCOUNT_FAILED_LOGINS = 20
 MAX_TRACKED_CLIENTS = 10000
 LOCKOUT_SECONDS = 600
+KNOWN_CLIENT_SECONDS = 30 * 24 * 3600
+MAX_KNOWN_CLIENTS = 1000
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 ACCOUNT = {}
 SESSIONS = {}
 FAILURES = {}
+ACCOUNT_FAILURES = []
+KNOWN_CLIENTS = {}
 
 
 def configure(host):
@@ -70,6 +76,7 @@ def save_credentials(user, password):
         os.fsync(handle.fileno())
     os.chmod(temporary, 0o600)
     os.replace(temporary, path)
+    regenerate_api_key()
     load_credentials()
 
 
@@ -105,14 +112,27 @@ def locked_out(client):
     recent = [moment for moment in FAILURES.pop(client, []) if time.time() - moment < LOCKOUT_SECONDS]
     if recent:
         FAILURES[client] = recent
-    return len(recent) >= MAX_FAILED_LOGINS
+    ACCOUNT_FAILURES[:] = [moment for moment in ACCOUNT_FAILURES if time.time() - moment < LOCKOUT_SECONDS]
+    return len(recent) >= MAX_FAILED_LOGINS or (len(ACCOUNT_FAILURES) >= MAX_ACCOUNT_FAILED_LOGINS and not known_client(client))
+
+
+def known_client(client):
+    return time.time() - KNOWN_CLIENTS.get(client, 0) < KNOWN_CLIENT_SECONDS
 
 
 def record_failure(client):
     if client not in FAILURES and len(FAILURES) >= MAX_TRACKED_CLIENTS:
         FAILURES.pop(next(iter(FAILURES)))
     FAILURES.setdefault(client, []).append(time.time())
+    ACCOUNT_FAILURES.append(time.time())
     log("web.login-failed", f"wrong user or password from {client} ({len(FAILURES[client])} in {LOCKOUT_SECONDS // 60} min)", LEVEL["warning"], client=client)
+
+
+def record_success(client):
+    KNOWN_CLIENTS.pop(client, None)
+    while len(KNOWN_CLIENTS) >= MAX_KNOWN_CLIENTS:
+        KNOWN_CLIENTS.pop(next(iter(KNOWN_CLIENTS)))
+    KNOWN_CLIENTS[client] = time.time()
 
 
 def open_session(user):
@@ -126,8 +146,29 @@ def open_session(user):
 
 
 def session_for(session):
+    current_account()
     opened = SESSIONS.get(session)
     if opened is None or opened["expires"] < time.time():
         SESSIONS.pop(session, None)
         return None
     return opened
+
+
+def api_key():
+    path = state_path(API_KEY_FILE)
+    if not os.path.exists(path):
+        return regenerate_api_key()
+    with open(path) as handle:
+        return handle.read().strip()
+
+
+def regenerate_api_key():
+    path = state_path(API_KEY_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    key = secrets.token_hex(16)
+    temporary = f"{path}.{secrets.token_hex(4)}.new"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        handle.write(key)
+    os.replace(temporary, path)
+    return key

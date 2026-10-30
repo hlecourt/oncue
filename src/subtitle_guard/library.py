@@ -44,14 +44,14 @@ def scan_folder(root, apply, queue=False):
     return 0
 
 
-def watch(roots, apply):
+def watch(folders, apply):
     settings["source"] = "watch"
-    log("watch.started", f"watching {len(roots)} roots interval={configuration.value('watch_seconds')}s apply={apply}", roots=roots, applied=apply,
+    log("watch.started", f"watching {len(folders)} folders interval={configuration.value('watch_seconds')}s apply={apply}", folders=folders, applied=apply,
         interval=configuration.value("watch_seconds"))
     while True:
         queued = 0
-        for root in roots:
-            for video, subtitle, neighbours in library_items(root):
+        for folder in folders:
+            for video, subtitle, neighbours in library_items(folder):
                 queued += queue_if_changed(video, subtitle, neighbours, apply)
         if queued:
             log("watch.changes-queued", f"{queued} new or changed subtitles queued", jobs=queued)

@@ -21,6 +21,7 @@ DECISION_PATTERN = re.compile(r"[a-z][a-z-]{1,30}")
 WEAK_MINUTES_PATTERN = re.compile(r"(\d+(,\d+)*)?")
 BANDS = ("", "high", "medium", "low", "none")
 DRY_RUN = "dry-run"
+FORCED_TAG = ".forced."
 WRITING_DECISIONS = (DECISION["fixed"], DECISION["audio_synced"], DECISION["best_effort"])
 RESULT = f"case when applied = 0 and decision in ({', '.join(repr(decision) for decision in WRITING_DECISIONS)}) then '{DRY_RUN}' else decision end"
 COLUMNS = ("time", "subtitle", "provider", "decision", "reference", "matched_before", "matched", "weak_minutes", "note", "confidence", "band", "changes",
@@ -71,6 +72,8 @@ def has_report(subtitle):
 
 
 def needs_review(row):
+    if FORCED_TAG in os.path.basename(row["subtitle"]).lower():
+        return False
     if not row["applied"] and row["decision"] == DECISION["fixed"]:
         return True
     return row["decision"] not in SETTLED_DECISIONS or bool(row["weak_minutes"]) or row["band"] == "low"

@@ -30,6 +30,8 @@ test.describe.serial("from Review to a fixed subtitle", () => {
 
   test("Review lists both subtitles with plain reasons", async ({ page }) => {
     await page.goto("/")
+    await expect(page.getByText("Report mode: nothing is written.")).toBeVisible()
+    await expect(page.getByRole("link", { name: "Change the mode in Settings" })).toBeVisible()
     await expect(page.getByRole("link", { name: LATE })).toBeVisible()
     await expect(page.getByRole("cell", { name: "Belongs to S01E03", exact: true })).toBeVisible()
     await expect(page).toHaveTitle(/^\(2\) Review/)
@@ -56,6 +58,19 @@ test.describe.serial("from Review to a fixed subtitle", () => {
     await expect(page.getByText(/changed since this page was opened/)).toBeVisible()
     expect(readFileSync(file, "utf8")).toContain("LIGNE 1")
     writeFileSync(file, before)
+    await page.getByRole("link", { name: "Back to Review" }).click()
+    await expect(page.getByRole("heading", { level: 1, name: "Review" })).toBeVisible()
+    await page.goBack()
+    await expect(page.getByLabel("Line 1:", { exact: false }).first()).toBeVisible({ timeout: 60_000 })
+    await page.getByRole("button", { name: "+1 s" }).click()
+    await expect(page.getByText("2 changes, not saved").first()).toBeVisible()
+    await page.getByRole("link", { name: "Back to Review" }).click()
+    await expect(page.getByRole("alertdialog", { name: "Leave without saving?" })).toBeVisible()
+    await page.getByRole("button", { name: "Cancel" }).click()
+    await expect(page.getByRole("heading", { level: 1, name: LATE })).toBeVisible()
+    await page.getByRole("link", { name: "Back to Review" }).click()
+    await page.getByRole("button", { name: "Discard" }).click()
+    await expect(page.getByRole("heading", { level: 1, name: "Review" })).toBeVisible()
     expect(problems.filter((problem) => !problem.includes("409"))).toEqual([])
   })
 
@@ -96,7 +111,7 @@ test.describe.serial("from Review to a fixed subtitle", () => {
 
   test("History shows the fix and Settings saves a change", async ({ page }) => {
     await page.goto("/history")
-    await expect(page.getByText("Proposal applied").first()).toBeVisible()
+    await expect(page.getByText("Proposal applied").filter({ visible: true }).first()).toBeVisible()
     await page.goto("/settings")
     await page.getByLabel("Keep every version for (days)").fill("12")
     await page.getByRole("button", { name: "Save 1 change" }).click()

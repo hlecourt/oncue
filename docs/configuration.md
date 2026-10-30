@@ -11,7 +11,8 @@ Install the wheel attached to a release: it carries the built web UI. A clone ha
 
 It needs Python 3.11 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
 locks. The `web` extra adds the UI (FastAPI and uvicorn); the Bazarr hook, the CLI and the workers only need numpy. The `audio`
-extra adds ffsubsync for videos without any embedded subtitle track.
+extra adds ffsubsync for videos without any embedded subtitle track. Set `SUBTITLE_GUARD_ROOTS` to your media folders (or
+`SUBTITLE_GUARD_LIBRARY` without Bazarr): nothing is written anywhere until it is set, whatever the mode.
 
 ## The Bazarr hook
 
@@ -85,7 +86,7 @@ wins and shows as locked there.
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
 | `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
-| `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only changes subtitles under these folders, and none when unset |
+| `SUBTITLE_GUARD_ROOTS` | the allowed folders: subtitles are only changed under these folders, and none at all when unset |
 | `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` (`0.0.0.0` in the image) |
 | `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / unset; beyond loopback a password is required, generated once when unset |
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs`, where the linuxserver.io Bazarr image keeps ffsubsync; empty in the image, which installs it |
@@ -99,7 +100,7 @@ wins and shows as locked there.
 watch. Only one supervisor can run on a state directory. A worker that dies is restarted and its job requeued; a job that killed
 its worker three times is marked failed. SIGTERM stops every role and the tools they started. Alignment runs in parallel; full
 file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A Bazarr download that is not
-trusted becomes a `blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found
+trusted becomes a `blacklist` job, then a `replacement-check` 15 minutes later that keeps the best version tried if Bazarr found
 nothing else.
 
 ```

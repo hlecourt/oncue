@@ -14,6 +14,11 @@ SRT = "".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 
 LONG_SRT = "".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 2)}\nline {number}\n\n" for number in range(1, 80))
 
 
+@pytest.fixture(autouse=True)
+def extracted_soundtrack(monkeypatch):
+    monkeypatch.setattr(audio, "extract_soundtrack", lambda video, soundtrack: None)
+
+
 def fake_ffsubsync(offsets, calls, on_run=None, speech=None):
     def run_tool(command, seconds):
         if command[2] == audio.SPEECH_SCRIPT:
@@ -36,7 +41,7 @@ def fake_ffsubsync(offsets, calls, on_run=None, speech=None):
 
 
 def test_an_audio_sync_is_never_written_on_its_own_and_waits_as_a_proposal(tmp_path, monkeypatch):
-    from subtitle_guard import guard, review
+    from subtitle_guard import guard, review_actions, storage
     from subtitle_guard.catalog import proposal_for
     from subtitle_guard.files import file_hash
     subtitle = tmp_path / "movie.fr.srt"
@@ -50,13 +55,13 @@ def test_an_audio_sync_is_never_written_on_its_own_and_waits_as_a_proposal(tmp_p
     proposal = proposal_for(str(subtitle), file_hash(str(subtitle)))
     assert proposal["kind"] == "audio" and proposal["timings"][0][0] == 6.5
     assert not os.listdir(audio.state_path("audio-work"))
-    applied = review.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle))
-    assert applied["decision"] == DECISION["approved"] and parse_subtitle(str(subtitle))["cues"][0][0] == 6.5 and review.has_backup(str(subtitle))
+    applied = review_actions.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle))
+    assert applied["decision"] == DECISION["approved"] and parse_subtitle(str(subtitle))["cues"][0][0] == 6.5 and storage.backup_folders(str(subtitle))
     assert proposal_for(str(subtitle), file_hash(str(subtitle))) is None
 
 
 def test_a_proposal_for_an_older_version_of_the_file_is_never_applied(tmp_path, monkeypatch):
-    from subtitle_guard import guard, review
+    from subtitle_guard import guard, review_actions, storage
     from subtitle_guard.errors import EditRefusedError
     from subtitle_guard.files import file_hash
     subtitle = tmp_path / "movie.fr.srt"
@@ -68,8 +73,8 @@ def test_a_proposal_for_an_older_version_of_the_file_is_never_applied(tmp_path, 
     newer = LONG_SRT.replace("line 1\n", "LINE 1\n", 1)
     subtitle.write_text(newer)
     with pytest.raises(EditRefusedError):
-        review.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle), seen)
-    assert subtitle.read_text() == newer and not review.has_backup(str(subtitle))
+        review_actions.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle), seen)
+    assert subtitle.read_text() == newer and not storage.backup_folders(str(subtitle))
 
 
 def test_an_offset_at_the_edge_is_retried_without_framerate_and_refused_when_still_large(tmp_path, monkeypatch):
