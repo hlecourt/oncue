@@ -1,0 +1,43 @@
+name: traffic
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archive:
+    # GitHub keeps traffic for 14 days only: every day is kept on the traffic branch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Archive views, clones, referrers and paths
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::warning::TRAFFIC_TOKEN is not set: nothing archived"; exit 0; fi
+          git switch traffic 2>/dev/null || git switch --orphan traffic
+          day=$(date -u +%F)
+          mkdir -p referrers paths
+          for kind in views clones; do gh api "repos/$GITHUB_REPOSITORY/traffic/$kind" > "latest-$kind.json"; done
+          gh api "repos/$GITHUB_REPOSITORY/traffic/popular/referrers" > "referrers/$day.json"
+          gh api "repos/$GITHUB_REPOSITORY/traffic/popular/paths" > "paths/$day.json"
+          python3 - <<'EOF'
+          import json, os
+          for kind in ("views", "clones"):
+              archive = json.load(open(f"{kind}.json")) if os.path.exists(f"{kind}.json") else {}
+              for entry in json.load(open(f"latest-{kind}.json"))[kind]:
+                  archive[entry["timestamp"][:10]] = {"count": entry["count"], "uniques": entry["uniques"]}
+              json.dump(dict(sorted(archive.items())), open(f"{kind}.json", "w"), indent=1)
+              os.remove(f"latest-{kind}.json")
+          EOF
+          git add views.json clones.json referrers paths
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --quiet -m "Archive traffic of $day" || exit 0
+          git push --quiet origin traffic
