@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 First public version.
 
 ### Added
