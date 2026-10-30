@@ -31,6 +31,12 @@ SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosnif
                                                 "base-uri 'self'")}
 
 
+def session_cookie(port):
+    """The cookie name of the instance on port. Browsers keep cookies per host name rather than
+    per port, so two instances on one host would overwrite each other's session under one name."""
+    return f"{SESSION_COOKIE}_{port}"
+
+
 async def guard(request, call_next):
     current_locale.set(locale_from(request.headers.get("accept-language")))
     if request.url.path not in request.app.state.open_paths and not trusted_host(request):
@@ -82,7 +88,7 @@ def refusal(status, code, message):
 
 
 def current_session(request: Request):
-    return session_for(request.cookies.get(SESSION_COOKIE, "")) if request.app.state.login_required else None
+    return session_for(request.cookies.get(request.app.state.session_cookie, "")) if request.app.state.login_required else None
 
 
 def login_needed(request):

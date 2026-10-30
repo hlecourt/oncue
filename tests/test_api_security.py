@@ -94,6 +94,18 @@ def test_the_session_cookie_is_http_only_and_strict(protected):
     assert SESSION_COOKIE in cookie and "HttpOnly" in cookie and "SameSite=strict" in cookie
 
 
+def test_instances_on_different_ports_name_their_session_cookies_after_the_port():
+    names = {port: create_app("127.0.0.1", port).state.session_cookie for port in (8484, 8486)}
+    assert names[8484] != names[8486]
+    for port, name in names.items():
+        assert name == f"{SESSION_COOKIE}_{port}"
+
+
+def test_the_login_cookie_is_named_for_the_instance(protected):
+    answer = protected.post("/api/session", json={"user": "admin", "password": PASSWORD})
+    assert answer.headers["set-cookie"].startswith(protected.app.state.session_cookie + "=")
+
+
 def test_the_engine_cli_and_bazarr_hook_never_import_the_web_stack():
     blocked = "import sys\nfor name in ('fastapi', 'uvicorn', 'starlette', 'pydantic'):\n    sys.modules[name] = None\n"
     script = blocked + "import oncue.cli, oncue.bazarr, oncue.worker\nprint('ok')"

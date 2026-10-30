@@ -17,7 +17,7 @@ from .auth import configure
 from .front import add_front
 from .i18n import tr
 from .routes import activity, commands, media, review, session, settings, stats, status, subtitles, system
-from .security import SECURITY_HEADERS, guard, new_csrf_token, require_user
+from .security import SECURITY_HEADERS, guard, new_csrf_token, require_user, session_cookie
 
 HOST = os.environ.get("ONCUE_UI_HOST", "127.0.0.1")
 PORT = int(os.environ.get("ONCUE_UI_PORT", "8484"))
@@ -25,11 +25,12 @@ MAX_CONNECTIONS = 32
 KEEP_ALIVE_SECONDS = 5
 
 
-def create_app(host=HOST):
+def create_app(host=HOST, port=PORT):
     base = configuration.value("url_base")
     app = FastAPI(title="OnCue", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.auth_mode = configuration.value("auth_mode")
     app.state.login_required = configure(host)
+    app.state.session_cookie = session_cookie(port)
     app.state.trusted_proxies = trusted_proxies()
     app.state.anonymous_csrf = new_csrf_token()
     app.state.open_paths = {f"{prefix}{path}" for prefix in {"", base} for path in ("/health", "/ready")}
@@ -48,7 +49,7 @@ def create_app(host=HOST):
 
 def serve_api(host=HOST, port=PORT):
     logs.settings["source"] = "web"
-    app = create_app(host)
+    app = create_app(host, port)
     log("web.listening", f"HTTP listening on {host}:{port} auth={'password' if app.state.login_required else 'none (loopback only)'}", host=host, port=port)
     uvicorn.run(app, host=host, port=port, proxy_headers=False, server_header=False, date_header=False, limit_concurrency=MAX_CONNECTIONS,
                 timeout_keep_alive=KEEP_ALIVE_SECONDS, log_config=None, access_log=False)
