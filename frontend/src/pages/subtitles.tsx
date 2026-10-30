@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { FilesIcon } from "lucide-react"
 import { useDeferredValue, useState } from "react"
 
-import { ConfidenceBadge, EmptyState, PageHeader, ToneDot, toneOf } from "@/components/status"
+import { ConfidenceBadge, EmptyState, LoadError, PageHeader, ToneDot, toneOf } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -36,6 +36,7 @@ export function SubtitlesPage() {
         {listing.data && <span className="text-sm text-muted-foreground">{total === 1 ? t("{count} subtitle", { count: total }) : t("{count} subtitles", { count: total })}</span>}
       </div>
       {listing.isPending && <Skeleton className="h-64 w-full" />}
+      {listing.error && <LoadError error={listing.error} onRetry={() => listing.refetch()} />}
       {listing.data && rows.length === 0 && <EmptyState icon={<FilesIcon />} title={query ? t("No subtitle matches") : t("No subtitle checked yet")}>{query ? t("Try a shorter search.") : t("Scan the library from the System page.")}</EmptyState>}
       {rows.length > 0 && (
         <div className="overflow-hidden rounded-lg border">

@@ -30,6 +30,7 @@ SUBTITLE_GUARD_ROOTS, SUBTITLE_GUARD_HOOK_DIR (serve copies the package there fo
 
 import getpass
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -60,90 +61,40 @@ from .storage import check_state_folder
 from .worker import run_workers, supervise, worker_roles
 
 HOOK_FIELDS = ("video", "subtitle", "language", "provider", "subtitle_id", "media_id", "series_id")
+DEFAULT_LOG_EVENTS = 50
+UNBOUNDED = math.inf
+
+
+class UsageError(SubtitleGuardError):
+    pass
 
 
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 2
-    command = sys.argv[1]
-    arguments, flags, workers = parse_options(sys.argv[2:])
-    apply, queue = flags["--apply"], flags["--queue"]
+    try:
+        arguments, flags, workers = parse_options(sys.argv[2:])
+    except UsageError as error:
+        return refuse(error)
     try:
         check_state_folder()
     except ConfigError as error:
         print(f"subtitle-guard: {error}", file=sys.stderr)
         return 2
     lower_io_priority()
-    if command == "hook" and len(arguments) >= 6:
-        return hook(arguments, queue or queue_enabled())
-    if command == "check" and len(arguments) == 2:
-        outcome = evaluate_and_fix(arguments[0], arguments[1], apply)
-        report(arguments[1], "check", outcome, applied=apply)
-        print(describe(outcome))
-        return 0
-    if command == "enqueue" and len(arguments) == 2:
-        print(f"queued job {jobs.enqueue(jobs.KIND['check'], {'video': arguments[0], 'subtitle': arguments[1], 'apply': apply})}")
-        return 0
-    if command == "scan-series" and len(arguments) == 1:
-        return scan_series(int(arguments[0]), apply, queue)
-    if command == "scan-movies":
-        return scan_movies(apply, queue)
-    if command == "scan-all":
-        for series in bazarr_get("/api/series?start=0&length=-1")["data"]:
-            scan_series(series["sonarrSeriesId"], apply, queue)
-        return scan_movies(apply, queue)
-    if command == "scan-folder" and len(arguments) == 1:
-        return scan_folder(arguments[0], apply, queue)
-    if command == "watch" and arguments:
-        report_startup(command, roots=arguments, applied=apply)
-        return watch(arguments, apply)
-    if command == "worker":
-        report_startup(command, workers=workers)
-        return run_workers(workers)
-    if command in ("ui", "serve"):
-        try:
-            from .api import app as web
-        except ImportError:
-            print("subtitle-guard: the web UI needs the web extra: pip install 'subtitle-guard[web]'", file=sys.stderr)
-            return 2
-    if command == "ui":
-        report_startup(command, ui_host=web.HOST, ui_port=web.PORT)
-        web.serve_api()
-        return 0
-    if command == "serve":
-        if os.environ.get("SUBTITLE_GUARD_HOOK_DIR"):
-            install_hook_package(os.environ["SUBTITLE_GUARD_HOOK_DIR"])
-        report_startup(command, workers=configuration.value("workers"), ui_host=web.HOST, ui_port=web.PORT, roots=configuration.value("watched_folders"),
-                       applied=apply or configuration.value("mode") == MODE["fix"], queue=queue_enabled())
-        return supervise(serve_roles(apply, workers, web.serve_api), lambda: serve_roles(apply, workers, web.serve_api))
-    if command == "calibrate-audio" and arguments:
-        calibrate_audio(arguments[0], int(arguments[1]) if len(arguments) > 1 and arguments[1].isdigit() else None)
-        return 0
-    if command == "status":
-        print(json.dumps(jobs.counts(), indent=1))
-        return 0
-    if command == "jobs":
-        for item in jobs.recent(arguments[0] if arguments else None):
-            print(f"{item['id']:6d} {item['status']:8s} {item['kind']:12s} {item['decision'] or '':14s} {item['confidence'] if item['confidence'] is not None else '':>3} "
-                  f"{item['confidence_band'] or '':6s} {item['finished'] or item['created']}  {os.path.basename(item['arguments'].get('subtitle', ''))}")
-        return 0
-    if command == "job" and len(arguments) == 1:
-        item = jobs.job(int(arguments[0]))
-        print(json.dumps(item, indent=1) if item else "no such job")
-        return 0 if item else 1
-    if command == "retry" and len(arguments) == 1:
-        requeued = jobs.requeue(int(arguments[0]))
-        print("requeued" if requeued else "only a finished or failed job can be retried")
-        return 0 if requeued else 1
-    if command == "needs-human":
-        return print_needs_human()
-    if command == "set-password":
-        return set_password(arguments[0] if arguments else DEFAULT_USER)
-    if command == "log":
-        return print_log(int(arguments[0]) if arguments else 50, flags["--problems"])
-    if command == "try-another" and len(arguments) == 2:
-        return try_another_subtitle(*arguments)
+    minimum, maximum, run = COMMANDS.get(sys.argv[1], (0, 0, None))
+    if run is None or not minimum <= len(arguments) <= maximum:
+        print(__doc__)
+        return 2
+    try:
+        return run(arguments, flags, workers)
+    except UsageError as error:
+        return refuse(error)
+
+
+def refuse(error):
+    print(f"subtitle-guard: {error}", file=sys.stderr)
     print(__doc__)
     return 2
 
@@ -154,12 +105,138 @@ def parse_options(raw):
         if raw[index] in flags:
             flags[raw[index]] = True
         elif raw[index] == "--workers" and index + 1 < len(raw):
-            workers = int(raw[index + 1])
+            workers = whole_number(raw[index + 1])
             index += 1
         else:
             arguments.append(raw[index])
         index += 1
     return arguments, flags, workers
+
+
+def whole_number(text):
+    try:
+        return int(text)
+    except ValueError:
+        raise UsageError(f"{text!r} is not a whole number") from None
+
+
+def run_hook(arguments, flags, workers):
+    return hook(arguments, flags["--queue"] or queue_enabled())
+
+
+def run_check(arguments, flags, workers):
+    outcome = evaluate_and_fix(arguments[0], arguments[1], flags["--apply"])
+    report(arguments[1], "check", outcome, applied=flags["--apply"])
+    print(describe(outcome))
+    return 0
+
+
+def run_enqueue(arguments, flags, workers):
+    print(f"queued job {jobs.enqueue(jobs.KIND['check'], {'video': arguments[0], 'subtitle': arguments[1], 'apply': flags['--apply']})}")
+    return 0
+
+
+def run_scan_series(arguments, flags, workers):
+    return scan_series(whole_number(arguments[0]), flags["--apply"], flags["--queue"])
+
+
+def run_scan_movies(arguments, flags, workers):
+    return scan_movies(flags["--apply"], flags["--queue"])
+
+
+def run_scan_all(arguments, flags, workers):
+    for series in bazarr_get("/api/series?start=0&length=-1")["data"]:
+        scan_series(series["sonarrSeriesId"], flags["--apply"], flags["--queue"])
+    return scan_movies(flags["--apply"], flags["--queue"])
+
+
+def run_scan_folder(arguments, flags, workers):
+    return scan_folder(arguments[0], flags["--apply"], flags["--queue"])
+
+
+def run_watch(arguments, flags, workers):
+    report_startup("watch", folders=arguments, applied=flags["--apply"])
+    return watch(arguments, flags["--apply"])
+
+
+def run_worker(arguments, flags, workers):
+    report_startup("worker", workers=workers)
+    return run_workers(workers)
+
+
+def run_ui(arguments, flags, workers):
+    web = web_module()
+    if web is None:
+        return 2
+    report_startup("ui", ui_host=web.HOST, ui_port=web.PORT)
+    web.serve_api()
+    return 0
+
+
+def run_serve(arguments, flags, workers):
+    web = web_module()
+    if web is None:
+        return 2
+    apply = flags["--apply"]
+    if os.environ.get("SUBTITLE_GUARD_HOOK_DIR"):
+        install_hook_package(os.environ["SUBTITLE_GUARD_HOOK_DIR"])
+    report_startup("serve", workers=configuration.value("workers"), ui_host=web.HOST, ui_port=web.PORT, folders=configuration.value("watched_folders"),
+                   applied=apply or configuration.value("mode") == MODE["fix"], queue=queue_enabled())
+    return supervise(serve_roles(apply, workers, web.serve_api), lambda: serve_roles(apply, workers, web.serve_api))
+
+
+def web_module():
+    try:
+        from .api import app as web
+    except ImportError:
+        print("subtitle-guard: the web UI needs the web extra: pip install 'subtitle-guard[web]'", file=sys.stderr)
+        return None
+    return web
+
+
+def run_calibrate_audio(arguments, flags, workers):
+    calibrate_audio(arguments[0], int(arguments[1]) if len(arguments) > 1 and arguments[1].isdigit() else None)
+    return 0
+
+
+def run_status(arguments, flags, workers):
+    print(json.dumps(jobs.counts(), indent=1))
+    return 0
+
+
+def run_jobs(arguments, flags, workers):
+    for item in jobs.recent(arguments[0] if arguments else None):
+        print(f"{item['id']:6d} {item['status']:8s} {item['kind']:12s} {item['decision'] or '':14s} {item['confidence'] if item['confidence'] is not None else '':>3} "
+              f"{item['confidence_band'] or '':6s} {item['finished'] or item['created']}  {os.path.basename(item['arguments'].get('subtitle', ''))}")
+    return 0
+
+
+def run_job(arguments, flags, workers):
+    item = jobs.job(whole_number(arguments[0]))
+    print(json.dumps(item, indent=1) if item else "no such job")
+    return 0 if item else 1
+
+
+def run_retry(arguments, flags, workers):
+    requeued = jobs.requeue(whole_number(arguments[0]))
+    print("requeued" if requeued else "only a finished or failed job can be retried")
+    return 0 if requeued else 1
+
+
+def run_needs_human(arguments, flags, workers):
+    return print_needs_human()
+
+
+def run_set_password(arguments, flags, workers):
+    return set_password(arguments[0] if arguments else DEFAULT_USER)
+
+
+def run_log(arguments, flags, workers):
+    return print_log(whole_number(arguments[0]) if arguments else DEFAULT_LOG_EVENTS, flags["--problems"])
+
+
+def run_try_another(arguments, flags, workers):
+    return try_another_subtitle(*arguments)
 
 
 def hook(arguments, queue):
@@ -227,3 +304,27 @@ def serve_roles(apply, workers, serve_web):
     if folders:
         roles["watch"] = (watch, (tuple(folders), apply or configuration.value("mode") == MODE["fix"]))
     return roles
+
+
+COMMANDS = {
+    "hook": (6, UNBOUNDED, run_hook),
+    "check": (2, 2, run_check),
+    "enqueue": (2, 2, run_enqueue),
+    "scan-series": (1, 1, run_scan_series),
+    "scan-movies": (0, UNBOUNDED, run_scan_movies),
+    "scan-all": (0, UNBOUNDED, run_scan_all),
+    "scan-folder": (1, 1, run_scan_folder),
+    "watch": (1, UNBOUNDED, run_watch),
+    "worker": (0, UNBOUNDED, run_worker),
+    "ui": (0, UNBOUNDED, run_ui),
+    "serve": (0, UNBOUNDED, run_serve),
+    "calibrate-audio": (1, UNBOUNDED, run_calibrate_audio),
+    "status": (0, UNBOUNDED, run_status),
+    "jobs": (0, UNBOUNDED, run_jobs),
+    "job": (1, 1, run_job),
+    "retry": (1, 1, run_retry),
+    "needs-human": (0, UNBOUNDED, run_needs_human),
+    "set-password": (0, UNBOUNDED, run_set_password),
+    "log": (0, UNBOUNDED, run_log),
+    "try-another": (2, 2, run_try_another),
+}

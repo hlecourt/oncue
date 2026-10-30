@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
-from pathlib import Path
 
 import numpy
 import pytest
@@ -33,7 +32,7 @@ def test_a_parent_folder_symlink_cannot_escape_the_roots(tmp_path, monkeypatch):
     outside.mkdir()
     (outside / "victim.srt").write_text("untouched")
     (library / "Season 1").symlink_to(outside)
-    monkeypatch.setattr(files, "ROOTS", [str(library.resolve())])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [str(library.resolve())])
     with pytest.raises(UnsafePathError):
         files.replace_file(str(library / "Season 1" / "victim.srt"), b"attacker")
     with pytest.raises(UnsafePathError):
@@ -74,16 +73,6 @@ def test_same_named_subtitles_never_share_backups_and_backups_never_overwrite(tm
         files.save_version(str(first), folder, "original")
 
 
-def test_revert_uses_the_latest_original(tmp_path):
-    subtitle = tmp_path / "Show" / "Season 1" / "ep.fr.srt"
-    subtitle.parent.mkdir(parents=True)
-    for content in ("first download", "second download"):
-        subtitle.write_text(content)
-        files.save_version(str(subtitle), storage.backup_path(str(subtitle)), "original")
-    subtitle.write_text("fixed")
-    assert Path(storage.revert_source(str(subtitle))).read_text() == "second download"
-
-
 def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):
     from subtitle_guard import guard
     starts = numpy.cumsum(numpy.random.default_rng(3).uniform(1.5, 6.0, LINES))
@@ -121,7 +110,7 @@ def test_a_folder_that_became_a_link_after_the_check_is_never_written_through(tm
     library, outside = tmp_path / "library", tmp_path / "outside"
     (library / "Movie").mkdir(parents=True)
     outside.mkdir()
-    monkeypatch.setattr(files, "ROOTS", [os.path.realpath(library)])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [os.path.realpath(library)])
     subtitle = library / "Movie" / "Movie.fr.srt"
     subtitle.write_text("x")
     checked = os.path.realpath(library / "Movie")

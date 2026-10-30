@@ -7,6 +7,7 @@ import math
 import os
 import re
 import statistics
+import time
 from collections import Counter
 from contextlib import closing
 from datetime import date, datetime, timedelta
@@ -34,10 +35,23 @@ VERDICTS = {DECISION["kept"]: "in_sync", DECISION["fixed"]: "sure_fix", DECISION
             DECISION["wrong_episode"]: "rejected", DECISION["best_effort"]: "rejected"}
 LANGUAGE = re.compile(r"^[a-z]{2,3}(-[a-z]{2,4})?$")
 NOT_LANGUAGES = {"hi", "sdh", "cc", "forced", "default", "srt", "ass", "ssa", "vtt"}
+FOLDER_SIZE_SECONDS = 300
+MAX_PERIODS = 8
+PERIODS = {}
+FOLDER_SIZES = {}
 
 
 def dashboard(days=None, today=None):
     today = today or date.today()
+    key = (state_path(), days, last_report_id(), today)
+    if key not in PERIODS:
+        if len(PERIODS) >= MAX_PERIODS:
+            PERIODS.clear()
+        PERIODS[key] = summarize_period(days, today)
+    return {**PERIODS[key], "now": current_activity()}
+
+
+def summarize_period(days, today):
     since = (datetime.combine(today, datetime.min.time()) - timedelta(days=days - 1)).isoformat(timespec="seconds") if days else ""
     rows = period_reports(since)
     latest = list({row["subtitle"]: row for row in rows}.values())
@@ -46,15 +60,20 @@ def dashboard(days=None, today=None):
     automatic = [row for row in rows if automatic_fix(row)]
     shifts = [shift for shift in (main_shift(row) for row in fixes) if shift is not None]
     return {
-        "subtitles": sum(os.path.exists(row["subtitle"]) for row in latest), "checks": len(rows),
+        "subtitles": sum(row["decision"] != DECISION["deleted"] for row in latest), "checks": len(rows),
         "fixed_on_their_own": len(automatic), "found_not_written": sum(row["decision"] == DECISION["fixed"] and not row["applied"] for row in rows),
         "lines_realigned": sum(moved_lines(row) for row in written), "median_offset": round(statistics.median(abs(shift) for shift in shifts), 2) if shifts else None,
         "undone": undone(rows), "per_day": per_day(rows, today), "weekly": weekly(rows, today),
         "confidence": confidence_bins(fixes), "offsets": offset_bins(shifts), "providers": providers(rows),
         "languages": tally(language(row["subtitle"]) for row in latest), "references": tally(reference_kind(row["reference"]) for row in latest),
         "speed_fixes": tally(label for label in (speed_label(row) for row in fixes) if label),
-        "check_time": check_time(rows), "records": records(rows, written, since), "now": now(),
+        "check_time": check_time(rows), "records": records(rows, written, since),
     }
+
+
+def last_report_id():
+    with closing(jobs.connect()) as connection:
+        return connection.execute("select max(id) from reports").fetchone()[0]
 
 
 def tally(names):
@@ -182,19 +201,28 @@ def records(rows, written, since):
     with closing(jobs.connect()) as connection:
         asked = connection.execute("select count(*) from jobs where kind = ? and created >= ?", (jobs.KIND["blacklist"], since)).fetchone()[0]
         retried = connection.execute("select decision from jobs where kind = ? and status = ? and created >= ?",
-                                     (jobs.KIND["retry_check"], jobs.STATUS["done"], since)).fetchall()
+                                     (jobs.KIND["replacement_check"], jobs.STATUS["done"], since)).fetchall()
     return {"largest_offset": abs(main_shift(largest)) if largest and main_shift(largest) else None,
             "most_parts": len(most_parts["changes"].get("parts") or []) if most_parts else 0, "fastest_check": min(seconds) if seconds else None,
             "replacements": asked, "replacements_in_sync": sum(row["decision"] == DECISION["kept"] for row in retried), "replacements_checked": len(retried),
             "edits_by_hand": sum(row["decision"] == DECISION["manual"] for row in rows)}
 
 
-def now():
+def current_activity():
     with closing(jobs.connect()) as connection:
         statuses = dict(connection.execute("select status, count(*) from jobs group by status").fetchall())
         last = connection.execute("select max(time) from reports").fetchone()[0]
     supervisor = storage.read_json(state_path("supervisor.json")) if os.path.exists(state_path("supervisor.json")) else {}
     workers = worker_health()
     return {"queued": statuses.get(jobs.STATUS["queued"], 0), "running": statuses.get(jobs.STATUS["running"], 0), "workers": sum(workers.values()),
-            "workers_expected": len(workers), "last_check": last, "audio_cache_bytes": folder_bytes(state_path("audio-copies")), "audio_cache_limit": CACHE_BYTES,
-            "backups_bytes": folder_bytes(storage.BACKUP_DIRECTORY), "started": (supervisor or {}).get("started") if workers else None}
+            "workers_expected": len(workers), "last_check": last, "audio_cache_bytes": recent_folder_bytes(state_path("audio-copies")),
+            "audio_cache_limit": CACHE_BYTES, "backups_bytes": recent_folder_bytes(storage.BACKUP_DIRECTORY), "started": (supervisor or {}).get("started") if workers else None}
+
+
+def recent_folder_bytes(folder):
+    measured = FOLDER_SIZES.get(folder)
+    if measured and time.monotonic() - measured[0] < FOLDER_SIZE_SECONDS:
+        return measured[1]
+    size = folder_bytes(folder)
+    FOLDER_SIZES[folder] = (time.monotonic(), size)
+    return size

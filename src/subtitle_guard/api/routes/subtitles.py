@@ -1,22 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """One subtitle: what the guard knows about it, its proposal and parts, its saved versions, and its lines next to the video's."""
 
+import hashlib
 import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
 from ... import review
-from ...catalog import known_ids
+from ...catalog import known_ids, proposal_for
 from ...catalog import subtitle_id as known_id
-from ...files import file_hash, inside_roots
+from ...files import file_hash, inside_allowed_folders, read_regular
 from ...library import SUBTITLE_EXTENSIONS, external_subtitles
 from ...reports import latest_reports, report_history
 from ...storage import backup_folders
 from ...subtitles import parse_subtitle
 from ..i18n import tr
 from ..lookup import known_path, usable
-from ..presentation import folder_label, result_words
+from ..presentation import TONE, folder_label, result_words
 from ..schemas import Line, Lines, Part, Sibling, SubtitleDetail, SubtitleList, SubtitleRow, Version
 from ..security import require_user
 from .review import current_proposal, summary
@@ -40,26 +41,31 @@ def list_subtitles(q: str = Query("", max_length=200), offset: int = Query(0, ge
 
 
 def listable(path):
-    return path.lower().endswith(SUBTITLE_EXTENSIONS) and not os.path.islink(path) and inside_roots(path)
+    return path.lower().endswith(SUBTITLE_EXTENSIONS) and not os.path.islink(path) and inside_allowed_folders(path)
 
 
 @router.get("/{subtitle_id}", operation_id="getSubtitle")
 def get_subtitle(subtitle_id: str) -> SubtitleDetail:
     path = known_path(subtitle_id)
     video = review.video_for(path)
-    latest = next(iter(report_history(path, limit=1)), None)
-    words, tone = result_words(latest) if latest else (tr("Not checked yet"), "neutral")
     proposal = current_proposal(path)
-    diagnosis = review.diagnose(video, path) if video else None
+    diagnosis = (review.diagnose(video, path) if video else None) or {}
     changes = (proposal or {}).get("changes") or {}
-    parts = changes.get("parts") or (diagnosis or {}).get("parts") or []
+    parts = changes.get("parts") or diagnosis.get("parts") or []
     return SubtitleDetail(id=subtitle_id, name=os.path.basename(path), folder=folder_label(path), video=os.path.basename(video) if video else None,
-                          version=file_hash(path), decision=latest["decision"] if latest else None, words=words, tone=tone,
-                          confidence=int(latest["confidence"]) if latest and latest["confidence"] else None, band=(latest or {}).get("band") or "none",
-                          checked=latest["time"] if latest else None, reference=(latest or {}).get("reference") or "", proposal=summary(proposal),
+                          version=file_hash(path), **latest_result(path), proposal=summary(proposal),
                           parts=[Part(**{key: part[key] for key in ("first", "last", "lines", "shift")}) for part in parts],
-                          scale=changes.get("scale") or (diagnosis or {}).get("scale") or 1.0, versions=versions(path),
+                          scale=changes.get("scale") or diagnosis.get("scale") or 1.0, versions=versions(path),
                           from_bazarr=bool(video) and review.came_from_bazarr(video, path), siblings=siblings(path, video))
+
+
+def latest_result(path):
+    latest = next(iter(report_history(path, limit=1)), None)
+    if latest is None:
+        return {"decision": None, "words": tr("Not checked yet"), "tone": TONE["neutral"], "confidence": None, "band": "none", "checked": None, "reference": ""}
+    words, tone = result_words(latest)
+    return {"decision": latest["decision"], "words": words, "tone": tone, "confidence": int(latest["confidence"]) if latest["confidence"] else None,
+            "band": latest["band"] or "none", "checked": latest["time"], "reference": latest["reference"] or ""}
 
 
 def siblings(path, video):
@@ -71,9 +77,8 @@ def siblings(path, video):
         other = os.path.join(folder, name)
         if other == path or not usable(other) or review.video_for(other) != video:
             continue
-        latest = next(iter(report_history(other, limit=1)), None)
-        words, tone = result_words(latest) if latest else (tr("Not checked yet"), "neutral")
-        found.append(Sibling(id=known_id(other, video), name=name, words=words, tone=tone))
+        result = latest_result(other)
+        found.append(Sibling(id=known_id(other, video), name=name, words=result["words"], tone=result["tone"]))
     return found
 
 
@@ -81,13 +86,18 @@ def siblings(path, video):
 def get_lines(subtitle_id: str) -> Lines:
     path = known_path(subtitle_id)
     video = review.video_for(path)
-    cues = parse_subtitle(path)["cues"]
+    content = read_regular(path)
+    version = hashlib.sha1(content).hexdigest()
+    cues = parse_subtitle(path, raw=content)["cues"]
     reference = review.readable_reference(video, path, len(cues)) if video else None
-    texts = (review.reference_texts(video, reference) or [(start, end, "") for start, end in zip(reference["starts"], reference["ends"], strict=False)]) if reference else []
-    proposal = current_proposal(path)
-    return Lines(version=file_hash(path), lines=[Line(start=start, end=end, text=review.clean(text)) for start, end, text in cues],
-                 reference=[Line(start=float(start), end=float(end), text=review.clean(text)) for start, end, text in texts],
-                 proposal=proposal["timings"] if proposal else None)
+    proposal = proposal_for(path, version)
+    return Lines(version=version, lines=[Line(start=start, end=end, text=review.clean(text)) for start, end, text in cues],
+                 reference=reference_lines(video, reference) if reference else [], proposal=proposal["timings"] if proposal else None)
+
+
+def reference_lines(video, reference):
+    texts = review.reference_texts(video, reference) or [(start, end, "") for start, end in zip(reference["starts"], reference["ends"], strict=False)]
+    return [Line(start=float(start), end=float(end), text=review.clean(text)) for start, end, text in texts]
 
 
 def versions(path):

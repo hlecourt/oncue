@@ -2,27 +2,28 @@
 """Who may call the API: the host and origin checks, request limits and security headers for every response, and the session and CSRF checks
 the routes depend on."""
 
+import asyncio
 import hmac
 import ipaddress
-import os
 import secrets
+import threading
 import urllib.parse
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..configuration import AUTH_MODE
-from ..storage import state_path
-from .auth import LOOPBACK_HOSTS, session_for
+from .auth import LOCKOUT_SECONDS, LOOPBACK_HOSTS, api_key, locked_out, record_failure, record_success, session_for, verify
 from .i18n import current_locale, locale_from, tr
 
 SESSION_COOKIE = "subtitle_guard_session"
 CSRF_HEADER = "X-CSRF-Token"
 API_KEY_HEADER = "X-Api-Key"
-API_KEY_FILE = "api-key"
 MAX_BODY_BYTES = 64 * 1024
+BODY_SECONDS = 30
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
+LOGIN_LOCK = threading.Lock()
 LOCAL_HOST_SUFFIXES = (".local", ".lan", ".home.arpa", ".internal", ".localdomain")
 SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "Cache-Control": "no-store",
                     "Content-Security-Policy": ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
@@ -42,6 +43,10 @@ async def guard(request, call_next):
         length = request.headers.get("content-length", "0")
         if not (length.isascii() and length.isdigit()) or int(length) > MAX_BODY_BYTES:
             return refusal(413, "too_large", tr("The request is too large."))
+        try:
+            await asyncio.wait_for(request.body(), BODY_SECONDS)
+        except TimeoutError:
+            return refusal(408, "too_slow", tr("The request took too long to arrive."))
     response = await call_next(request)
     for name, value in SECURITY_HEADERS.items():
         if name not in response.headers:
@@ -127,9 +132,10 @@ def forwarded(request):
 
 def ip_or_none(text):
     try:
-        return ipaddress.ip_address(text)
+        address = ipaddress.ip_address(text)
     except ValueError:
         return None
+    return address.ipv4_mapped if address.version == 6 and address.ipv4_mapped else address
 
 
 def same_secret(given, expected):
@@ -139,26 +145,6 @@ def same_secret(given, expected):
 def valid_api_key(request):
     given = request.headers.get(API_KEY_HEADER, "")
     return bool(given) and same_secret(given, api_key())
-
-
-def api_key():
-    path = state_path(API_KEY_FILE)
-    if not os.path.exists(path):
-        return regenerate_api_key()
-    with open(path) as handle:
-        return handle.read().strip()
-
-
-def regenerate_api_key():
-    path = state_path(API_KEY_FILE)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    key = secrets.token_hex(16)
-    temporary = f"{path}.{secrets.token_hex(4)}.new"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w") as handle:
-        handle.write(key)
-    os.replace(temporary, path)
-    return key
 
 
 def expected_csrf(request):
@@ -186,6 +172,18 @@ def require_csrf(request: Request):
     has_body = request.headers.get("content-length", "0") not in ("", "0")
     if has_body and request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
         raise HTTPException(415, {"code": "json_only", "message": tr("Send JSON.")})
+
+
+def password_accepted(request, user, password):
+    client = client_address(request)
+    with LOGIN_LOCK:
+        if locked_out(client):
+            raise HTTPException(429, {"code": "locked_out", "message": tr("Too many wrong attempts. Wait {minutes} minutes and try again.", minutes=LOCKOUT_SECONDS // 60)})
+        if not verify(user, password):
+            record_failure(client)
+            return False
+    record_success(client)
+    return True
 
 
 def new_csrf_token():

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from subtitle_guard import configuration, files, storage
+from subtitle_guard.api import auth
 from subtitle_guard.api.app import create_app
 from subtitle_guard.api.security import API_KEY_HEADER, CSRF_HEADER
 from subtitle_guard.errors import ConfigError
@@ -47,7 +48,7 @@ def test_invalid_settings_are_refused_and_nothing_is_saved(change):
 
 
 def test_watched_folders_must_be_inside_the_allowed_folders(tmp_path, monkeypatch):
-    monkeypatch.setattr(files, "ROOTS", [str(tmp_path / "media")])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [str(tmp_path / "media")])
     client = local_client()
     answer = client.patch("/api/settings", json={"changes": {"watched_folders": [str(tmp_path / "elsewhere")]}})
     assert answer.json()["code"] == "outside_allowed_folders"
@@ -67,14 +68,38 @@ def test_automatic_audio_writes_need_a_clean_calibration_first():
 def test_an_api_key_opens_the_api_without_a_session_and_can_be_replaced(monkeypatch):
     monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
     client = TestClient(create_app("0.0.0.0"), base_url="http://guard.example")
-    assert client.get("/api/status").status_code == 401 and client.get("/api/settings/api-key").status_code == 401
+    assert client.get("/api/status").status_code == 401 and client.post("/api/settings/api-key/reveal", json={"password": PASSWORD}).status_code == 401
     csrf = client.post("/api/session", json={"user": "admin", "password": PASSWORD}).json()["csrf"]
-    key = client.get("/api/settings/api-key").json()["key"]
+    key = client.post("/api/settings/api-key/reveal", json={"password": PASSWORD}, headers={CSRF_HEADER: csrf}).json()["key"]
     outsider = TestClient(client.app, base_url="http://guard.example")
     assert outsider.get("/api/status", headers={API_KEY_HEADER: key}).status_code == 200
     assert outsider.patch("/api/settings", json={"changes": {"keep_days": 7}}, headers={API_KEY_HEADER: key}).status_code == 200
-    new_key = client.post("/api/settings/api-key", headers={CSRF_HEADER: csrf}).json()["key"]
+    new_key = client.post("/api/settings/api-key", json={"password": PASSWORD}, headers={CSRF_HEADER: csrf}).json()["key"]
     assert new_key != key and outsider.get("/api/status", headers={API_KEY_HEADER: key}).status_code == 401
+
+
+def test_with_an_account_the_key_needs_the_password_and_wrong_ones_count_toward_the_lockout(monkeypatch):
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    client = TestClient(create_app("0.0.0.0"), base_url="http://guard.example")
+    client.headers.update({CSRF_HEADER: client.post("/api/session", json={"user": "admin", "password": PASSWORD}).json()["csrf"]})
+    key = auth.api_key()
+    refused = client.post("/api/settings/api-key/reveal", json={})
+    assert refused.status_code == 403 and refused.json()["code"] == "wrong_password"
+    assert client.post("/api/settings/api-key", json={"password": "wrong"}).status_code == 403 and auth.api_key() == key
+    for _ in range(auth.MAX_FAILED_LOGINS - 2):
+        client.post("/api/settings/api-key/reveal", json={"password": "wrong"})
+    assert client.post("/api/settings/api-key/reveal", json={"password": PASSWORD}).status_code == 429
+
+
+def test_without_an_account_the_key_shows_and_changes_without_a_password(monkeypatch):
+    client = local_client()
+    assert client.post("/api/settings/api-key/reveal", json={}).json()["key"] == auth.api_key()
+    assert client.post("/api/settings/api-key", json={}).json()["key"] == auth.api_key()
+    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "local")
+    neighbour = TestClient(create_app("0.0.0.0"), base_url="http://guard.lan", client=("192.168.1.20", 50000))
+    neighbour.headers.update({CSRF_HEADER: neighbour.get("/api/session").json()["csrf"]})
+    assert neighbour.post("/api/settings/api-key/reveal", json={}).json()["key"] == auth.api_key()
 
 
 def test_local_addresses_can_skip_the_login_only_when_asked(monkeypatch):
@@ -92,10 +117,10 @@ def test_local_mode_lets_no_one_in_through_a_proxy_or_a_rebound_name(monkeypatch
     monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "local")
     app = create_app("0.0.0.0")
     proxied = TestClient(app, base_url="https://subtitles.example.com", client=("172.17.0.1", 50000))
-    assert proxied.get("/api/settings/api-key", headers={"X-Forwarded-For": "8.8.8.8"}).status_code == 401
+    assert proxied.post("/api/settings/api-key/reveal", json={}, headers={"X-Forwarded-For": "8.8.8.8"}).status_code == 401
     assert proxied.get("/api/session", headers={"X-Forwarded-For": "8.8.8.8"}).json() == {"login_required": True, "user": None, "csrf": None}
     rebound = TestClient(app, base_url="http://attacker.example", client=("192.168.1.20", 50000))
-    assert rebound.get("/api/settings/api-key").status_code == 401
+    assert rebound.post("/api/settings/api-key/reveal", json={}).status_code == 401
     forged = {"Cookie": "subtitle_guard_csrf=chosen", CSRF_HEADER: "chosen"}
     assert rebound.patch("/api/settings", json={"changes": {"keep_days": 7}}, headers=forged).status_code == 401
 

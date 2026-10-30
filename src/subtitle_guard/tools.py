@@ -17,9 +17,9 @@ STDERR_TAIL_CHARACTERS = 600
 ACTIVE_GROUPS = set()
 
 
-def run_tool(command, timeout):
+def run_tool(command, timeout, pass_fds=()):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True, errors="replace",
-                               start_new_session=True)
+                               start_new_session=True, pass_fds=pass_fds)
     remember_group(process.pid)
     try:
         stdout, stderr = process.communicate(timeout=timeout)

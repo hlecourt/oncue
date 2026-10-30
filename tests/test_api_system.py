@@ -45,7 +45,7 @@ def test_an_unreachable_or_absent_bazarr_is_said_plainly(client, monkeypatch):
         raise OSError("connection refused")
     monkeypatch.setattr(bazarr, "bazarr_get", refuse)
     answer = client.get("/api/system/bazarr").json()
-    assert answer["reachable"] is False and "connection refused" in answer["warnings"][0]["message"]
+    assert answer["reachable"] is False and answer["warnings"][0]["code"] == "unreachable" and "connection refused" not in answer["warnings"][0]["message"]
 
 
 def test_a_scan_through_the_watched_folders_queues_one_check_per_subtitle_and_can_stop(client, tmp_path, monkeypatch):

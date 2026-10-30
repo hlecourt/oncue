@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { type ColumnDef, flexRender, getCoreRowModel, getFilteredRowModel, type RowSelectionState, useReactTable } from "@tanstack/react-table"
 import { cn } from "cn"
-import { CheckCircle2Icon, RefreshCwIcon, ScanSearchIcon } from "lucide-react"
+import { CheckCircle2Icon, InfoIcon, ScanSearchIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { ConfidenceBadge, EmptyState, PageHeader, Stat, ToneDot, toneOf } from "@/components/status"
+import { ConfidenceBadge, EmptyState, LoadError, PageHeader, Stat, ToneDot, toneOf } from "@/components/status"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -15,12 +16,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { STATUS_KEY, useStatus } from "@/hooks/use-status"
+import { REPORT_MODE, useSystem } from "@/hooks/use-system"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
 import { when } from "@/lib/format"
 import { useT } from "@/lib/i18n"
 
 type Item = Schemas["ReviewItem"]
-type Show = "all" | "proposals" | "other"
+const SHOWS = ["all", "proposals", "other"] as const
+type Show = (typeof SHOWS)[number]
 type BulkAction = Schemas["BulkAction"]["action"]
 export const REVIEW_KEY = ["review"]
 const WIDE_ONLY = new Set(["reason", "confidence", "checked"])
@@ -69,6 +72,7 @@ export function ReviewPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const status = useStatus()
+  const system = useSystem()
   const review = useQuery({ queryKey: REVIEW_KEY, queryFn: () => unwrap(api.GET("/api/review")), refetchInterval: 15_000 })
   const history = useQuery({ queryKey: ["history", "groups"], queryFn: () => unwrap(api.GET("/api/history", { params: { query: { limit: 5, result: "fixed" } } })) })
   const [show, setShow] = useState<Show>("all")
@@ -95,35 +99,58 @@ export function ReviewPage() {
     onSuccess: () => toast.success(t("The library scan started."), { description: t("Follow it on the System page.") }),
     onError: (error) => toast.error(error.message),
   })
-  const groups = Object.fromEntries((history.data?.groups ?? []).map((group) => [group.key, group.count]))
+  const checkCount = (history.data?.groups ?? []).reduce((sum, group) => sum + group.count, 0)
+  const latestFix = history.data?.rows[0]
+  const reportMode = system.data?.mode === REPORT_MODE
   const proposals = (review.data ?? []).filter((item) => item.proposal).length
   const selected = Object.keys(selection).length
   const jobs = status.data?.jobs ?? {}
 
+  function pickShow(value: string) {
+    const picked = SHOWS.find((entry) => entry === value)
+    if (picked) setShow(picked)
+  }
+
+  function emptyNote() {
+    if (!history.data) return ""
+    if (latestFix) return t("The latest automatic fix: {name}, {when}.", { name: latestFix.name, when: when(latestFix.time) })
+    if (checkCount > 0) return t("Every subtitle checked so far is settled.")
+    return t("Nothing has been checked yet. Scan the library to start.")
+  }
+
   return (
     <>
-      <PageHeader title={t("Review")} description={t("Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here.")} />
-      <div className="mb-6 grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-6">
+      <PageHeader title={t("Review")} description={reportMode
+        ? t("Subtitles waiting for your decision. In report mode every fix waits here, even one the guard is sure about.")
+        : t("Subtitles waiting for your decision. A fix the guard is sure about is written on its own; everything else waits here.")} />
+      {reportMode && (
+        <Alert className="mb-6">
+          <InfoIcon />
+          <AlertTitle>{t("Report mode: nothing is written.")}</AlertTitle>
+          <AlertDescription>
+            <p>{t("Sure fixes wait here with the other proposals.")} <Link to="/settings" className="font-medium text-foreground underline underline-offset-4">{t("Change the mode in Settings")}</Link></p>
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <Stat label={t("To review")} value={review.data?.length ?? "-"} tone={review.data?.length ? "warn" : "neutral"} />
         <Stat label={t("Proposals")} value={review.data ? proposals : "-"} />
-        <Stat label={t("Fixed automatically")} value={groups.fixed ?? "-"} tone={groups.fixed ? "good" : "neutral"} />
-        <Stat label={t("In sync")} value={groups["in-sync"] ?? "-"} />
         <Stat label={t("Checks waiting")} value={(jobs.queued ?? 0) + (jobs.running ?? 0)} />
         <Stat label={t("Errors")} value={jobs.failed ?? 0} tone={jobs.failed ? "bad" : "neutral"} />
       </div>
       {review.isPending && <Skeleton className="h-64 w-full" />}
-      {review.error && <EmptyState icon={<RefreshCwIcon />} title={t("Review could not be loaded")} action={<Button variant="outline" onClick={() => review.refetch()}>{t("Try again")}</Button>}>{review.error.message}</EmptyState>}
+      {review.error && <LoadError error={review.error} onRetry={() => review.refetch()} title={t("Review could not be loaded")} />}
       {review.data?.length === 0 && (
         <EmptyState icon={<CheckCircle2Icon className="text-success" />} title={t("Nothing to review")}
           action={<Button variant="outline" onClick={() => scan.mutate()} disabled={scan.isPending}><ScanSearchIcon />{t("Scan the library")}</Button>}>
-          {history.data?.rows.length ? t("The latest automatic fix: {name}, {when}.", { name: history.data.rows[0]!.name, when: when(history.data.rows[0]!.time) }) : t("Nothing has been checked yet. Scan the library to start.")}
+          {emptyNote()}
         </EmptyState>
       )}
       {review.data && review.data.length > 0 && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Input placeholder={t("Filter by name, folder or reason")} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-72" aria-label={t("Filter")} />
-            <ToggleGroup type="single" variant="outline" size="sm" value={show} onValueChange={(value) => value && setShow(value as Show)} aria-label={t("Show")}>
+            <ToggleGroup type="single" variant="outline" size="sm" value={show} onValueChange={pickShow} aria-label={t("Show")}>
               <ToggleGroupItem value="all">{t("All")}</ToggleGroupItem>
               <ToggleGroupItem value="proposals">{t("Proposals")}</ToggleGroupItem>
               <ToggleGroupItem value="other">{t("Other")}</ToggleGroupItem>
@@ -131,7 +158,7 @@ export function ReviewPage() {
             {selected > 0 && (
               <div className="ml-auto flex flex-wrap items-center gap-2" role="toolbar" aria-label={t("Selected subtitles")}>
                 <span className="text-sm text-muted-foreground">{t("{count} selected", { count: selected })}</span>
-                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("replacement")}>{t("Ask Bazarr for new versions")}</Button>
+                <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("replacement")}>{t("Ask Bazarr for replacements")}</Button>
                 <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("recheck")}>{t("Check again")}</Button>
                 <Button size="sm" variant="outline" disabled={bulk.isPending} onClick={() => bulk.mutate("keep")}>{t("Keep as is")}</Button>
               </div>

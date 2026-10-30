@@ -4,10 +4,11 @@
 from functools import wraps
 
 from .errors import MatroskaError
+from .files import opened_video
 
 MATROSKA_HEAD_BYTES = 64 * 1024
 MAX_ELEMENT_BYTES = 64 * 1024 * 1024
-MATROSKA_ID = {"segment": 0x18538067, "seek_head": 0x114D9B74, "seek_id": 0x53AB, "seek_position": 0x53AC, "info": 0x1549A966,
+MATROSKA_ID = {"segment": 0x18538067, "seek_head": 0x114D9B74, "seek": 0x4DBB, "seek_id": 0x53AB, "cue_point": 0xBB, "seek_position": 0x53AC, "info": 0x1549A966,
                "timestamp_scale": 0x2AD7B1, "tracks": 0x1654AE6B, "track_entry": 0xAE, "track_number": 0xD7, "cues": 0x1C53BB6B,
                "cue_time": 0xB3, "cue_track_positions": 0xB7, "cue_track": 0xF7, "cue_cluster_position": 0xF1,
                "cue_relative_position": 0xF0, "cue_duration": 0xB2, "block_group": 0xA0, "block": 0xA1, "simple_block": 0xA3}
@@ -25,7 +26,7 @@ def typed_errors(function):
 
 @typed_errors
 def matroska_cue_timings(video, stream_count, split_bitmap_streams):
-    with open(video, "rb") as handle:
+    with opened_video(video) as descriptor, open(descriptor, "rb", closefd=False) as handle:
         index = read_index(handle, stream_count)
         if index is None:
             return {}
@@ -40,7 +41,7 @@ def matroska_cue_timings(video, stream_count, split_bitmap_streams):
 
 @typed_errors
 def matroska_texts(video, stream_count, stream, ass=False):
-    with open(video, "rb") as handle:
+    with opened_video(video) as descriptor, open(descriptor, "rb", closefd=False) as handle:
         index = read_index(handle, stream_count)
         if index is None:
             return None
@@ -64,6 +65,9 @@ def read_index(handle, stream_count):
     if segment_start is None:
         return None
     positions = seek_positions(head, segment_start)
+    if MATROSKA_ID["cues"] not in positions and MATROSKA_ID["seek_head"] in positions:
+        more = read_element(handle, positions[MATROSKA_ID["seek_head"]])
+        positions = {**seeks_in(more, 0, len(more), segment_start), **positions}
     if not all(MATROSKA_ID[name] in positions for name in ("info", "tracks", "cues")):
         return None
     info = read_element(handle, positions[MATROSKA_ID["info"]])
@@ -77,7 +81,9 @@ def read_index(handle, stream_count):
     stream_by_track = {number: index for index, number in enumerate(track_numbers)}
     cues = read_element(handle, positions[MATROSKA_ID["cues"]])
     entries = {}
-    for _, point_start, point_end in ebml_children(cues, 0, len(cues)):
+    for point_id, point_start, point_end in ebml_children(cues, 0, len(cues)):
+        if point_id != MATROSKA_ID["cue_point"]:
+            continue
         fields = list(ebml_children(cues, point_start, point_end))
         ticks = next(unsigned(cues, start, end) for element_id, start, end in fields if element_id == MATROSKA_ID["cue_time"])
         for element_id, start, end in fields:
@@ -144,14 +150,19 @@ def read_element_with_id(handle, position):
 
 def seek_positions(head, segment_start):
     for element_id, start, end in ebml_children(head, segment_start, len(head)):
-        if element_id != MATROSKA_ID["seek_head"]:
-            continue
-        positions = {}
-        for _, seek_start, seek_end in ebml_children(head, start, end):
-            fields = {field: (field_start, field_end) for field, field_start, field_end in ebml_children(head, seek_start, seek_end)}
-            positions[unsigned(head, *fields[MATROSKA_ID["seek_id"]])] = segment_start + unsigned(head, *fields[MATROSKA_ID["seek_position"]])
-        return positions
+        if element_id == MATROSKA_ID["seek_head"]:
+            return seeks_in(head, start, end, segment_start)
     return {}
+
+
+def seeks_in(data, start, end, segment_start):
+    positions = {}
+    for element_id, seek_start, seek_end in ebml_children(data, start, end):
+        if element_id != MATROSKA_ID["seek"]:
+            continue
+        fields = {field: (field_start, field_end) for field, field_start, field_end in ebml_children(data, seek_start, seek_end)}
+        positions[unsigned(data, *fields[MATROSKA_ID["seek_id"]])] = segment_start + unsigned(data, *fields[MATROSKA_ID["seek_position"]])
+    return positions
 
 
 def read_element(handle, position):

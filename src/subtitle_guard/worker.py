@@ -14,9 +14,9 @@ from contextlib import suppress
 from . import configuration, jobs
 from .audio_copy import make_copy
 from .bazarr import (
-    RETRY_WAIT_SECONDS,
-    blacklist_for_retry,
-    finish_retry,
+    REPLACEMENT_WAIT_SECONDS,
+    blacklist_for_replacement,
+    finish_replacement,
     handle_download,
 )
 from .errors import UnknownJobKindError
@@ -76,7 +76,7 @@ def supervise(roles, roles_for=None):
         try:
             send_due()
         except Exception as error:
-            log("webhook.error", f"webhook digest skipped: {type(error).__name__}: {error}", LEVEL["error"])
+            log("webhook.error", f"webhook digest skipped: {type(error).__name__}: {error}", LEVEL["error"], trace=traceback.format_exc(limit=6))
 
 
 def single_supervisor_lock():
@@ -215,13 +215,14 @@ def check(arguments):
 
 
 def prepare_review(video, subtitle, outcome, applied):
-    row = {"applied": applied, "decision": outcome["decision"], "weak_minutes": outcome.get("weak_minutes"), "band": outcome.get("confidence_band")}
+    row = {"subtitle": subtitle, "applied": applied, "decision": outcome["decision"], "weak_minutes": outcome.get("weak_minutes"), "band": outcome.get("confidence_band")}
     if not needs_review(row):
         return
     try:
         diagnose(video, subtitle)
     except Exception as error:
-        log("worker.review-not-prepared", f"could not prepare the review page: {type(error).__name__}: {error}", LEVEL["warning"], subtitle=subtitle)
+        log("worker.review-not-prepared", f"could not prepare the review page: {type(error).__name__}: {error}", LEVEL["warning"], subtitle=subtitle,
+            trace=traceback.format_exc(limit=6))
 
 
 def run_job(job):
@@ -231,15 +232,15 @@ def run_job(job):
     if job["kind"] == jobs.KIND["check"]:
         return check(arguments)
     if job["kind"] == jobs.KIND["blacklist"]:
-        retry = blacklist_for_retry(arguments["video"], arguments["subtitle"])
-        if retry is None:
-            return {"decision": "nothing-pending", "summary": "no pending retry for this subtitle"}
-        jobs.enqueue(jobs.KIND["retry_check"], {"video": arguments["video"], "subtitle": arguments["subtitle"], **retry}, delay_seconds=RETRY_WAIT_SECONDS)
-        return {"decision": "blacklisted", "summary": f"blacklisted {retry['pending']['provider']} {retry['pending']['subtitle_id']}, waiting for another"}
+        replacement = blacklist_for_replacement(arguments["video"], arguments["subtitle"])
+        if replacement is None:
+            return {"decision": "nothing-pending", "summary": "no pending replacement for this subtitle"}
+        jobs.enqueue(jobs.KIND["replacement_check"], {"video": arguments["video"], "subtitle": arguments["subtitle"], **replacement}, delay_seconds=REPLACEMENT_WAIT_SECONDS)
+        return {"decision": "blacklisted", "summary": f"blacklisted {replacement['pending']['provider']} {replacement['pending']['subtitle_id']}, waiting for another"}
     if job["kind"] == jobs.KIND["scan"]:
         return run_scan(arguments["scan"])
     if job["kind"] == jobs.KIND["audio_copy"]:
         return make_copy(arguments["video"], arguments["track"])
-    if job["kind"] == jobs.KIND["retry_check"]:
-        return finish_retry(arguments["video"], arguments["subtitle"], arguments["pending"], arguments["attempts_before"])
+    if job["kind"] == jobs.KIND["replacement_check"]:
+        return finish_replacement(arguments["video"], arguments["subtitle"], arguments["pending"], arguments["attempts_before"])
     raise UnknownJobKindError(f"unknown job kind {job['kind']}")

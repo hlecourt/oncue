@@ -16,6 +16,10 @@ describe("translate", () => {
     expect(translate("A text nobody translated", undefined, "zh")).toBe("A text nobody translated")
   })
 
+  it("translates the same texts in every language", () => {
+    expect(Object.keys(zh).sort()).toEqual(Object.keys(fr).sort())
+  })
+
   it("keeps the same placeholders in every translation", () => {
     for (const catalog of [fr, zh] as Record<string, string>[]) {
       for (const [source, translated] of Object.entries(catalog)) {

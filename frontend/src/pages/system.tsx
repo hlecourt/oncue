@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangleIcon, CheckCircle2Icon, ScanSearchIcon, SquareIcon } from "lucide-react"
-import type { ReactNode } from "react"
 import { toast } from "sonner"
 
 import { PageHeader, ToneDot } from "@/components/status"
@@ -9,17 +8,20 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SYSTEM_KEY, useSystem } from "@/hooks/use-system"
 import { api, unwrap } from "@/lib/api/client"
 import { bytes, when } from "@/lib/format"
 import { useT } from "@/lib/i18n"
 
 const CHECK_WORDS: Record<string, string> = { ffmpeg: "ffmpeg", ffprobe: "ffprobe", ffsubsync: "ffsubsync (audio sync)", state_writable: "State folder",
   backups_writable: "Backup folder", bazarr: "Bazarr", allowed_folders: "Allowed folders" }
+const WARNING_TITLES: Record<string, string> = { unreachable: "Bazarr cannot be reached", not_set_up: "Bazarr is not set up" }
+const SCAN_WORDS: Record<string, string> = { listing: "Listing the library", checking: "Checking", finished: "Finished", stopped: "Stopped" }
 
 export function SystemPage() {
   const t = useT()
   const queryClient = useQueryClient()
-  const system = useQuery({ queryKey: ["system"], queryFn: () => unwrap(api.GET("/api/system")) })
+  const system = useSystem()
   const bazarr = useQuery({ queryKey: ["system", "bazarr"], queryFn: () => unwrap(api.GET("/api/system/bazarr")) })
   const scan = useQuery({
     queryKey: ["scan"],
@@ -39,7 +41,7 @@ export function SystemPage() {
     mutationFn: () => unwrap(api.POST("/api/system/backups/clean-up")),
     onSuccess: (result) => {
       toast.success(t("{count} old backups removed.", { count: result.removed }))
-      queryClient.invalidateQueries({ queryKey: ["system"] })
+      queryClient.invalidateQueries({ queryKey: SYSTEM_KEY })
     },
   })
   const running = scan.data && ["listing", "checking"].includes(scan.data.status)
@@ -54,12 +56,11 @@ export function SystemPage() {
           <CardContent className="space-y-2">
             {!system.data && <Skeleton className="h-40 w-full" />}
             {system.data && Object.entries(system.data.checks).map(([name, check]) => (
-              <Row key={name} label={t(CHECK_WORDS[name] ?? name)} tone={check.ok ? "good" : "bad"}>{check.detail || (check.ok ? t("OK") : t("Not working"))}</Row>
+              <Row key={name} label={t(CHECK_WORDS[name] ?? name)} tone={check.ok ? "good" : "bad"} value={check.detail || (check.ok ? t("OK") : t("Not working"))} />
             ))}
             {system.data && (
-              <Row label={t("Workers")} tone={workers.length && workers.every(([, alive]) => alive) ? "good" : "warn"}>
-                {workers.length ? t("{running} of {total} running", { running: workers.filter(([, alive]) => alive).length, total: workers.length }) : t("None running: checks wait in the queue")}
-              </Row>
+              <Row label={t("Workers")} tone={workers.length && workers.every(([, alive]) => alive) ? "good" : "warn"}
+                value={workers.length ? t("{running} of {total} running", { running: workers.filter(([, alive]) => alive).length, total: workers.length }) : t("None running: checks wait in the queue")} />
             )}
           </CardContent>
         </Card>
@@ -71,7 +72,7 @@ export function SystemPage() {
             {bazarr.data?.warnings.map((warning) => (
               <Alert key={warning.code} variant={["unreachable", "not_set_up"].includes(warning.code) ? "default" : "destructive"}>
                 <AlertTriangleIcon />
-                <AlertTitle>{t(({ unreachable: "Bazarr cannot be reached", not_set_up: "Bazarr is not set up" } as Record<string, string>)[warning.code] ?? "Change this in Bazarr")}</AlertTitle>
+                <AlertTitle>{t(WARNING_TITLES[warning.code] ?? "Change this in Bazarr")}</AlertTitle>
                 <AlertDescription>{warning.message}</AlertDescription>
               </Alert>
             ))}
@@ -82,7 +83,7 @@ export function SystemPage() {
           <CardContent className="space-y-3">
             {scan.data && (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm"><span>{t("{status}, started {when}", { status: t(scanWords(scan.data.status)), when: when(scan.data.started).toLowerCase() })}</span><span className="font-mono tabular-nums">{scan.data.done} / {scan.data.total}</span></div>
+                <div className="flex justify-between text-sm"><span>{t("{status}, started {when}", { status: t(SCAN_WORDS[scan.data.status] ?? scan.data.status), when: when(scan.data.started).toLowerCase() })}</span><span className="font-mono tabular-nums">{scan.data.done} / {scan.data.total}</span></div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={scan.data.total} aria-valuenow={scan.data.done}>
                   <div className="h-full bg-primary transition-all" style={{ width: `${scan.data.total ? (100 * scan.data.done) / scan.data.total : 0}%` }} />
                 </div>
@@ -107,15 +108,11 @@ export function SystemPage() {
   )
 }
 
-function Row({ label, tone, children }: { label: string; tone: "good" | "warn" | "bad"; children: ReactNode }) {
+function Row({ label, tone, value }: { label: string; tone: "good" | "warn" | "bad"; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b pb-2 text-sm last:border-b-0">
       <span className="flex shrink-0 items-center gap-2"><ToneDot tone={tone} />{label}</span>
-      <span className="min-w-0 truncate text-right text-muted-foreground" title={typeof children === "string" ? children : undefined}>{children}</span>
+      <span className="min-w-0 truncate text-right text-muted-foreground" title={value}>{value}</span>
     </div>
   )
-}
-
-function scanWords(status: string) {
-  return ({ listing: "Listing the library", checking: "Checking", finished: "Finished", stopped: "Stopped" } as Record<string, string>)[status] ?? status
 }

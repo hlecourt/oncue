@@ -1,28 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CopyIcon, EyeIcon, LockIcon } from "lucide-react"
-import { useState } from "react"
+import { type FormEvent, useState } from "react"
 import { toast } from "sonner"
 
-import { PageHeader } from "@/components/status"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+import { LoadError, PageHeader } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { useSession } from "@/hooks/use-session"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
 import { useT } from "@/lib/i18n"
 
@@ -42,6 +33,11 @@ const LABELS: Record<string, string> = {
   keep_days: "Keep every version for (days)", webhook_url: "Webhook address", webhook_minutes: "At most one message every (minutes)", auth_mode: "Log in", url_base: "URL base",
 }
 const CHOICES: Record<string, string> = { report: "Report only", fix: "Fix automatically", forms: "Always", local: "Not from private addresses", external: "A reverse proxy handles it" }
+const KEY_PROMPTS = {
+  show: { title: "Show the API key", description: "Enter your password to see the key.", confirm: "Show the key" },
+  renew: { title: "Make a new API key?", description: "Scripts that use the current key stop working until they get the new one.", confirm: "Make a new key" },
+} as const
+type KeyPrompt = keyof typeof KEY_PROMPTS
 
 export function SettingsPage() {
   const t = useT()
@@ -57,6 +53,7 @@ export function SettingsPage() {
     },
     onError: (error) => toast.error(error.message),
   })
+  if (settings.error) return <LoadError error={settings.error} onRetry={() => settings.refetch()} />
   if (!settings.data) return <Skeleton className="h-96 w-full" />
   const byName = Object.fromEntries(settings.data.settings.map((setting) => [setting.name, setting]))
   const changed = Object.keys(draft).length
@@ -128,7 +125,7 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
       )}
       {setting.kind === "number" && <Input id={id} type="number" min={setting.low} max={setting.high} disabled={setting.locked} value={String(value)} onChange={(event) => change(Number(event.target.value))} />}
       {setting.kind === "folders" && (
-        <textarea id={id} rows={3} disabled={setting.locked} value={(value as string[]).join("\n")} placeholder="/data/media/movies"
+        <textarea id={id} rows={3} disabled={setting.locked} value={Array.isArray(value) ? value.join("\n") : ""} placeholder="/data/media/movies"
           onChange={(event) => change(event.target.value.split("\n").map((line) => line.trim()).filter(Boolean))}
           className="w-full rounded-md border bg-transparent px-3 py-2 font-mono text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50" />
       )}
@@ -144,34 +141,59 @@ function Field({ setting, draft, setDraft }: { setting: Setting; draft: Draft; s
 
 function ApiKey() {
   const t = useT()
-  const queryClient = useQueryClient()
-  const [shown, setShown] = useState(false)
-  const key = useQuery({ queryKey: ["api-key"], queryFn: () => unwrap(api.GET("/api/settings/api-key")), enabled: shown })
-  const renew = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/settings/api-key")),
-    onSuccess: (result) => {
-      queryClient.setQueryData(["api-key"], result)
-      setShown(true)
-      toast.success(t("A new API key replaces the old one."))
+  const session = useSession()
+  const needsPassword = Boolean(session.data?.login_required)
+  const [key, setKey] = useState("")
+  const [prompt, setPrompt] = useState<KeyPrompt | null>(null)
+  const [password, setPassword] = useState("")
+  const close = () => {
+    setPrompt(null)
+    setPassword("")
+  }
+  const fetchKey = useMutation({
+    mutationFn: (purpose: KeyPrompt) => unwrap(api.POST(purpose === "renew" ? "/api/settings/api-key" : "/api/settings/api-key/reveal", { body: { password } })),
+    onSuccess: (result, purpose) => {
+      setKey(result.key)
+      close()
+      if (purpose === "renew") toast.success(t("A new API key replaces the old one."))
     },
+    onError: (error) => toast.error(error.message),
   })
+  const show = () => (needsPassword ? setPrompt("show") : fetchKey.mutate("show"))
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (prompt) fetchKey.mutate(prompt)
+  }
   return (
     <Card>
       <CardHeader><CardTitle>{t("API key")}</CardTitle><CardDescription>{t("For scripts and Home Assistant: send it in the X-Api-Key header.")}</CardDescription></CardHeader>
       <CardContent className="flex flex-wrap items-center gap-2">
-        <Input readOnly aria-label={t("API key")} className="w-80 font-mono" value={shown ? key.data?.key ?? "" : "********************************"} />
-        <Button variant="outline" size="icon" aria-label={t("Show the key")} onClick={() => setShown(true)}><EyeIcon /></Button>
-        <Button variant="outline" size="icon" aria-label={t("Copy the key")} disabled={!key.data} onClick={() => navigator.clipboard.writeText(key.data!.key).then(() => toast.success(t("Copied.")))}><CopyIcon /></Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild><Button variant="outline">{t("Make a new key")}</Button></AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("Make a new API key?")}</AlertDialogTitle>
-              <AlertDialogDescription>{t("Scripts that use the current key stop working until they get the new one.")}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter><AlertDialogCancel>{t("Cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => renew.mutate()}>{t("Make a new key")}</AlertDialogAction></AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <Input readOnly aria-label={t("API key")} className="w-80 font-mono" value={key || "********************************"} />
+        <Button variant="outline" size="icon" aria-label={t("Show the key")} disabled={fetchKey.isPending} onClick={show}><EyeIcon /></Button>
+        <Button variant="outline" size="icon" aria-label={t("Copy the key")} disabled={!key} onClick={() => navigator.clipboard.writeText(key).then(() => toast.success(t("Copied.")))}><CopyIcon /></Button>
+        <Button variant="outline" onClick={() => setPrompt("renew")}>{t("Make a new key")}</Button>
+        <Dialog open={prompt !== null} onOpenChange={(open) => !open && close()}>
+          <DialogContent>
+            {prompt && (
+              <form className="grid gap-4" onSubmit={submit}>
+                <DialogHeader>
+                  <DialogTitle>{t(KEY_PROMPTS[prompt].title)}</DialogTitle>
+                  <DialogDescription>{t(KEY_PROMPTS[prompt].description)}</DialogDescription>
+                </DialogHeader>
+                {needsPassword && (
+                  <div className="space-y-2">
+                    <Label htmlFor="api-key-password">{t("Password")}</Label>
+                    <Input id="api-key-password" type="password" autoComplete="current-password" autoFocus value={password} onChange={(event) => setPassword(event.target.value)} />
+                  </div>
+                )}
+                <DialogFooter>
+                  <DialogClose asChild><Button type="button" variant="outline">{t("Cancel")}</Button></DialogClose>
+                  <Button type="submit" disabled={fetchKey.isPending || (needsPassword && !password)}>{t(KEY_PROMPTS[prompt].confirm)}</Button>
+                </DialogFooter>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   )

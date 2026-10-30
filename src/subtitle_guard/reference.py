@@ -10,6 +10,7 @@ import numpy
 
 from .alignment import MIN_CUES
 from .errors import MatroskaError, ProbeError
+from .files import opened_video
 from .logs import LEVEL, log
 from .matroska import matroska_cue_timings
 from .storage import heavy_disk_read, read_json, state_path, write_json
@@ -21,6 +22,7 @@ CUE_PER_PACKET_BITMAP_CODECS = ("dvd_subtitle",)
 SPLIT_BITMAP_CODECS = ("hdmv_pgs_subtitle",)
 BITMAP_MIN_PACKET_BYTES = 100
 EMPTY_TEXT_PACKET_BYTES = 2
+MEDIA_INPUT_OPTIONS = ("-protocol_whitelist", "file", "-format_whitelist", "matroska,webm,mov,mp4,avi,mpegts")
 
 
 def load_reference(video, hearing_impaired=False, subtitle_cue_count=0):
@@ -61,7 +63,7 @@ def choose_reference(tracks, hearing_impaired, subtitle_cue_count):
 
 
 def extract_tracks(video, with_bitmaps=False):
-    streams = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries",
+    streams = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-show_entries",
                           "stream=index,codec_type,codec_name:stream_tags=language,title:stream_disposition=forced,hearing_impaired", "-of", "json", video],
                          video).get("streams", [])
     candidates = [stream for stream in streams if stream.get("codec_type") == "subtitle" and is_reference_candidate(stream)]
@@ -73,13 +75,18 @@ def extract_tracks(video, with_bitmaps=False):
 
 
 def probe_json(command, video):
-    result = run_tool(command, PROBE_SECONDS)
+    result = run_on_video(command, video, PROBE_SECONDS)
     if result.returncode != 0:
         raise ProbeError(f"ffprobe failed on {video}: {stderr_tail(result) or 'exit code ' + str(result.returncode)}")
     try:
         return json.loads(result.stdout or "{}")
     except ValueError as error:
         raise ProbeError(f"ffprobe returned unreadable output for {video}") from error
+
+
+def run_on_video(command, video, timeout):
+    with opened_video(video) as descriptor:
+        return run_tool([f"/dev/fd/{descriptor}" if part == video else part for part in command], timeout, pass_fds=(descriptor,))
 
 
 def read_tracks(video, streams, candidates):
@@ -123,7 +130,7 @@ def cue_times(codec, entries):
 
 def packet_timings(video):
     with heavy_disk_read():
-        packets = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-select_streams", "s", "-show_entries",
+        packets = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-select_streams", "s", "-show_entries",
                               "packet=stream_index,pts_time,duration_time,size", "-of", "json", video], video).get("packets", [])
     timings = {}
     for packet in packets:

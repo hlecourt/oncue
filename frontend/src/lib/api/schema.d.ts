@@ -218,11 +218,27 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Api Key */
-        get: operations["getApiKey"];
+        get?: never;
         put?: never;
         /** New Api Key */
         post: operations["regenerateApiKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/api-key/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal Api Key */
+        post: operations["revealApiKey"];
         delete?: never;
         options?: never;
         head?: never;
@@ -833,6 +849,14 @@ export interface components {
             lines: number;
             /** Shift */
             shift: number;
+        };
+        /** PasswordConfirmation */
+        PasswordConfirmation: {
+            /**
+             * Password
+             * @default
+             */
+            password: string;
         };
         /** Problem */
         Problem: {
@@ -1634,14 +1658,18 @@ export interface operations {
             };
         };
     };
-    getApiKey: {
+    regenerateApiKey: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmation"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -1652,16 +1680,47 @@ export interface operations {
                     "application/json": components["schemas"]["ApiKey"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    regenerateApiKey: {
+    revealApiKey: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmation"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -1670,6 +1729,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiKey"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

@@ -5,7 +5,7 @@ import time
 import numpy
 import pytest
 
-from subtitle_guard import bazarr, files, guard, review, state, storage
+from subtitle_guard import bazarr, files, guard, review_actions, state, storage
 from subtitle_guard.catalog import proposal_for
 from subtitle_guard.files import file_hash
 from subtitle_guard.outcome import DECISION
@@ -29,10 +29,10 @@ def test_a_fix_below_high_confidence_is_never_written_and_waits_as_a_proposal(la
     monkeypatch.setattr(guard, "confidence", lambda outcome: (65, "medium"))
     outcome = guard.evaluate_and_fix("/movie.mkv", str(late_subtitle), True)
     assert outcome["decision"] == DECISION["proposed"] and outcome["proposed"] == DECISION["fixed"]
-    assert late_subtitle.read_text() == LATE and not review.has_backup(str(late_subtitle))
+    assert late_subtitle.read_text() == LATE and not storage.backup_folders(str(late_subtitle))
     proposal = proposal_for(str(late_subtitle), file_hash(str(late_subtitle)))
     assert proposal["kind"] == "aligned" and proposal["confidence"] == 65
-    applied = review.apply_proposal("/movie.mkv", str(late_subtitle))
+    applied = review_actions.apply_proposal("/movie.mkv", str(late_subtitle))
     assert applied["decision"] == DECISION["approved"]
     assert numpy.max(numpy.abs(numpy.array([start for start, _, _ in parse_subtitle(str(late_subtitle))["cues"]]) - (STARTS + 7))) < 0.25
 
@@ -40,7 +40,7 @@ def test_a_fix_below_high_confidence_is_never_written_and_waits_as_a_proposal(la
 def test_a_high_confidence_fix_is_written_with_a_backup(late_subtitle, monkeypatch):
     monkeypatch.setattr(guard, "confidence", lambda outcome: (92, "high"))
     outcome = guard.evaluate_and_fix("/movie.mkv", str(late_subtitle), True)
-    assert outcome["decision"] == DECISION["fixed"] and review.has_backup(str(late_subtitle))
+    assert outcome["decision"] == DECISION["fixed"] and storage.backup_folders(str(late_subtitle))
     assert numpy.max(numpy.abs(numpy.array([start for start, _, _ in parse_subtitle(str(late_subtitle))["cues"]]) - (STARTS + 7))) < 0.25
     assert proposal_for(str(late_subtitle), file_hash(str(late_subtitle))) is None
 
@@ -48,7 +48,7 @@ def test_a_high_confidence_fix_is_written_with_a_backup(late_subtitle, monkeypat
 def test_report_only_writes_nothing_but_keeps_the_fix_ready(late_subtitle, monkeypatch):
     monkeypatch.setattr(guard, "confidence", lambda outcome: (92, "high"))
     outcome = guard.evaluate_and_fix("/movie.mkv", str(late_subtitle), False)
-    assert outcome["decision"] == DECISION["fixed"] and late_subtitle.read_text() == LATE and not review.has_backup(str(late_subtitle))
+    assert outcome["decision"] == DECISION["fixed"] and late_subtitle.read_text() == LATE and not storage.backup_folders(str(late_subtitle))
     assert proposal_for(str(late_subtitle), file_hash(str(late_subtitle)))["kind"] == "aligned"
 
 
@@ -87,13 +87,13 @@ def test_a_proposal_from_bazarr_asks_for_a_replacement_and_keeps_a_copy_until_th
     monkeypatch.setattr(bazarr, "request_another", lambda video, subtitle, queued: requested.append(subtitle))
     bazarr.handle_download(str(video), str(subtitle), "fr", "opensubtitles", "42", "7")
     recorded = state.load_state(str(video), str(subtitle))
-    assert requested == [str(subtitle)] and recorded["pending_retry"]["provider"] == "opensubtitles"
+    assert requested == [str(subtitle)] and recorded["pending_replacement"]["provider"] == "opensubtitles"
     assert os.path.exists(recorded["attempts"][0]["copy"])
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {
         "decision": "fixed", "confidence_band": "high", "reference": "eng-text", "after": {"matched": 0.95}})
     subtitle.write_text(LATE.replace("line 1\n", "LINE 1\n", 1))
     bazarr.handle_download(str(video), str(subtitle), "fr", "podnapisi", "43", "7")
-    assert "pending_retry" not in state.load_state(str(video), str(subtitle)) and not os.path.exists(bazarr.attempt_folder(str(subtitle)))
+    assert "pending_replacement" not in state.load_state(str(video), str(subtitle)) and not os.path.exists(bazarr.attempt_folder(str(subtitle)))
 
 
 def test_backups_keep_the_first_version_the_last_ones_and_anything_recent(tmp_path, monkeypatch):
@@ -153,4 +153,4 @@ def test_report_only_mode_writes_nothing_and_asks_bazarr_for_nothing(tmp_path, m
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: calls.append(apply) or {"decision": "rejected"})
     monkeypatch.setattr(bazarr, "request_another", lambda video, subtitle, queued: pytest.fail("Bazarr was asked in report-only mode"))
     bazarr.handle_download(str(video), str(subtitle), "fr", "opensubtitles", "42", "7")
-    assert calls == [False] and "pending_retry" not in state.load_state(str(video), str(subtitle))
+    assert calls == [False] and "pending_replacement" not in state.load_state(str(video), str(subtitle))

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Per-subtitle state kept between checks: the attempts Bazarr made and the retry waiting to be sent."""
+"""Per-subtitle state kept between checks: the attempts Bazarr made and the replacement waiting to be sent."""
 
 import fcntl
 import hashlib
@@ -9,17 +9,23 @@ from contextlib import contextmanager
 from .logs import LEVEL, log
 from .storage import read_json, state_path, write_json
 
+RENAMED_KEYS = {"pending_retry": "pending_replacement"}
+
 
 def load_state(video, subtitle):
     path = state_file(video, subtitle)
     if not os.path.exists(path):
         return {}
     try:
-        return read_json(path)
+        state = read_json(path)
     except ValueError as error:
         os.replace(path, path + ".corrupt")
         log("state.corrupt", f"unreadable state set aside as {path}.corrupt, starting empty: {error}", LEVEL["warning"], video=video, subtitle=subtitle)
         return {}
+    for old, new in RENAMED_KEYS.items():
+        if old in state:
+            state[new] = state.pop(old)
+    return state
 
 
 def save_state(video, subtitle, state):

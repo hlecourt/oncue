@@ -2,9 +2,12 @@
 """Settings a person can change from the UI. An environment variable always wins over what the UI saved, and the allowed folders and the
 confidence threshold are deliberately not here: they are set by the environment only."""
 
+import http.client
+import ipaddress
 import json
 import os
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 
 from .errors import ConfigError
@@ -15,6 +18,7 @@ SOURCE = {"environment": "environment", "settings": "settings", "default": "defa
 MODE = {"report": "report", "fix": "fix"}
 AUTH_MODE = {"forms": "forms", "local": "local", "external": "external"}
 CACHE = {}
+CLOUD_METADATA_ADDRESSES = (ipaddress.ip_address("fd00:ec2::254"), ipaddress.ip_address("100.100.100.200"))
 
 
 @dataclass(frozen=True)
@@ -123,3 +127,38 @@ def validated(setting, new):
     if setting.kind == "path" and new and (not new.startswith("/") or new.endswith("/") or "//" in new or ".." in new):
         raise ConfigError(f"{setting.variable} must look like /subtitle-guard")
     return new
+
+
+def outbound_opener(redirect_handler):
+    return urllib.request.build_opener(CheckedHTTPHandler, CheckedHTTPSHandler, redirect_handler)
+
+
+def refuse_link_local_peer(connection):
+    address = ipaddress.ip_address(connection.sock.getpeername()[0])
+    if address.version == 6 and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if address.is_link_local or address in CLOUD_METADATA_ADDRESSES:
+        connection.close()
+        raise ConfigError(f"refusing to call {address}: link-local and cloud metadata addresses are never called")
+
+
+class CheckedHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        super().connect()
+        refuse_link_local_peer(self)
+
+
+class CheckedHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        super().connect()
+        refuse_link_local_peer(self)
+
+
+class CheckedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, request):
+        return self.do_open(CheckedHTTPConnection, request)
+
+
+class CheckedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, request):
+        return self.do_open(CheckedHTTPSConnection, request)

@@ -43,6 +43,25 @@ First public version.
 - Global JSON-lines log with component.past-tense events, startup and health reports.
 - Docker image for amd64 and arm64 running as a non-root user, with pinned bases, a hashed dependency lock and a health check;
   the web UI is built in a separate stage, so Node is never in the image.
+- A Dashboard of what the guard did over a period, with subtitle providers ranked by the verdict on arrival; a Subtitles page
+  listing every checked subtitle, each opening in the editor; the editor's History tab and a menu to switch to another
+  subtitle of the same video.
+- The UI in English, French and Simplified Chinese, from the browser's language or the menu, API sentences included.
+- In the editor, lines placed one by one are held and later moves of every line go around them; leaving with unsaved changes
+  asks to save, discard or stay; the sound is drawn by wavesurfer.js; Enter picks a line on the timeline, and phones get the
+  sound track, speed and zoom in the menu.
+- In `report` mode, Review says that nothing is written. Forced subtitles stay out of Review. Pages that fail to load say so
+  and offer to try again.
+
+### Fixed
+
+- Check again wrote fixes in `report` mode and without allowed folders; it now follows the mode like every other check.
+- A finished library scan, or one whose listing failed, kept new scans from starting.
+- The lines shown in the editor and the version they are saved against now come from the same read of the file, and a delete
+  checks the version under the subtitle's lock.
+- The Dashboard and the audio preparation no longer re-read every check, every file or the video's tracks on each refresh.
+- The Matroska Cues index is read again: a CRC-32 or padding element in the seek head made every read fall back to the slower
+  packet scan. A second seek head at the end of the file is followed too.
 
 ### Security
 
@@ -54,3 +73,17 @@ First public version.
   trusted proxy. CSRF tokens are always held by the server, bodies need a `Content-Length`, the UI changes files only under
   `SUBTITLE_GUARD_ROOTS` and through folders opened without following links, and a new Bazarr address needs its key again.
 - Every subtitle read and write is confined to `SUBTITLE_GUARD_ROOTS`, never follows a symlink and only touches regular files.
+- Nothing is written anywhere, from the UI, the hook, the scans or the CLI, until `SUBTITLE_GUARD_ROOTS` is set, and reads go
+  through folders opened without following links, like writes.
+- Bazarr's API key can no longer be redirected: it cannot be emptied while the address comes from Settings, and Bazarr's
+  `config.yaml` is only read for the default address. Calls to Bazarr and the webhook refuse link-local and metadata addresses,
+  and a failed Bazarr check no longer echoes the error.
+- ffmpeg and ffprobe only open local files in supported containers, and ffsubsync only runs on a file they accepted.
+- A password change ends every session and replaces the API key; failed logins also lock the account; the `Secure` cookie flag
+  follows `X-Forwarded-Proto` only from a trusted proxy; IPv4-mapped addresses are judged by their IPv4 address; the API
+  description needs a login.
+- Videos are opened once through folders that refuse links below the allowed folders, and ffprobe, ffmpeg and the Matroska
+  reader work on that open file, so a folder swapped for a link after the check cannot redirect them; ffsubsync only gets a
+  sound file and a subtitle copy made by the guard.
+- With a login, the API key is only shown or replaced after the password is entered again. The account lock never applies to
+  an address that logged in successfully in the last 30 days, and a request body must arrive within 30 seconds.

@@ -32,3 +32,12 @@ export function bytes(count: number) {
   }
   return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`
 }
+
+export function languageName(code: string, language: string) {
+  if (!/^[a-z]{2,3}(-[a-z0-9]+)*$/i.test(code)) return ""
+  try {
+    return new Intl.DisplayNames([language], { type: "language" }).of(code) ?? code
+  } catch {
+    return code
+  }
+}

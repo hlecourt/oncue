@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { cn } from "cn"
+import { LockIcon } from "lucide-react"
 import { type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import WaveSurfer from "wavesurfer.js"
 
@@ -16,6 +17,7 @@ type Props = {
   media: { element: HTMLAudioElement; url: string } | null
   soundNote: ReactNode
   lines: Block[]
+  held: boolean[]
   before: Block | null
   reference: Block[]
   current: number
@@ -125,12 +127,15 @@ export function Timeline(props: Props) {
             return (
               <div key={index} className="contents">
                 <i className={cn("pointer-events-none absolute w-px", index === props.current ? "bg-ours" : "bg-ours/30")} style={{ left, top: 4, height: heights.ours + heights.sound - 4 }} />
-                <button type="button" aria-label={t("Line {number}: {text}", { number: index + 1, text: line.text })} title={line.text}
+                <button type="button" title={line.text}
+                  aria-label={props.held[index] ? t("Line {number}: {text}, placed by hand", { number: index + 1, text: line.text }) : t("Line {number}: {text}", { number: index + 1, text: line.text })}
                   onPointerDown={startDrag(index)} onPointerMove={moveDrag} onPointerUp={endDrag(index)}
+                  onKeyDown={(event) => event.key === "Enter" && props.onPick(index, event.shiftKey)}
                   className={cn("absolute flex cursor-grab items-center overflow-hidden rounded-[5px] px-1.5 text-[11px] whitespace-nowrap active:cursor-grabbing",
                     index === props.current ? "bg-ours-strong font-medium text-white shadow-sm" : "bg-ours-soft text-ours-ink shadow-[inset_2px_0_0_var(--ours)]",
                     inSelection(index) && index !== props.current && "ring-1 ring-ours ring-inset")}
                   style={{ left, width: Math.max(4, (line.end - line.start) * scale), top: 5, height: heights.ours - 10 }}>
+                  {props.held[index] && <LockIcon aria-hidden="true" className="mr-1 size-3 flex-none" />}
                   {line.text}
                 </button>
               </div>
@@ -184,8 +189,7 @@ type SoundProps = { media: { element: HTMLAudioElement; url: string }; peaks: Fl
 
 function SoundTrack({ media, peaks, duration, windowStart, span, width, height, top }: SoundProps) {
   const container = useRef<HTMLDivElement>(null)
-  const surfer = useRef<WaveSurfer | null>(null)
-  const [loads, setLoads] = useState(0)
+  const [readySurfer, setReadySurfer] = useState<WaveSurfer | null>(null)
   const dark = useDark()
 
   useEffect(() => {
@@ -194,23 +198,22 @@ function SoundTrack({ media, peaks, duration, windowStart, span, width, height, 
       container: container.current, media: media.element, url: media.url, peaks: [peaks], duration, height, ...waveColors(),
       cursorWidth: 0, normalize: true, interact: false, hideScrollbar: true, autoScroll: false, autoCenter: false,
     })
-    surfer.current = wave
-    wave.on("ready", () => setLoads((count) => count + 1))
+    wave.on("ready", () => setReadySurfer(wave))
     return () => {
-      surfer.current = null
+      setReadySurfer(null)
       wave.destroy()
     }
   }, [media, peaks, duration, height])
 
   useEffect(() => {
-    surfer.current?.setOptions(waveColors())
-  }, [dark])
+    readySurfer?.setOptions(waveColors())
+  }, [dark, readySurfer])
 
   useEffect(() => {
-    if (!loads || !surfer.current || width <= 0) return
-    surfer.current.zoom(width / span)
-    surfer.current.setScrollTime(windowStart)
-  }, [loads, width, span, windowStart])
+    if (!readySurfer || width <= 0) return
+    readySurfer.zoom(width / span)
+    readySurfer.setScrollTime(windowStart)
+  }, [readySurfer, width, span, windowStart])
 
   return <div ref={container} className="pointer-events-none absolute inset-x-0" style={{ top, height }} aria-hidden="true" />
 }

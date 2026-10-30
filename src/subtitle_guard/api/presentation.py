@@ -9,8 +9,8 @@ from .i18n import tr
 TONE = {"good": "good", "warn": "warn", "bad": "bad", "neutral": "neutral"}
 DECISION_TONES = {"kept": "good", "fixed": "good", "manual": "good", "approved": "good", "rejected": "bad", "wrong-episode": "bad", "best-effort": "warn",
                   "unverified": "neutral", "audio-synced": "warn", "reverted": "neutral", "proposed": "warn", "deleted": "neutral"}
-DRY_RUN_WORDS = {"fixed": "A sure fix was found, not written (dry run)", "audio-synced": "An audio sync was found, not written (dry run)",
-                 "best-effort": "A best version was found, not written (dry run)"}
+NOT_WRITTEN_WORDS = {"fixed": "Sure fix found, not written (report mode)", "audio-synced": "Audio sync found, not written (report mode)",
+                     "best-effort": "Best version found, not written (report mode)"}
 UNSURE_WORDS = {"kept": "Looks in sync, not sure", "fixed": "Fixed, not sure", "manual": "Adjusted by hand, still off in places"}
 BAND_WORDS = {"high": "High confidence", "medium": "Medium confidence", "low": "Low confidence", "none": "No confidence"}
 STARTED_BY = {"hook": "Bazarr", "scan": "Library scan", "watch": "Folder watch", "check": "A check you started", "manual": "You, by hand", "ui": "You, in the UI",
@@ -27,14 +27,20 @@ def result_words(row):
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:
         return tr("Belongs to {episode}", episode=row["note"]), TONE["bad"]
     words = tr(DECISION_WORDS.get(row["decision"], row["decision"]))
-    if not row.get("applied", 1) and row["decision"] in DRY_RUN_WORDS:
-        return tr(DRY_RUN_WORDS[row["decision"]]), TONE["neutral"]
+    if not_written(row):
+        return tr(NOT_WRITTEN_WORDS[row["decision"]]), TONE["neutral"]
     if (row["band"] == "low" or row["weak_minutes"]) and row["decision"] in UNSURE_WORDS:
         return tr(UNSURE_WORDS[row["decision"]]), TONE["warn"]
     return words, DECISION_TONES.get(row["decision"], TONE["neutral"])
 
 
+def not_written(row):
+    return not row.get("applied", 1) and row["decision"] in NOT_WRITTEN_WORDS
+
+
 def review_reason(row, proposal):
+    if not_written(row):
+        return tr(NOT_WRITTEN_WORDS[row["decision"]])
     if proposal:
         return tr("A fix from the sound is ready") if proposal["kind"] == "audio" else tr("A fix from the video's subtitles is ready")
     if row["decision"] == DECISION["wrong_episode"] and row["note"]:

@@ -2,6 +2,7 @@
 """What the editor plays and draws: the light audio copy of a video track (streamed with range requests), its waveform peaks, and a still frame."""
 
 import threading
+from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
@@ -9,6 +10,7 @@ from fastapi.responses import FileResponse, Response
 from ...audio_copy import PEAKS_PER_SECOND, copy_paths, played, ready, request_copy
 from ...errors import ToolError
 from ...preview import audio_tracks, still_frame, video_duration
+from ...storage import file_signature
 from ..i18n import tr
 from ..schemas import AudioRequest, AudioState, AudioTrack
 from ..security import require_csrf, require_user
@@ -17,13 +19,14 @@ from .commands import located
 router = APIRouter(prefix="/subtitles/{subtitle_id}", tags=["media"])
 FRAME_SLOT = threading.Lock()
 MAX_SECONDS = 48 * 3600
+KNOWN_VIDEOS = 32
 
 
 @router.post("/audio", operation_id="prepareAudio", dependencies=[Depends(require_csrf)])
 def prepare_audio(subtitle_id: str, body: AudioRequest) -> AudioState:
     _, video = located(subtitle_id)
     try:
-        tracks, duration = audio_tracks(video), video_duration(video)
+        tracks, duration = video_facts(video, file_signature(video))
     except ToolError as error:
         raise HTTPException(422, {"code": "unreadable_video", "message": tr("The video cannot be read: {reason}", reason=error)}) from error
     if not tracks:
@@ -33,6 +36,12 @@ def prepare_audio(subtitle_id: str, body: AudioRequest) -> AudioState:
         raise HTTPException(422, {"code": "unknown_track", "message": tr("This video has no such audio track.")})
     return AudioState(ready=ready(video, chosen), track=chosen, tracks=[AudioTrack(**track) for track in tracks], duration=duration,
                       job=request_copy(video, chosen), peaks_per_second=PEAKS_PER_SECOND)
+
+
+# the signature is only part of the cache key, so a changed video is probed again
+@lru_cache(maxsize=KNOWN_VIDEOS)
+def video_facts(video, signature):
+    return audio_tracks(video), video_duration(video)
 
 
 @router.get("/audio/{track}", operation_id="streamAudio", dependencies=[Depends(require_user)], response_class=FileResponse)
