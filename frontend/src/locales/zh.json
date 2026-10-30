@@ -351,7 +351,6 @@
   "stopped": "已停止",
   "sure fix": "可靠修正",
   "verdict when the subtitle arrived": "字幕到达时的结论",
-  "written on its own": "自动写入",
   "{count} check": "{count} 次检查",
   "{count} checks": "{count} 次检查",
   "{count} fix": "{count} 个修正",
@@ -387,5 +386,7 @@
   "Enter your password to see the key.": "输入您的密码以查看密钥。",
   "This file changed on disk while you were editing it. Your changes can no longer be saved: reload to get the new version.": "您修改期间，此文件已在磁盘上被更改。您的更改已无法保存：请刷新以获取新版本。",
   "Confirm with your password": "请输入密码确认",
-  "Changing the log in or the URL base needs your password.": "更改登录方式或基础 URL 需要输入密码。"
+  "Changing the log in or the URL base needs your password.": "更改登录方式或基础 URL 需要输入密码。",
+  "sent to Review": "送去待审核",
+  "sure, 80 or more": "可靠，80 及以上"
 }

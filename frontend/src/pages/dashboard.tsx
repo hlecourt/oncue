@@ -113,12 +113,7 @@ function Board({ stats, reportMode, t }: { stats: Stats; reportMode: boolean; t:
       <section className="grid gap-3 lg:grid-cols-2">
         <div className={CARD}>
           <CardHead title={t("Confidence of the fixes found")} />
-          <Bars rule={AUTOMATIC_FROM / 100} bars={stats.confidence.map((count, index) => ({
-            count, tone: index * CONFIDENCE_STEP >= AUTOMATIC_FROM ? "bg-guard" : "bg-to-review",
-            tip: t("confidence {low} to {high}: {count}", { low: index * CONFIDENCE_STEP, high: (index + 1) * CONFIDENCE_STEP, count: fixes(t, count) }),
-          }))} />
-          <Axis labels={["0", "50", "80", "100"]} positions={[0, 50, 80, 100]} />
-          <Key items={[{ label: t("written on its own"), tone: "bg-guard" }, { label: t("Review"), tone: "bg-to-review" }]} />
+          <ConfidenceChart bins={stats.confidence} number={number} t={t} />
         </div>
         <div className={CARD}>
           <CardHead title={t("Offsets found")} />
@@ -254,16 +249,60 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
   )
 }
 
-function Bars({ bars, rule, height = "h-36" }: { bars: { count: number; tone: string; tip: string }[]; rule?: number; height?: string }) {
+function Bars({ bars, rule, height = "h-36", counted }: { bars: { count: number; tone: string; tip: string }[]; rule?: number; height?: string; counted?: boolean }) {
   const top = Math.max(...bars.map((bar) => bar.count), 1)
+  const reach = counted ? 86 : 100
   return (
     <div className={cn("relative flex items-end gap-[2px] border-b", height)} data-chart>
       {bars.map((bar, index) => (
-        <div key={bar.tip} className={cn("flex h-full flex-1 items-end", FOCUS_RING)} tabIndex={index === 0 ? 0 : -1} role="img" aria-label={bar.tip}>
-          <i className={cn("block w-full rounded-t-[4px]", bar.tone)} style={{ height: bar.count ? `max(2px, ${(bar.count / top) * 100}%)` : 0 }} />
+        <div key={bar.tip} className={cn("relative flex h-full flex-1 items-end", FOCUS_RING)} tabIndex={index === 0 ? 0 : -1} role="img" aria-label={bar.tip}>
+          <i className={cn("block w-full rounded-t-[4px]", bar.tone)} style={{ height: bar.count ? `max(2px, ${(bar.count / top) * reach}%)` : 0 }} />
+          {counted && bar.count > 0 && (
+            <span aria-hidden="true" className="absolute inset-x-0 text-center font-mono text-[10px] text-muted-foreground tabular-nums"
+              style={{ bottom: `calc(${(bar.count / top) * reach}% + 2px)` }}>{bar.count}</span>
+          )}
         </div>
       ))}
       {rule !== undefined && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 border-l border-dashed border-foreground" style={{ left: `${rule * 100}%` }} />}
+    </div>
+  )
+}
+
+function ConfidenceChart({ bins, number, t }: { bins: number[]; number: (value: number) => string; t: Translate }) {
+  const threshold = AUTOMATIC_FROM / CONFIDENCE_STEP
+  const firstUsed = bins.findIndex((count) => count > 0)
+  const start = firstUsed < 0 ? 0 : Math.min(Math.floor(firstUsed / 2) * 2, threshold - 4)
+  const shown = bins.slice(start)
+  const sure = bins.slice(threshold).reduce((sum, count) => sum + count, 0)
+  const unsure = bins.slice(0, threshold).reduce((sum, count) => sum + count, 0)
+  const split = ((threshold - start) / shown.length) * 100
+  const surePercent = sure + unsure ? Math.round((sure / (sure + unsure)) * 100) : 0
+  return (
+    <>
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        <Split tone="bg-guard" label={t("sure, 80 or more")} value={number(sure)} share={`${surePercent}%`} />
+        <Split tone="bg-to-review" label={t("sent to Review")} value={number(unsure)} share={`${sure + unsure ? 100 - surePercent : 0}%`} />
+      </div>
+      <div className="relative">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex">
+          <div className="h-full rounded-l-md bg-to-review/10" style={{ width: `${split}%` }} />
+          <div className="h-full flex-1 rounded-r-md bg-guard/10" />
+        </div>
+        <Bars counted rule={split / 100} bars={shown.map((count, offset) => {
+          const low = (start + offset) * CONFIDENCE_STEP
+          return { count, tone: low >= AUTOMATIC_FROM ? "bg-guard" : "bg-to-review", tip: t("confidence {low} to {high}: {count}", { low, high: low + CONFIDENCE_STEP, count: fixes(t, count) }) }
+        })} />
+      </div>
+      <Axis labels={[String(start * CONFIDENCE_STEP), String(AUTOMATIC_FROM), "100"]} positions={[0, split, 100]} />
+    </>
+  )
+}
+
+function Split({ tone, label, value, share }: { tone: string; label: string; value: string; share: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><i className={cn("size-2 flex-none rounded-full", tone)} />{label}</span>
+      <span className="font-mono text-xl font-semibold tracking-tight tabular-nums">{value}{" "}<span className="ml-0.5 text-xs font-normal text-muted-foreground">{share}</span></span>
     </div>
   )
 }
