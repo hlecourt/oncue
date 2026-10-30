@@ -43,7 +43,8 @@ First public version.
 - Global JSON-lines log with component.past-tense events, startup and health reports.
 - Docker image for amd64 and arm64 running as a non-root user, with pinned bases, a hashed dependency lock and a health check;
   the web UI is built in a separate stage, so Node is never in the image.
-- A Dashboard of what the guard did over a period, with subtitle providers ranked by the verdict on arrival; a Subtitles page
+- A Dashboard of what the guard did over a period, with subtitle providers ranked by the verdict on arrival, the share of sure
+  fixes against those sent to Review, and charts readable with the keyboard and screen readers; a Subtitles page
   listing every checked subtitle, each opening in the editor; the editor's History tab and a menu to switch to another
   subtitle of the same video.
 - The UI in English, French and Simplified Chinese, from the browser's language or the menu, API sentences included.
@@ -68,8 +69,10 @@ First public version.
   changed meanwhile, and a save from the editor is always recorded in the history, even when its measure fails.
 - An allowed folder can itself be a watched folder. The Bazarr hook refuses extra arguments instead of misreading them.
 - The editor keeps your changes when the file changes on disk and says so, instead of reloading; long French labels wrap
-  on History, the Dashboard, the System page and the editor on phones; the Dashboard's chart values have text labels for
-  screen readers. The unused `/apply` and `/shift` API routes are removed: `/retime` does both.
+  on History, the Dashboard, the System page and the editor on phones. The unused `/apply` and `/shift` API routes are
+  removed: `/retime` does both.
+- The editor's preview asks for one video frame at a time: the server extracts one at a time and refused the others, which
+  showed on slower machines.
 
 ### Security
 
