@@ -14,8 +14,14 @@ def test_jobs_are_claimed_in_order_and_once():
 
 
 def test_delayed_jobs_wait_for_their_time():
-    jobs.enqueue("retry-check", {"subtitle": "a.srt"}, delay_seconds=60)
+    jobs.enqueue(jobs.KIND["replacement_check"], {"subtitle": "a.srt"}, delay_seconds=60)
     assert jobs.claim(1) is None
+
+
+def test_replacement_checks_queued_under_their_old_name_are_renamed_when_the_database_opens():
+    job_id = jobs.enqueue(jobs.LEGACY_REPLACEMENT_CHECK, {"subtitle": "a.srt"})
+    jobs.PREPARED.clear()
+    assert jobs.job(job_id)["kind"] == jobs.KIND["replacement_check"]
 
 
 def test_finish_fail_and_requeue():

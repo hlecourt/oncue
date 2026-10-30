@@ -5,18 +5,16 @@ import os
 import tempfile
 
 from .errors import ProbeError
-from .reference import probe_json
+from .reference import MEDIA_INPUT_OPTIONS, probe_json, run_on_video
 from .storage import state_path
-from .tools import run_tool, stderr_tail
+from .tools import stderr_tail
 
-CLIP_SECONDS = 60
-CLIP_SAMPLE_RATE = 16000
 PREVIEW_SECONDS = 20
 FRAME_WIDTH = 640
 
 
 def audio_tracks(video):
-    streams = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-select_streams", "a",
+    streams = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-select_streams", "a",
                           "-show_entries", "stream=index,codec_name,channels:stream_tags=language,title:stream_disposition=default,comment", "-of", "json", video],
                          video).get("streams", [])
     tracks = [{"index": stream["index"], "language": stream.get("tags", {}).get("language", ""), "title": stream.get("tags", {}).get("title", ""),
@@ -26,16 +24,9 @@ def audio_tracks(video):
 
 
 def video_duration(video):
-    duration = probe_json(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "format=duration", "-of", "json", video],
+    duration = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-show_entries", "format=duration", "-of", "json", video],
                           video).get("format", {}).get("duration")
     return float(duration) if duration else 0.0
-
-
-def audio_clip(video, start, track):
-    # first_pts=0 pads the clip when the audio stream starts after the video, so clip time + start stays the subtitle clock
-    return extract(["-ss", f"{start:.3f}", "-i", video, "-t", str(CLIP_SECONDS), "-map", f"0:{track}", "-vn", "-sn", "-dn",
-                    "-af", f"aresample={CLIP_SAMPLE_RATE}:async=1:first_pts=0", "-ac", "1", "-c:a", "pcm_s16le", "-map_metadata", "-1", "-f", "wav"],
-                   ".wav", video)
 
 
 def still_frame(video, moment):
@@ -49,8 +40,8 @@ def extract(arguments, suffix, video):
     descriptor, output = tempfile.mkstemp(suffix=suffix, dir=folder)
     os.close(descriptor)
     try:
-        result = run_tool(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file", "-threads", "1", *arguments, "-y", output],
-                          PREVIEW_SECONDS)
+        result = run_on_video(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-threads", "1", *arguments, "-y", output],
+                              video, PREVIEW_SECONDS)
         if result.returncode != 0 or os.path.getsize(output) == 0:
             raise ProbeError(f"ffmpeg could not read {video}: {stderr_tail(result) or 'empty output'}")
         with open(output, "rb") as handle:

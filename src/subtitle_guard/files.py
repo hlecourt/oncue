@@ -12,17 +12,19 @@ import time
 from contextlib import ExitStack, contextmanager, suppress
 
 from . import configuration
-from .errors import SubtitleTooLargeError, UnsafePathError
+from .errors import ProbeError, SubtitleTooLargeError, UnsafePathError
 from .logs import LEVEL, log
 from .storage import backup_folders, backup_path, state_path
 
 MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
-ROOTS = [os.path.realpath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
+CONFIGURED_FOLDERS = [os.path.abspath(root) for root in os.environ.get("SUBTITLE_GUARD_ROOTS", os.environ.get("SUBTITLE_GUARD_LIBRARY", "")).split(os.pathsep) if root]
+ALLOWED_FOLDERS = [os.path.realpath(root) for root in CONFIGURED_FOLDERS]
+SPELLING_OF = {os.path.realpath(root): root for root in CONFIGURED_FOLDERS}
 TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
 
 
-def inside_roots(path):
-    return not ROOTS or any(os.path.realpath(path).startswith(root + os.sep) for root in ROOTS)
+def inside_allowed_folders(path):
+    return not ALLOWED_FOLDERS or any(os.path.realpath(path).startswith(root + os.sep) for root in ALLOWED_FOLDERS)
 
 
 @contextmanager
@@ -43,14 +45,17 @@ def subtitle_locks(*paths):
 
 
 def read_regular(path, confined=True):
-    if confined and not inside_roots(path):
+    absolute = os.path.abspath(path)
+    folder, name = os.path.realpath(os.path.dirname(absolute)), os.path.basename(absolute)
+    if confined and not inside_allowed_folders(os.path.join(folder, name)):
         raise UnsafePathError(f"refusing a file outside SUBTITLE_GUARD_ROOTS: {path}")
-    try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as error:
-        if error.errno == errno.ELOOP:
-            raise UnsafePathError(f"refusing to read a symlink: {path}") from error
-        raise
+    with open_folder(folder) as folder_descriptor:
+        try:
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder_descriptor)
+        except OSError as error:
+            if error.errno == errno.ELOOP:
+                raise UnsafePathError(f"refusing to read a symlink: {path}") from error
+            raise
     with os.fdopen(descriptor, "rb") as handle:
         if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
             raise UnsafePathError(f"refusing to read something that is not a regular file: {path}")
@@ -91,9 +96,41 @@ def remove_file(path):
 def confined(path):
     absolute = os.path.abspath(path)
     folder, name = os.path.realpath(os.path.dirname(absolute)), os.path.basename(absolute)
-    if not inside_roots(os.path.join(folder, name)):
+    if not ALLOWED_FOLDERS:
+        raise UnsafePathError(f"refusing to change {path}: no allowed folder, set SUBTITLE_GUARD_ROOTS to the media folders")
+    if not inside_allowed_folders(os.path.join(folder, name)):
         raise UnsafePathError(f"refusing to change a file outside SUBTITLE_GUARD_ROOTS: {path}")
     return folder, name
+
+
+@contextmanager
+def opened_video(path):
+    located = video_location(os.path.abspath(path))
+    if located is None:
+        raise ProbeError(f"refusing a video outside SUBTITLE_GUARD_ROOTS: {path}")
+    try:
+        with open_folder(os.path.dirname(located)) as folder_descriptor:
+            # O_NONBLOCK so a fifo put in place of the video cannot hang the open
+            descriptor = os.open(os.path.basename(located), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder_descriptor)
+    except (UnsafePathError, OSError) as error:
+        raise ProbeError(f"refusing a video that is or sits behind a link, or cannot be opened: {path}: {error}") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ProbeError(f"refusing a video that is not a regular file: {path}")
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def video_location(absolute):
+    if not ALLOWED_FOLDERS:
+        return os.path.join(os.path.realpath(os.path.dirname(absolute)), os.path.basename(absolute))
+    # links in an allowed folder's own path are the admin's setup; the walk then refuses any link below it
+    for root in ALLOWED_FOLDERS:
+        for spelling in {root, SPELLING_OF.get(root, root)}:
+            if absolute.startswith(spelling + os.sep):
+                return root + absolute[len(spelling):]
+    return None
 
 
 @contextmanager

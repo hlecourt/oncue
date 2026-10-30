@@ -19,7 +19,7 @@ from .audio import audio_fix
 from .catalog import discard_proposal, save_proposal
 from .confidence import confidence
 from .errors import SubtitleTooLargeError, ToolError, UnsafePathError
-from .files import file_hash, save_backup, subtitle_lock
+from .files import confined, file_hash, save_backup, subtitle_lock
 from .logs import LEVEL, log
 from .outcome import CHANGED_REASON, DECISION, FIX_KIND, WORRYING_DECISIONS
 from .reference import load_reference
@@ -59,6 +59,11 @@ def settle(video, subtitle, outcome, fix, apply):
         return {**outcome, "decision": DECISION["proposed"], "proposed": outcome["decision"]}
     if not apply:
         return outcome
+    try:
+        confined(subtitle)
+    except UnsafePathError as error:
+        log("guard.write-refused", str(error), LEVEL["warning"], subtitle=subtitle)
+        return {**outcome, "decision": DECISION["unverified"], "reason": f"not written: {error}"}
     with subtitle_lock(subtitle):
         if file_signature(subtitle) != fix["signature"]:
             log("guard.changed-during-check", "subtitle changed on disk during the check, write skipped", LEVEL["warning"], subtitle=subtitle)

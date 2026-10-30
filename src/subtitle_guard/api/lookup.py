@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from .. import jobs
 from ..catalog import path_for
-from ..files import inside_roots
+from ..files import inside_allowed_folders
 from ..library import SUBTITLE_EXTENSIONS
 from ..reports import has_report
 from .i18n import tr
@@ -21,6 +21,6 @@ def known_path(identity):
 
 
 def usable(path):
-    if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path) or os.path.islink(path) or not inside_roots(path):
+    if not path.lower().endswith(SUBTITLE_EXTENSIONS) or not os.path.isfile(path) or os.path.islink(path) or not inside_allowed_folders(path):
         return False
     return has_report(path) or bool(jobs.for_subtitle(path, limit=1))

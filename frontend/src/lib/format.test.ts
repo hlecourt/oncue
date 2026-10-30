@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from "vitest"
 
-import { bytes, clock, when } from "./format"
+import { bytes, clock, languageName, when } from "./format"
 
 describe("clock", () => {
   it("writes minutes and seconds, with hours only when there are some", () => {
@@ -18,6 +18,15 @@ describe("when", () => {
     expect(when(afternoon.toISOString())).toMatch(/^Today 15.04$/)
     expect(when("not a date")).toBe("not a date")
     expect(when(null)).toBe("")
+  })
+})
+
+describe("languageName", () => {
+  it("names a language code in the chosen language, and gives nothing for what is not a code", () => {
+    expect(languageName("fr", "en")).toBe("French")
+    expect(languageName("pt-BR", "en")).toBe("Brazilian Portuguese")
+    expect(languageName("2020", "en")).toBe("")
+    expect(languageName("", "en")).toBe("")
   })
 })
 

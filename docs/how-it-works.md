@@ -3,7 +3,7 @@
 subtitle-guard compares when each line of a downloaded subtitle starts with when the lines of a subtitle track embedded in the
 video start: the words do not matter, so the reference can be in any language, text or picture.
 
-1. It reads the reference timings from the Matroska Cues index, or with an ffprobe packet scan.
+1. It reads the reference timings from the Matroska Cues index (in about a millisecond), or with an ffprobe packet scan.
 2. It measures how many lines already land within 0.3 s of the reference, against what chance alone would give.
 3. If that is not clearly in sync, it picks the frame rate ratio, then searches the offsets part by part with dynamic
    programming (0.05 s steps over +/-400 s, then 0.1 s over +/-1200 s), using line starts and ends.
@@ -56,4 +56,4 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
   search (about 7 s instead of 2.5 s on a 4-core home server).
 - Lines of a scene that exists in the subtitle but not in the video are placed as well as possible, not removed.
 - Without any embedded subtitle track, timing cannot be verified; the ffsubsync fallback cannot fix a different cut.
-- Subtitles over 20 MB or 20,000 lines are not checked.
+- Subtitles over 20 MB or 8,000 lines are not checked.

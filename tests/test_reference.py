@@ -4,6 +4,7 @@ import shutil
 import subprocess
 
 import pytest
+from media import video_with_reference
 
 from subtitle_guard import reference
 
@@ -52,7 +53,7 @@ def test_a_failed_probe_is_an_error_and_is_never_cached(tmp_path, monkeypatch):
     video.write_bytes(b"not a video")
     subtitle.write_text("".join(f"{number}\n00:{number // 60:02d}:{number % 60:02d},000 --> 00:{number // 60:02d}:{number % 60:02d},500\nline\n\n"
                                 for number in range(1, 120)))
-    monkeypatch.setattr(reference, "run_tool", lambda command, timeout: tools.subprocess.CompletedProcess(command, 1, "", "Input/output error"))
+    monkeypatch.setattr(reference, "run_tool", lambda command, timeout, pass_fds: tools.subprocess.CompletedProcess(command, 1, "", "Input/output error"))
     with pytest.raises(ProbeError):
         reference.load_tracks(str(video))
     assert not os.listdir(storage.state_path("references")) if os.path.isdir(storage.state_path("references")) else True
@@ -92,3 +93,19 @@ def test_an_oversized_matroska_element_is_refused(tmp_path):
     path.write_bytes(bytes([0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
     with open(path, "rb") as handle, pytest.raises(MatroskaError):
         matroska.read_element(handle, 0)
+
+
+def test_the_matroska_index_gives_the_same_timings_as_a_packet_scan(tmp_path, monkeypatch):
+    from subtitle_guard import matroska, reference
+
+    video, starts, _ = video_with_reference(tmp_path)
+    from_index = reference.extract_tracks(str(video))["tracks"]
+    count = len(reference.probe_json(["ffprobe", "-v", "error", *reference.MEDIA_INPUT_OPTIONS, "-show_streams", "-of", "json", str(video)], str(video))["streams"])
+    with open(video, "rb") as handle:
+        assert matroska.read_index(handle, count) is not None
+    monkeypatch.setattr(reference, "matroska_cue_timings", lambda *arguments: {})
+    from_packets = reference.extract_tracks(str(video))["tracks"]
+    assert len(from_index) == len(from_packets) and len(from_index[0]["starts"]) == len(from_packets[0]["starts"])
+    assert from_index[0]["starts"] == pytest.approx(from_packets[0]["starts"], abs=0.001)
+    assert from_index[0]["ends"] == pytest.approx(from_packets[0]["ends"], abs=0.001)
+    assert from_index[0]["starts"][:3] == pytest.approx(list(starts[:3]), abs=0.01)

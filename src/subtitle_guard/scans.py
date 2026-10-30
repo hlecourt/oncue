@@ -13,12 +13,18 @@ from .library import library_items
 from .logs import log
 from .storage import now
 
-STATE = {"listing": "listing", "checking": "checking", "stopped": "stopped"}
+STATE = {"listing": "listing", "checking": "checking", "stopped": "stopped", "finished": "finished"}
+FAILED_LISTING = "select 1 from jobs where kind = ? and json_extract(arguments, '$.scan') = scans.id and status = ?"
+SETTLED_CHECKS = "select count(*) from jobs where kind = ? and json_extract(arguments, '$.scan') = scans.id and status in (?, ?)"
 
 
 def start_scan():
     with closing(jobs.connect()) as connection:
         connection.execute("begin immediate")
+        connection.execute(f"update scans set status = ? where status = ? and total <= ({SETTLED_CHECKS})",
+                           (STATE["finished"], STATE["checking"], jobs.KIND["check"], jobs.STATUS["done"], jobs.STATUS["failed"]))
+        connection.execute(f"update scans set status = ? where status = ? and exists ({FAILED_LISTING})",
+                           (STATE["stopped"], STATE["listing"], jobs.KIND["scan"], jobs.STATUS["failed"]))
         running = connection.execute("select id from scans where status in (?, ?)", (STATE["listing"], STATE["checking"])).fetchone()
         if running:
             connection.execute("commit")

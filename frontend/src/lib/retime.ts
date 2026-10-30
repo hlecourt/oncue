@@ -2,7 +2,8 @@
 
 export type Change = { first: number; last: number; offset: number }
 export type Move = Change & { group: number; held: boolean }
-export type Scope = "all" | "from" | "selected"
+export const SCOPES = ["all", "from", "selected"] as const
+export type Scope = (typeof SCOPES)[number]
 
 const CENTISECONDS = 100
 

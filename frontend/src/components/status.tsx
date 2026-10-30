@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { cn } from "cn"
+import { RefreshCwIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
 
 export type Tone = "good" | "warn" | "bad" | "neutral"
@@ -53,6 +55,15 @@ export function EmptyState({ icon, title, children, action }: { icon: ReactNode;
       {children && <div className="max-w-md text-sm text-muted-foreground">{children}</div>}
       {action}
     </div>
+  )
+}
+
+export function LoadError({ error, onRetry, title }: { error: Error; onRetry: () => void; title?: string }) {
+  const t = useT()
+  return (
+    <EmptyState icon={<RefreshCwIcon />} title={title ?? t("This page could not be loaded")} action={<Button variant="outline" onClick={onRetry}>{t("Try again")}</Button>}>
+      {error.message}
+    </EmptyState>
   )
 }
 

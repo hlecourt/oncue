@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import asyncio
 import os
 import subprocess
 import sys
@@ -8,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from subtitle_guard import storage
-from subtitle_guard.api import auth
+from subtitle_guard.api import auth, security
 from subtitle_guard.api.app import create_app
 from subtitle_guard.api.security import CSRF_HEADER, SESSION_COOKIE
 from subtitle_guard.errors import ConfigError
@@ -43,7 +44,7 @@ def test_loopback_without_a_password_works_only_for_loopback_hosts_without_proxy
 
 def test_without_a_password_a_proxy_that_rewrites_the_host_gets_nothing():
     remote = TestClient(create_app("127.0.0.1"), base_url=LOCAL, client=("192.168.1.30", 50000))
-    assert remote.get("/api/session").status_code == 400 and remote.get("/api/settings/api-key").status_code == 400
+    assert remote.get("/api/session").status_code == 400 and remote.post("/api/settings/api-key/reveal", json={}).status_code == 400
 
 
 def test_a_password_protects_every_route_and_the_session_carries_the_csrf_token(protected):
@@ -122,6 +123,26 @@ def test_a_streamed_body_without_a_length_is_refused_before_it_is_read(protected
     assert answer.status_code == 411 and answer.json()["code"] == "length_required"
 
 
+def test_a_body_that_arrives_too_slowly_is_answered_408(protected, monkeypatch):
+    monkeypatch.setattr(security, "BODY_SECONDS", 0.1)
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http", "path": "/api/session",
+             "raw_path": b"/api/session", "query_string": b"", "root_path": "", "client": ("203.0.113.9", 50000), "server": ("guard.example", 8484),
+             "headers": [(b"host", b"guard.example:8484"), (b"content-type", b"application/json"), (b"content-length", b"40")]}
+    chunks = [{"type": "http.request", "body": b'{"user": "admin",', "more_body": True}]
+    sent = []
+
+    async def receive():
+        if chunks:
+            return chunks.pop()
+        await asyncio.sleep(30)
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+    asyncio.run(asyncio.wait_for(protected.app(scope, receive, send), 5))
+    assert sent[0]["status"] == 408 and b"too_slow" in sent[1]["body"]
+
+
 def test_a_key_or_token_that_is_not_ascii_is_refused_not_a_crash(protected):
     assert protected.get("/api/status", headers={"X-Api-Key": "cl\u00e9".encode()}).status_code == 401
     log_in(protected)
@@ -138,7 +159,6 @@ def test_the_lockout_table_stays_bounded(monkeypatch):
 def test_requests_racing_on_a_first_start_all_get_an_answer(local):
     from concurrent.futures import ThreadPoolExecutor
 
-    from subtitle_guard.api import security
     with ThreadPoolExecutor(8) as pool:
-        keys = list(pool.map(lambda _: security.regenerate_api_key(), range(16)))
-    assert security.api_key() in keys and len(set(keys)) == 16
+        keys = list(pool.map(lambda _: auth.regenerate_api_key(), range(16)))
+    assert auth.api_key() in keys and len(set(keys)) == 16

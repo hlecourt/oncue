@@ -9,6 +9,7 @@ import urllib.request
 from contextlib import closing
 
 from . import configuration, jobs
+from .errors import ConfigError
 from .logs import LEVEL, log
 from .reports import needs_review
 from .storage import read_json, state_path, write_json
@@ -43,7 +44,7 @@ def post(url, message):
         with OPENER.open(request, timeout=SEND_SECONDS) as response:
             log("webhook.sent", f"digest of {message['count']} subtitles sent, status {response.status}", count=message["count"], status=response.status)
             return True
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, ConfigError) as error:
         log("webhook.failed", f"webhook digest not delivered: {error}", LEVEL["warning"], error=str(error))
         return False
 
@@ -64,4 +65,4 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
         raise urllib.error.HTTPError(request.full_url, code, f"refused a redirect to {new_url}", headers, response)
 
 
-OPENER = urllib.request.build_opener(NoRedirects)
+OPENER = configuration.outbound_opener(NoRedirects)

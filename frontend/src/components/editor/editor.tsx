@@ -1,27 +1,45 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { ChevronLeftIcon, ChevronsUpDownIcon, Loader2Icon, PauseIcon, PlayIcon } from "lucide-react"
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { ChevronLeftIcon, ChevronsUpDownIcon, Loader2Icon, MoreHorizontalIcon, PauseIcon, PlayIcon } from "lucide-react"
+import { type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 
 import { Preview } from "@/components/editor/preview"
 import { ToneDot, toneOf } from "@/components/status"
 import { SidePanel } from "@/components/editor/side-panel"
 import { type Band, type Block, Timeline } from "@/components/editor/timeline"
+import { useChanges } from "@/components/editor/use-changes"
+import { usePlayback } from "@/components/editor/use-playback"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { STATUS_KEY } from "@/hooks/use-status"
-import { ApiError, api, mediaUrl, type Schemas, unwrap } from "@/lib/api/client"
-import { clock } from "@/lib/format"
+import type { Schemas } from "@/lib/api/client"
+import { clock, languageName } from "@/lib/format"
 import { type Locale, useLocale, useT } from "@/lib/i18n"
-import { type Change, heldLines, lineOffsets, type Move, openRuns, type Scope, scopeRange, segments } from "@/lib/retime"
-import { REVIEW_KEY } from "@/pages/review"
+import type { Change } from "@/lib/retime"
 
 type Detail = Schemas["SubtitleDetail"]
 type Lines = Schemas["Lines"]
@@ -36,97 +54,29 @@ const KEYS: [string, string][] = [["Space", "Play or pause"], ["A", "The chosen 
   ["Left / Right", "0.1 s earlier or later, Shift for 1 s"], ["J / K, Down / Up", "Next or previous line"], ["1 / 2 / 3", "All lines, from this line, selected lines"],
   ["Ctrl Z", "Undo the last change"], ["Ctrl S", "Save"], ["N", "Next in Review"], ["?", "This help"]]
 
-type Props = { detail: Detail; lines: Lines; actions: ReactNode; onNext: () => void; onRestore: (version: Schemas["Version"]) => void }
+type Props = { detail: Detail; lines: Lines; actions: ReactNode; menuItems: ReactNode; onNext: () => void; onRestore: (version: Schemas["Version"]) => void }
 
-export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
+export function Editor({ detail, lines, actions, menuItems, onNext, onRestore }: Props) {
   const t = useT()
   const locale = useLocale()
-  const queryClient = useQueryClient()
-  const audio = useRef<HTMLAudioElement>(null)
   const wide = useWide()
-  const hasGuardFix = Boolean(lines.proposal)
-  const [guardOn, setGuardOn] = useState(hasGuardFix)
-  const [history, setHistory] = useState<Move[]>([])
-  const [scope, setScope] = useState<Scope>("all")
   const [current, setCurrent] = useState(0)
   const [selection, setSelection] = useState<[number, number] | null>(null)
-  const [time, setTime] = useState(0)
-  const [playing, setPlaying] = useState(false)
   const [span, setSpan] = useState(SPANS[1]!)
-  const [rate, setRate] = useState(1)
-  const [track, setTrack] = useState<number | null>(null)
   const [tab, setTab] = useState("lines")
   const [helping, setHelping] = useState(false)
-  const [player, setPlayer] = useState<HTMLAudioElement | null>(null)
+  const { hasGuardFix, guardOn, setGuardOn, scope, setScope, pickScope, shown, pending, held, moves, changeCount, negative, move, undo, save, blocker } =
+    useChanges({ detail, lines, current, selection, onNext })
+  const { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps } = usePlayback(detail.id, shown.at(-1)?.end ?? 0)
 
-  const media = useQuery({
-    queryKey: ["audio", detail.id, track],
-    queryFn: () => unwrap(api.POST("/api/subtitles/{subtitle_id}/audio", { params: { path: { subtitle_id: detail.id } }, body: { track } })),
-    refetchInterval: (query) => (query.state.data && !query.state.data.ready && query.state.data.tracks.length ? 1500 : false),
-  })
-  const peaks = useQuery({
-    queryKey: ["peaks", detail.id, media.data?.track],
-    enabled: Boolean(media.data?.ready),
-    staleTime: Infinity,
-    queryFn: async () => {
-      const answer = await fetch(mediaUrl(`/api/subtitles/${detail.id}/audio/${media.data!.track}/peaks`), { credentials: "same-origin" })
-      return Float32Array.from(new Uint8Array(await answer.arrayBuffer()), (value) => value / 255)
-    },
-  })
-
-  const base = useMemo(() => lines.lines.map((line, index) => (guardOn && lines.proposal ? { ...line, start: lines.proposal[index]![0]!, end: lines.proposal[index]![1]! } : line)), [guardOn, lines])
-  const offsets = useMemo(() => lineOffsets(base.length, history), [base.length, history])
-  const shown: Block[] = useMemo(() => base.map((line, index) => ({ start: line.start + offsets[index]!, end: line.end + offsets[index]!, text: line.text })), [base, offsets])
-  const pending = useMemo(() => segments(offsets), [offsets])
-  const moves = useMemo(() => shown.map((line, index) => ({ amount: line.start - lines.lines[index]!.start, byHand: offsets[index] !== 0 })), [shown, offsets, lines])
   const videoText = useMemo(() => shown.map((line) => nearestText(lines.reference, line.start)), [shown, lines.reference])
   const bands = useMemo(() => overviewBands(shown, pending, guardOn && hasGuardFix ? detail.parts : []), [shown, pending, guardOn, hasGuardFix, detail.parts])
   const playingLine = useMemo(() => shown.findIndex((line) => line.start <= time && time < line.end), [shown, time])
   const nearest = useMemo(() => nearestLine(shown, time), [shown, time])
-  const changeCount = (guardOn && hasGuardFix ? 1 : 0) + pending.length
   const unsaved = changeCount > 1 ? t("{count} changes, not saved", { count: changeCount }) : t("{count} change, not saved", { count: changeCount })
-  const negative = shown.some((line) => line.start < 0)
   const chosen = shown[current]
   const delta = chosen ? Math.round((time - chosen.start) * 100) / 100 : 0
-  const duration = media.data?.duration ?? (shown.at(-1)?.end ?? 0)
-  const soundTrack = media.data?.track
-  const sound = useMemo(() => (player && soundTrack !== undefined ? { element: player, url: mediaUrl(`/api/subtitles/${detail.id}/audio/${soundTrack}`) } : null), [player, soundTrack, detail.id])
 
-  const save = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/subtitles/{subtitle_id}/retime", {
-      params: { path: { subtitle_id: detail.id } },
-      body: { version: lines.version, use_proposal: guardOn && hasGuardFix, changes: pending },
-    })),
-    onSuccess: () => {
-      toast.success(t("Saved. The previous file was backed up."), { action: { label: t("Next in Review"), onClick: onNext } })
-      setHistory([])
-      for (const key of [["subtitle", detail.id], ["lines", detail.id], ["history"], REVIEW_KEY, STATUS_KEY]) queryClient.invalidateQueries({ queryKey: key })
-    },
-    onError: (error) => {
-      const stale = error instanceof ApiError && error.code === "stale_version"
-      toast.error(error.message, stale ? { action: { label: t("Reload"), onClick: () => location.reload() } } : undefined)
-    },
-  })
-
-  const move = (offset: number, target?: [number, number]) => {
-    const rounded = Math.round(offset * 100) / 100
-    if (rounded === 0) return
-    const held = target !== undefined || scope === "selected"
-    const range = target ?? scopeRange(scope, current, selection, shown.length)
-    const runs = held ? [range] : openRuns(range, heldLines(shown.length, history))
-    const skipped = range[1] - range[0] + 1 - runs.reduce((sum, [first, last]) => sum + last - first + 1, 0)
-    if (skipped > 0) toast(skipped === 1 ? t("1 line placed by hand stays where it is") : t("{count} lines placed by hand stay where they are", { count: skipped }))
-    const group = (history.at(-1)?.group ?? 0) + 1
-    setHistory((previous) => [...previous, ...runs.map(([first, last]) => ({ first, last, offset: rounded, group, held }))])
-  }
-  const seek = (seconds: number) => {
-    if (audio.current) audio.current.currentTime = Math.max(0, Math.min(duration, seconds))
-    setTime(Math.max(0, Math.min(duration, seconds)))
-  }
-  const start = () => audio.current?.play().catch((error: unknown) => {
-    if (!(error instanceof DOMException && error.name === "AbortError")) toast.error(t("The sound could not be played."), { description: String(error) })
-  })
-  const play = () => (audio.current?.paused ? start() : audio.current?.pause())
   const pick = (index: number, extend: boolean) => {
     const ranged = extend || (touchScreen() && scope === "selected" && selection?.[0] === selection?.[1])
     setSelection(ranged ? [Math.min(current, index), Math.max(current, index)] : [index, index])
@@ -155,6 +105,26 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
     setScope("selected")
     seek(shown[first]!.start)
   }
+  const saveAndLeave = (event: MouseEvent) => {
+    event.preventDefault()
+    save.mutate(undefined, { onSuccess: () => blocker.proceed?.(), onError: () => blocker.reset?.() })
+  }
+  const discardAndLeave = (event: MouseEvent) => {
+    event.preventDefault()
+    blocker.proceed?.()
+  }
+  const soundNote = () => {
+    if (media.error || peaks.error) {
+      return (
+        <span className="pointer-events-auto flex items-center gap-2">
+          {t("The sound could not be loaded.")}
+          <Button size="sm" variant="outline" onClick={() => (media.error ? media.refetch() : peaks.refetch())}>{t("Try again")}</Button>
+        </span>
+      )
+    }
+    if (media.data && !media.data.tracks.length) return t("This video has no sound to listen to.")
+    return <><Loader2Icon className="mr-2 size-4 animate-spin" />{t("Preparing the sound for listening. It takes a moment the first time only.")}</>
+  }
   const keys = useRef<(event: KeyboardEvent) => void>(() => {})
   keys.current = (event) => {
     if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]")) return
@@ -164,7 +134,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
       "1": () => setScope("all"), "2": () => setScope("from"), "3": () => setScope("selected"),
       ArrowLeft: () => move(event.shiftKey ? -1 : -0.1), ArrowRight: () => move(event.shiftKey ? 1 : 0.1),
     }
-    if (command && event.key.toLowerCase() === "z") actions.undo = () => setHistory((previous) => previous.filter((entry) => entry.group !== previous.at(-1)?.group))
+    if (command && event.key.toLowerCase() === "z") actions.undo = undo
     if (command && event.key.toLowerCase() === "s") actions.save = () => changeCount > 0 && !negative && save.mutate()
     const name = command ? { z: "undo", s: "save" }[event.key.toLowerCase()] : event.key.length === 1 ? event.key.toLowerCase() : event.key
     const action = event.altKey || !name ? undefined : actions[name]
@@ -180,35 +150,11 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
   }, [])
 
   useEffect(() => {
-    if (audio.current) audio.current.playbackRate = rate
-  }, [rate, peaks.data])
-
-  useEffect(() => {
-    if (!playing) return
-    let frame = 0
-    const follow = () => {
-      if (audio.current) setTime(audio.current.currentTime)
-      frame = requestAnimationFrame(follow)
-    }
-    frame = requestAnimationFrame(follow)
-    return () => cancelAnimationFrame(frame)
-  }, [playing])
-
-  useEffect(() => {
     if (!playing || nearest < 0 || (selection && selection[0] !== selection[1])) return
     setCurrent(nearest)
     setSelection(null)
   }, [playing, nearest, selection])
 
-  useEffect(() => {
-    if (history.length === 0) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [history.length])
-
-  const soundNote = media.data && !media.data.tracks.length ? t("This video has no sound to listen to.")
-    : <><Loader2Icon className="mr-2 size-4 animate-spin" />{t("Preparing the sound for listening. It takes a moment the first time only.")}</>
   const saveButton = (
     <Button size="sm" disabled={!changeCount || negative || save.isPending} onClick={() => save.mutate()}>
       {save.isPending && <Loader2Icon className="animate-spin" />}{t("Save")}<kbd className="hidden rounded border border-current/30 px-1 font-mono text-[10px] opacity-80 lg:inline">Ctrl S</kbd>
@@ -253,6 +199,31 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
         )}
         <div className="ml-auto flex items-center gap-1">
           {actions}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={t("More actions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuGroup className="lg:hidden">
+                {media.data && media.data.tracks.length > 1 && (
+                  <>
+                    <DropdownMenuLabel>{t("Sound track")}</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={String(media.data.track)} onValueChange={(value) => setTrack(Number(value))}>
+                      {media.data.tracks.map((item) => <DropdownMenuRadioItem key={item.index} value={String(item.index)}>{[item.language || t("Unknown"), item.title, item.commentary ? t("commentary") : ""].filter(Boolean).join(", ")}</DropdownMenuRadioItem>)}
+                    </DropdownMenuRadioGroup>
+                  </>
+                )}
+                <DropdownMenuLabel>{t("Speed")}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={String(rate)} onValueChange={(value) => setRate(Number(value))}>
+                  {RATES.map((value) => <DropdownMenuRadioItem key={value} value={String(value)}>{value}x</DropdownMenuRadioItem>)}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuLabel>{t("Zoom")}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={String(span)} onValueChange={(value) => setSpan(Number(value))}>
+                  {SPANS.map((value) => <DropdownMenuRadioItem key={value} value={String(value)}>{value < 60 ? `${value} s` : `${value / 60} min`}</DropdownMenuRadioItem>)}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+              </DropdownMenuGroup>
+              {menuItems}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" variant="outline" className="hidden sm:inline-flex" onClick={onNext}>{t("Next")}<kbd className="hidden rounded border px-1 font-mono text-[10px] text-muted-foreground lg:inline">N</kbd></Button>
           <span className="hidden lg:contents">{saveButton}</span>
         </div>
@@ -291,8 +262,8 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
             </div>
           </div>
           <div className="lg:border-t lg:pt-1 lg:[grid-area:timeline]">
-            <Timeline duration={duration} peaks={peaks.data ?? null} media={sound} soundNote={soundNote}
-              lines={shown} before={lines.lines[current] ?? null} reference={lines.reference} current={current} selection={selection} time={time} span={wide ? span : 20}
+            <Timeline duration={duration} peaks={peaks.data ?? null} media={sound} soundNote={soundNote()}
+              lines={shown} held={held} before={lines.lines[current] ?? null} reference={lines.reference} current={current} selection={selection} time={time} span={span}
               bands={bands} labels={trackLabels(detail, lines, t, locale)} compact={!wide} onSeek={seek} onPick={pick}
               onDrag={(index, newStart) => {
                 const insideSelection = selection !== null && selection[0] !== selection[1] && index >= selection[0] && index <= selection[1]
@@ -315,7 +286,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
             <Button size="sm" variant="outline" onClick={hear} disabled={!chosen || !peaks.data}>{t("Hear it")}<Key>R</Key></Button>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto lg:flex-nowrap">
-            <ToggleGroup type="single" value={scope} onValueChange={(value) => value && setScope(value as Scope)} aria-label={t("Lines to move")}
+            <ToggleGroup type="single" value={scope} onValueChange={pickScope} aria-label={t("Lines to move")}
               className="rounded-lg bg-muted p-0.5 max-lg:w-full">
               <ToggleGroupItem value="all" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("All lines")}</ToggleGroupItem>
               <ToggleGroupItem value="from" className="h-7 rounded-md px-2.5 data-[state=on]:bg-background data-[state=on]:shadow-xs max-lg:flex-1">{t("From line {number}", { number: current + 1 })}</ToggleGroupItem>
@@ -336,7 +307,7 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
         </section>
 
         <aside className="flex min-h-[420px] flex-col lg:min-h-0 lg:border-l lg:[grid-area:panel]" aria-label={t("Lines and changes")}>
-          <SidePanel tab={tab} onTab={setTab} lines={shown} videoText={videoText} moves={moves} current={current} selection={selection}
+          <SidePanel tab={tab} onTab={setTab} lines={shown} videoText={videoText} moves={moves} held={held} current={current} selection={selection}
             onPick={pick} changeCount={changeCount} changes={pending}
             guard={hasGuardFix ? { confidence: detail.proposal?.confidence ?? null, parts: detail.parts, on: guardOn } : null} onGuard={setGuardOn} onPart={choosePart}
             onRemove={(change) => move(-change.offset, [change.first, change.last])} subtitleId={detail.id} versions={detail.versions} onRestore={onRestore} />
@@ -348,14 +319,21 @@ export function Editor({ detail, lines, actions, onNext, onRestore }: Props) {
         {saveButton}
       </div>
 
-      {peaks.data && media.data && (
-        <audio ref={(element) => {
-          audio.current = element
-          setPlayer(element)
-        }} src={mediaUrl(`/api/subtitles/${detail.id}/audio/${media.data.track}`)} preload="auto" className="hidden"
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-          onSeeked={(event) => setTime(event.currentTarget.currentTime)} />
-      )}
+      {audioProps && <audio {...audioProps} preload="auto" className="hidden" />}
+
+      <AlertDialog open={blocker.status === "blocked"} onOpenChange={(open) => !open && blocker.reset?.()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Leave without saving?")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("Your changes to the timing are not saved yet.")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="outline" onClick={discardAndLeave}>{t("Discard")}</AlertDialogAction>
+            <AlertDialogAction disabled={negative || save.isPending} onClick={saveAndLeave}>{t("Save")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={helping} onOpenChange={setHelping}>
         <DialogContent className="sm:max-w-md">
@@ -404,16 +382,6 @@ function trackLabels(detail: Detail, lines: Lines, t: ReturnType<typeof useT>, l
   return {
     ours: t("Your subtitle"), oursDetail: ours || t("the file"),
     theirs: t("Video's subtitle"), theirsDetail: lines.reference.length ? t("{language}, the reference", { language: theirs || t("in the video") }) : t("none, judge by the sound"),
-  }
-}
-
-function languageName(code: string, locale: Locale) {
-  if (!/^[a-z]{2,3}$/.test(code)) return ""
-  try {
-    const name = new Intl.DisplayNames([locale], { type: "language" }).of(code)
-    return name && name !== code ? name : code
-  } catch {
-    return code
   }
 }
 

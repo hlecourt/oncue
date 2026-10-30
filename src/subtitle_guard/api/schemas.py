@@ -248,6 +248,10 @@ class ApiKey(BaseModel):
     key: str
 
 
+class PasswordConfirmation(BaseModel):
+    password: str = Field("", max_length=1000)
+
+
 class Check(BaseModel):
     ok: bool
     detail: str

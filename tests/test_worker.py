@@ -6,7 +6,8 @@ import numpy
 import pytest
 from synthetic import dialogue
 
-from subtitle_guard import jobs, worker
+from subtitle_guard import jobs, library, worker
+from subtitle_guard.outcome import CHANGED_REASON
 from subtitle_guard.subtitles import parse_subtitle, timestamp
 
 
@@ -34,12 +35,59 @@ def test_a_failing_job_is_recorded_and_the_worker_goes_on(monkeypatch):
 
 def test_blacklist_job_schedules_a_later_check(monkeypatch):
     pending = {"provider": "gestdown", "subtitle_id": "x1"}
-    monkeypatch.setattr(worker, "blacklist_for_retry", lambda video, subtitle: {"pending": pending, "attempts_before": 2})
+    monkeypatch.setattr(worker, "blacklist_for_replacement", lambda video, subtitle: {"pending": pending, "attempts_before": 2})
     jobs.enqueue(jobs.KIND["blacklist"], {"video": "v.mkv", "subtitle": "s.srt"})
     assert worker.work_once(1)
-    scheduled = [item for item in jobs.recent() if item["kind"] == jobs.KIND["retry_check"]]
+    scheduled = [item for item in jobs.recent() if item["kind"] == jobs.KIND["replacement_check"]]
     assert len(scheduled) == 1 and scheduled[0]["arguments"]["attempts_before"] == 2 and scheduled[0]["status"] == "queued"
     assert not worker.work_once(1)
+
+
+def test_a_blacklist_with_nothing_pending_schedules_nothing(monkeypatch):
+    monkeypatch.setattr(worker, "blacklist_for_replacement", lambda video, subtitle: None)
+    job_id = jobs.enqueue(jobs.KIND["blacklist"], {"video": "v.mkv", "subtitle": "s.srt"})
+    assert worker.work_once(1) and not worker.work_once(1)
+    assert jobs.job(job_id)["decision"] == "nothing-pending"
+
+
+def test_scan_sound_copy_and_replacement_check_jobs_reach_their_step(monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker, "run_scan", lambda scan: calls.append(("scan", scan)) or {"decision": "scanned", "summary": "listed"})
+    monkeypatch.setattr(worker, "make_copy", lambda video, track: calls.append(("copy", video, track)) or {"decision": "copied", "summary": "ready"})
+    monkeypatch.setattr(worker, "finish_replacement", lambda video, subtitle, pending, attempts_before: calls.append(("replacement", subtitle, attempts_before))
+                        or {"decision": "kept-best", "summary": "best kept"})
+    jobs.enqueue(jobs.KIND["scan"], {"scan": 4})
+    jobs.enqueue(jobs.KIND["audio_copy"], {"video": "v.mkv", "track": 2})
+    jobs.enqueue(jobs.KIND["replacement_check"], {"video": "v.mkv", "subtitle": "s.srt", "pending": {"provider": "p"}, "attempts_before": 1})
+    while worker.work_once(1):
+        pass
+    assert calls == [("scan", 4), ("copy", "v.mkv", 2), ("replacement", "s.srt", 1)]
+    assert [job["decision"] for job in jobs.recent()] == ["kept-best", "copied", "scanned"]
+
+
+def test_a_watched_check_remembers_the_file_forgets_a_changed_one_and_marks_a_failure(tmp_path, monkeypatch):
+    video, subtitle = tmp_path / "Movie.mkv", tmp_path / "Movie.fr.srt"
+    video.write_bytes(b"v")
+    subtitle.write_text("s")
+    outcomes = iter([{"decision": "kept", "summary": "in sync"}, {"decision": "kept", "reason": CHANGED_REASON, "summary": "changed"}])
+
+    def evaluate(video, subtitle, apply, neighbours):
+        outcome = next(outcomes, None)
+        if outcome is None:
+            raise OSError("disk gone")
+        return outcome
+    monkeypatch.setattr(worker, "evaluate_and_fix", evaluate)
+    arguments = {"video": str(video), "subtitle": str(subtitle), "apply": False, "watched": True}
+    signature = library.watch_signature(str(video), str(subtitle), False)
+    jobs.enqueue(jobs.KIND["check"], arguments)
+    worker.work_once(1)
+    assert jobs.seen(str(subtitle))[0] == signature
+    jobs.enqueue(jobs.KIND["check"], arguments)
+    worker.work_once(1)
+    assert jobs.seen(str(subtitle)) == (None, None)
+    jobs.enqueue(jobs.KIND["check"], arguments)
+    worker.work_once(1)
+    assert jobs.seen(str(subtitle))[0] == library.FAILED + signature and jobs.recent()[0]["status"] == "failed"
 
 
 def test_hook_job_runs_the_bazarr_flow(monkeypatch):
