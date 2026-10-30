@@ -13,7 +13,7 @@ from ...logs import event_level, event_message, log_file, recent_events
 from ...reports import decision_counts, report_history
 from ..i18n import tr
 from ..lookup import known_path
-from ..presentation import DRY_RUN_WORDS, HISTORY_GROUPS, change_sentences, folder_label, result_words, started_by
+from ..presentation import HISTORY_GROUPS, change_sentences, folder_label, result_words, started_by
 from ..schemas import History, HistoryGroup, HistoryRow, Job, LogEvent
 from ..security import require_user
 
@@ -59,8 +59,6 @@ def history_row(row):
     words, tone = result_words(row)
     exists = os.path.isfile(row["subtitle"])
     changes = change_sentences(row["changes"], row["decision"])
-    if not row["applied"] and row["decision"] in DRY_RUN_WORDS:
-        changes = [tr("Not written:"), *changes]
     return HistoryRow(id=row["id"], time=row["time"], subtitle_id=subtitle_id(row["subtitle"]) if exists else None, name=os.path.basename(row["subtitle"]),
                       folder=folder_label(row["subtitle"]), decision=row["decision"], words=words, tone=tone, started_by=started_by(row["provider"]),
                       changes=changes, confidence=int(row["confidence"]) if row["confidence"] else None,

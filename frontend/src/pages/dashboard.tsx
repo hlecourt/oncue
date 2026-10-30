@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query"
 import { ChartNoAxesColumnIcon } from "lucide-react"
 import { type PointerEvent, type ReactNode, useState } from "react"
 
-import { EmptyState, PageHeader } from "@/components/status"
+import { EmptyState, LoadError, PageHeader } from "@/components/status"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { REPORT_MODE, useSystem } from "@/hooks/use-system"
 import { api, type Schemas, unwrap } from "@/lib/api/client"
-import { bytes, when } from "@/lib/format"
+import { bytes, languageName, when } from "@/lib/format"
 import { LOCALES, useLocale, useT } from "@/lib/i18n"
 import { cn } from "cn"
 
@@ -37,6 +38,7 @@ export function DashboardPage() {
   const [range, setRange] = useState<(typeof RANGES)[number]["value"]>("182")
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null)
   const days = RANGES.find((entry) => entry.value === range)?.days
+  const system = useSystem()
   const stats = useQuery({
     queryKey: ["stats", range],
     queryFn: () => unwrap(api.GET("/api/stats", { params: { query: { days } } })),
@@ -65,14 +67,15 @@ export function DashboardPage() {
     <div onPointerMove={followTip} onPointerLeave={() => setTip(null)}>
       <PageHeader title={t("Dashboard")} actions={rangePicker} />
       {stats.isPending && <Skeleton className="h-96 w-full" />}
+      {stats.error && <LoadError error={stats.error} onRetry={() => stats.refetch()} />}
       {stats.data && stats.data.checks === 0 && <EmptyState icon={<ChartNoAxesColumnIcon />} title={t("No check in this period")}>{t("Scan the library from the System page.")}</EmptyState>}
-      {stats.data && stats.data.checks > 0 && <Board stats={stats.data} t={t} />}
+      {stats.data && stats.data.checks > 0 && <Board stats={stats.data} reportMode={system.data?.mode === REPORT_MODE} t={t} />}
       {tip && <div role="tooltip" className="pointer-events-none fixed z-50 rounded-md bg-foreground px-2 py-1 text-xs whitespace-nowrap text-background" style={{ left: tip.x + 12, top: tip.y - 32 }}>{tip.text}</div>}
     </div>
   )
 }
 
-function Board({ stats, t }: { stats: Stats; t: Translate }) {
+function Board({ stats, reportMode, t }: { stats: Stats; reportMode: boolean; t: Translate }) {
   const locale = useLocale()
   const tag = LOCALES.find((entry) => entry.value === locale)?.tag ?? "en"
   const number = (value: number) => value.toLocaleString(tag)
@@ -82,7 +85,9 @@ function Board({ stats, t }: { stats: Stats; t: Translate }) {
     <div className="flex flex-col gap-3">
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Hero label={t("Subtitles checked")} value={number(stats.subtitles)} detail={plural(t, stats.checks, "{count} check", "{count} checks", number)} spark={stats.weekly} />
-        <Hero label={t("Fixed on their own")} tone="bg-guard" value={number(stats.fixed_on_their_own)} detail={t("{count} found, not written", { count: number(stats.found_not_written) })} />
+        {reportMode
+          ? <Hero label={t("Sure fixes found")} tone="bg-guard" value={number(stats.found_not_written)} detail={t("Report mode: not written")} />
+          : <Hero label={t("Fixed on their own")} tone="bg-guard" value={number(stats.fixed_on_their_own)} detail={t("{count} found, not written", { count: number(stats.found_not_written) })} />}
         <Hero label={t("Lines realigned")} value={number(stats.lines_realigned)} detail={stats.median_offset === null ? "" : t("median offset {value}", { value: seconds(stats.median_offset) })} />
         <Hero label={t("Fixes you undid")} tone="bg-in-sync" value={number(stats.undone)} detail={t("{share} of automatic fixes", { share: share(stats.undone, stats.fixed_on_their_own) })} />
       </section>
@@ -118,7 +123,7 @@ function Board({ stats, t }: { stats: Stats; t: Translate }) {
       <section className="grid gap-3 lg:grid-cols-3">
         <div className={CARD}>
           <CardHead title={t("Languages")} />
-          <Meters rows={stats.languages.map((entry) => ({ label: languageName(entry.name, tag, t), count: entry.count }))} tone="bg-bar" number={number} empty={t("None yet")} />
+          <Meters rows={stats.languages.map((entry) => ({ label: languageName(entry.name, tag) || t("Unknown"), count: entry.count }))} tone="bg-bar" number={number} empty={t("None yet")} />
         </div>
         <div className={CARD}>
           <CardHead title={t("Compared with")} />
@@ -383,15 +388,6 @@ function busiestDay(days: Stats["per_day"], tag: string) {
   }
   const busiest = totals.indexOf(Math.max(...totals))
   return new Date(2024, 0, 7 + busiest).toLocaleDateString(tag, { weekday: "long" })
-}
-
-function languageName(code: string, tag: string, t: Translate) {
-  if (!code) return t("Unknown")
-  try {
-    return new Intl.DisplayNames([tag], { type: "language" }).of(code) ?? code
-  } catch {
-    return code
-  }
 }
 
 function uptime(t: Translate, started: string) {

@@ -15,8 +15,10 @@ job queue, parallel workers and a web UI that anyone can use to review and fix w
 ## Why
 
 Subtitles found online are often made for another release: a streaming cut instead of the Blu-ray, a 25 fps PAL master
-instead of 23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync apply a single offset and framerate,
-which cannot fix a different cut, and they sometimes report success on a wrong result. subtitle-guard instead:
+instead of 23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync mostly apply a single offset and
+framerate (their piecewise modes are still experimental), which rarely fixes a different cut, and they sometimes report
+success on a wrong result. Bazarr's own sync runs on every download its release score lets through, with no review step.
+subtitle-guard instead:
 
 - reads the timing of a subtitle track already embedded in the video (text or image, any language, forced and commentary
   tracks excluded) from the Matroska Cues index in well under a second, with a full read as fallback;
@@ -64,7 +66,8 @@ Install the wheel attached to a release: it carries the built web UI. A clone ha
 
 It needs Python 3.11 or later, `ffmpeg` and `ffprobe` on the PATH, and a POSIX system (Linux, macOS): it relies on `fcntl`
 locks. The `web` extra adds the UI (FastAPI and uvicorn); the Bazarr hook, the CLI and the workers only need numpy. The `audio`
-extra adds ffsubsync for videos without any embedded subtitle track.
+extra adds ffsubsync for videos without any embedded subtitle track. Set `SUBTITLE_GUARD_ROOTS` to your media folders (or
+`SUBTITLE_GUARD_LIBRARY` without Bazarr): nothing is written anywhere until it is set, whatever the mode.
 
 ## Set up Bazarr
 
@@ -102,24 +105,33 @@ review, with its proposal when there is one; nothing is downloaded.
 ## Web UI
 
 `subtitle-guard ui`, or `serve`, which also runs the workers, opens the web UI on port 8484 (the `web` extra). It is written for
-anyone, in plain words, in light or dark, and fits phones, tablets and large screens. `Ctrl K` opens a search over the pages and
-the subtitles.
+anyone, in plain words, in English, French or Simplified Chinese (the browser's language, or the one picked in the menu), in
+light or dark, and fits phones, tablets and large screens. `Ctrl K` opens a search over the pages and the subtitles.
 
 ![Review](docs/screenshots/review.png)
 
-- **Review**, the home page: the subtitles waiting for a person, one sentence each ("A fix from the video's subtitles is ready,
-  confidence 72", "Out of sync around 25:00", "Belongs to S01E03"), with counts, a filter, and **Keep as is**, **Check again** and
-  **Ask Bazarr for another** for several at once. A fix is never applied in bulk.
+- **Review**, the home page: the subtitles waiting for a person, one sentence each ("A fix from the video's subtitles is ready",
+  "Out of sync around 25:00", "Belongs to S01E03"), with what is left to do, a filter, and **Keep as is**, **Check again** and
+  **Ask Bazarr for replacements** for several at once. A fix is never applied in bulk. In `report` mode a banner says that
+  nothing is written, and sure fixes wait here with the other proposals. Forced subtitles never land here.
+- **Dashboard**: what the guard did over 30 days, 6 months or all time: subtitles checked, fixes written on their own, lines
+  realigned, fixes you undid, checks per day, the confidence of the fixes found against the threshold, offsets early or late,
+  speed fixes by frame rate, languages, the reference used, check times and records; subtitle providers ranked by the verdict
+  on arrival; and what the queue, the workers, the audio cache and the backups are doing right now.
+- **Subtitles**: every subtitle the guard has checked, searchable, each one opening in the editor even when it is not in
+  Review.
 - **One screen per subtitle, an editor**: the video in the middle, your lines on the right with the video's own line under
   each, and a timeline docked at the bottom with three tracks: your subtitle, the sound, and the video's subtitle (the
   reference, often in another language: what matters is when each line starts, not its words). To fix the timing, choose a
   line, play, and press **It starts here** where the voice starts (or drag its block); or move by -1 s, -0.1 s, +0.1 s, +1 s.
   A change applies to every line, to the lines from this one on, or to the selected lines, and changes add up: fix the whole
-  file, then a part after an ad break, then one scene. They are listed under **Changes** with the guard's fix, which can be
-  turned off, nothing is written until **Save**, and Ctrl Z undoes the last one. Saving writes everything once, after a backup,
+  file, then a part after an ad break, then one scene. A line you placed on its own (dragged, or moved as the selection) is
+  held, marked with a lock, and later moves of every line go around it. They are listed under **Changes** with the guard's fix, which can be
+  turned off, nothing is written until **Save**, Ctrl Z undoes the last one, and leaving with unsaved changes asks first. Saving writes everything once, after a backup,
   and is refused if the file changed meanwhile. The keyboard does it all (press ? for the list), and phones get the same tools.
   The editor plays a light copy of the sound made once by ffmpeg and cached (`SUBTITLE_GUARD_AUDIO_CACHE_MB`). The same screen
-  keeps the subtitle as it is, checks it again, asks Bazarr for another, restores a saved version or deletes it.
+  keeps the subtitle as it is, checks it again, asks Bazarr for another, restores a saved version or deletes it, and its
+  menu switches to another subtitle of the same video.
 - **History**: every check, newest first, with what started it, the result, the confidence and what changed, filtered by result;
   and the tasks waiting, running or failed, with **Run again**.
 - **Log**: the technical log, searchable and filtered by level; each line opens on its full metadata as JSON with a Copy button.
@@ -127,9 +139,11 @@ the subtitles.
 - **System**: whether ffmpeg, ffprobe, ffsubsync, the folders, Bazarr and the workers are working, the Bazarr settings that keep
   subtitles from the guard, the library scan with its progress, and the size of the backups with a clean-up.
 - **Settings**: every setting of the table below, by group; a setting set in the environment shows as locked. The API key for
-  scripts is shown, copied or replaced here.
+  scripts is shown, copied or replaced here; when you logged in with a password, showing or replacing it asks for the password again.
 
 ![A subtitle in the editor](docs/screenshots/subtitle.png)
+
+![The dashboard](docs/screenshots/dashboard.png)
 
 The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scripts send the API key in an `X-Api-Key` header.
 `/health` says the server is up and `/ready` checks the database and every worker; both also answer under the URL base.
@@ -143,19 +157,29 @@ The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scrip
   needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
   `SUBTITLE_GUARD_UI_PASSWORD`, or an account set with `subtitle-guard set-password` (stored as a scrypt hash with mode 600), or on
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
-  opening it. Five wrong attempts lock a client out for 10 minutes. Logging in opens a session that expires on the server after
-  30 days (HttpOnly, SameSite=Strict, Secure behind an HTTPS proxy that sets `X-Forwarded-Proto`); logging out ends it.
+  opening it. Five wrong attempts lock a client out for 10 minutes, and twenty in 10 minutes from any address lock the account,
+  except for addresses that logged in successfully in the last 30 days, so a stranger cannot lock you out. Logging in opens
+  a session that expires on the server after 30 days (HttpOnly, SameSite=Strict, Secure behind a trusted HTTPS proxy that sets
+  `X-Forwarded-Proto`); logging out ends it, and changing the password ends every session and replaces the API key.
 - Login modes (`SUBTITLE_GUARD_AUTH`): `local` skips the login only for a client with a private address that opens the UI by an IP
   address or a local name (`nas`, `nas.local`, `.lan`, `.home.arpa`, `.internal`), so a public name pointed at your network
   gets the login. `external` skips it only for requests from `SUBTITLE_GUARD_TRUSTED_PROXIES`; anyone else gets the login. Proxy
   headers are ignored unless they come from a trusted proxy, whose `X-Forwarded-For` then names the client for these rules and
-  for the lockout.
+  for the lockout. In `local` mode anyone on your network has full access, API key included: keep the default `forms` unless
+  you trust every device on it.
 - Every change is a JSON request with a `Content-Length`, carrying a CSRF token held by the server (the session's, or one kept
   for clients that need no login) in a header, or the API key, from the same origin. Pages send a strict
-  Content-Security-Policy with no inline script and refuse to be framed. Requests are size- and time-limited.
-- The UI only acts on subtitles the guard already checked, never through a symlink at any level of the path, and changes files
-  only when `SUBTITLE_GUARD_ROOTS` is set, under those folders. Changing Bazarr's address asks for its API key again, so the key
-  is never sent to a new address.
+  Content-Security-Policy with no inline script and refuse to be framed. Requests are size-limited and a request body must arrive
+  within 30 seconds. The UI does not limit how long the headers take to arrive: a reverse proxy in front of it does that.
+- The UI only acts on subtitles the guard already checked, and reads and writes them through folders opened without following
+  symlinks at any level of the path. Nothing is written, by the UI, the hook, the scans or the CLI, unless
+  `SUBTITLE_GUARD_ROOTS` (or `SUBTITLE_GUARD_LIBRARY`) is set, and only under those folders; videos outside them are never read.
+- ffmpeg and ffprobe only read local files in the containers the guard supports (Matroska, MP4, AVI, MPEG-TS), so a playlist
+  disguised as a video cannot make them fetch anything else; ffsubsync only runs on a file they accepted.
+- Bazarr's API key is only sent to the address it was entered for: changing the address asks for the key again, and the key
+  cannot be emptied while the address comes from Settings (Bazarr's own `config.yaml` is only read for the default address).
+  Calls to Bazarr and the webhook refuse link-local and cloud metadata addresses. The API description at `/api/openapi.json`
+  needs a login like the rest of the API.
 - Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 ## Running as a service
@@ -164,7 +188,7 @@ The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scrip
 watch. Only one supervisor can run on a state directory. A worker that dies is restarted and its job requeued; a job that killed
 its worker three times is marked failed. SIGTERM stops every role and the tools they started. Alignment runs in parallel; full
 file reads and ffsubsync take turns through a lock so workers do not fight over a spinning disk. A Bazarr download that is not
-trusted becomes a `blacklist` job, then a `retry-check` 15 minutes later that keeps the best version tried if Bazarr found
+trusted becomes a `blacklist` job, then a `replacement-check` 15 minutes later that keeps the best version tried if Bazarr found
 nothing else.
 
 ```
@@ -210,7 +234,7 @@ wins and shows as locked there.
 | `SUBTITLE_GUARD_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `SUBTITLE_GUARD_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
 | `SUBTITLE_GUARD_WATCH_SECONDS` | `600` |
-| `SUBTITLE_GUARD_ROOTS` | the watched folders; the UI only changes subtitles under these folders, and none when unset |
+| `SUBTITLE_GUARD_ROOTS` | the allowed folders: subtitles are only changed under these folders, and none at all when unset |
 | `SUBTITLE_GUARD_UI_HOST` / `SUBTITLE_GUARD_UI_PORT` | `127.0.0.1` / `8484` (`0.0.0.0` in the image) |
 | `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / unset; beyond loopback a password is required, generated once when unset |
 | `SUBTITLE_GUARD_FFSUBSYNC_PATH` | `/app/bazarr/bin/libs`, where the linuxserver.io Bazarr image keeps ffsubsync; empty in the image, which installs it |
@@ -262,7 +286,7 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
   search (about 7 s instead of 2.5 s on a 4-core home server).
 - Lines of a scene that exists in the subtitle but not in the video are placed as well as possible, not removed.
 - Without any embedded subtitle track, timing cannot be verified; the ffsubsync fallback cannot fix a different cut.
-- Subtitles over 20 MB or 20,000 lines are not checked.
+- Subtitles over 20 MB or 8,000 lines are not checked.
 
 ## Troubleshooting
 

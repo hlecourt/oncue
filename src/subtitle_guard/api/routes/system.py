@@ -11,6 +11,7 @@ from ...errors import ConfigError
 from ...files import clean_up_backups, folder_bytes
 from ...health import health_checks
 from ...heartbeats import worker_health
+from ...logs import LEVEL, log
 from ...scans import bazarr_configured, latest_scan, scan, start_scan, stop_scan
 from ..i18n import tr
 from ..schemas import BazarrSetup, Check, CleanUp, Scan, SetupWarning, SystemView
@@ -22,7 +23,7 @@ router = APIRouter(tags=["system"])
 @router.get("/system", operation_id="getSystem", dependencies=[Depends(require_user)])
 def get_system() -> SystemView:
     checks = {name: Check(ok=check["ok"], detail=check_detail(check)) for name, check in health_checks().items()}
-    checks["allowed_folders"] = Check(ok=bool(files.ROOTS), detail=", ".join(files.ROOTS) or tr("Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set"))
+    checks["allowed_folders"] = Check(ok=bool(files.ALLOWED_FOLDERS), detail=", ".join(files.ALLOWED_FOLDERS) or tr("Not set: no file is changed until SUBTITLE_GUARD_ROOTS is set"))
     return SystemView(version=__version__, checks=checks, workers=worker_health(), backups_bytes=folder_bytes(storage.BACKUP_DIRECTORY),
                       mode=configuration.value("mode"))
 
@@ -41,7 +42,9 @@ def check_bazarr() -> BazarrSetup:
     try:
         return BazarrSetup(reachable=True, warnings=[SetupWarning(code=warning["code"], message=tr(warning["message"])) for warning in setup_warnings()])
     except (OSError, ValueError, KeyError, ConfigError) as error:
-        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="unreachable", message=tr("Bazarr cannot be reached: {reason}", reason=error))])
+        log("bazarr.setup-check-failed", f"Bazarr setup check failed: {type(error).__name__}: {error}", LEVEL["warning"], error=str(error))
+        return BazarrSetup(reachable=False, warnings=[SetupWarning(code="unreachable", message=tr("Bazarr cannot be reached with this address and API key. "
+                                                                                                    "The log has the details."))])
 
 
 @router.post("/system/backups/clean-up", operation_id="cleanUpBackups", dependencies=[Depends(require_csrf)])

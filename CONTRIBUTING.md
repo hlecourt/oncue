@@ -66,6 +66,22 @@ synthetic case in `tests/` (see `tests/media.py` and `tests/synthetic.py`), and 
   client in `src/lib/api`; media (audio, peaks, frames) through its `mediaUrl`, so the URL base applies.
 - Every change to a subtitle file goes through `files.py`.
 
+## Translations
+
+The UI speaks English, French and Simplified Chinese. The English text is the key: screens call `t("...")` in the front and
+`tr("...")` in the API, and each language has one JSON catalog per side, `frontend/src/locales/<code>.json` and
+`src/subtitle_guard/api/locales/<code>.json`, mapping the English text to its translation. A text missing from a catalog shows
+in English.
+
+- To fix or complete a language, edit its two catalogs. Keep every `{placeholder}` of the English text, and plain punctuation:
+  no long dashes, curly quotes or ellipsis characters (in Chinese, quote with corner brackets).
+- To add a language, add its code to `LOCALES` in `frontend/src/lib/i18n.ts` (with its name in that language and its BCP 47
+  tag) and in `src/subtitle_guard/api/i18n.py`, import its catalog in `i18n.ts`, and create both catalogs from the French ones.
+- Plurals are separate keys (`"{count} check"`, `"{count} checks"`); write the plural form your language needs for each.
+- `pnpm run test` and `pytest tests/test_api_i18n.py` check that every translation keeps its placeholders and that the
+  catalogs of a side have the same keys.
+- The technical log, the CLI and the error details of the core modules stay in English.
+
 ## Licence
 
 subtitle-guard is GPL-3.0-or-later. By submitting a contribution you agree that it is licensed under the same terms.

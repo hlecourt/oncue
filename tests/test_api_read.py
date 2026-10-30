@@ -50,7 +50,7 @@ def test_a_subtitle_has_its_detail_its_lines_and_the_proposed_timings(client, pr
 def test_unknown_ids_and_subtitles_outside_the_allowed_folders_are_not_found(client, proposed, tmp_path, monkeypatch):
     identity = client.get("/api/review").json()[0]["id"]
     assert client.get("/api/subtitles/deadbeef0000").status_code == 404
-    monkeypatch.setattr(files, "ROOTS", [str(tmp_path / "elsewhere")])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [str(tmp_path / "elsewhere")])
     answer = client.get(f"/api/subtitles/{identity}")
     assert answer.status_code == 404 and answer.json()["code"] == "unknown_subtitle"
 
@@ -68,7 +68,7 @@ def test_history_pages_newest_first_with_counts_per_result(client, proposed):
     reports.report(str(subtitle), "scan", {"decision": "fixed", "confidence": 100, "confidence_band": "high"}, applied=False)
     dry_run = client.get("/api/history", params={"result": "proposals"}).json()
     groups = {group["key"]: group["count"] for group in dry_run["groups"]}
-    assert dry_run["rows"][0]["changes"][0] == "Not written:" and groups["fixed"] == 0 and groups["proposals"] == 2
+    assert dry_run["rows"][0]["words"] == "Sure fix found, not written (report mode)" and groups["fixed"] == 0 and groups["proposals"] == 2
 
 
 def test_jobs_and_the_log_are_readable_and_searchable(client, proposed):
@@ -94,7 +94,7 @@ def test_a_subtitle_that_became_a_symlink_is_never_served(client, proposed, tmp_
 def test_a_dry_run_never_reads_as_if_the_file_was_written():
     from subtitle_guard.api.presentation import result_words
     row = {"decision": "fixed", "applied": 0, "note": "", "band": "high", "weak_minutes": ""}
-    assert result_words(row)[0] == "A sure fix was found, not written (dry run)"
+    assert result_words(row)[0] == "Sure fix found, not written (report mode)"
     assert result_words({**row, "decision": "kept"})[0] == "In sync"
     assert result_words({**row, "applied": 1})[0] == "Fixed automatically"
 

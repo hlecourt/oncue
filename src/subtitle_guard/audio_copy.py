@@ -12,6 +12,7 @@ import numpy
 from . import jobs
 from .errors import ProbeError
 from .logs import log
+from .reference import MEDIA_INPUT_OPTIONS, run_on_video
 from .storage import state_path
 from .tools import EXTRACT_SECONDS, run_tool, stderr_tail
 
@@ -71,7 +72,8 @@ def make_copy(video, track):
 
 
 def ffmpeg(arguments, video):
-    result = run_tool(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file", "-threads", "1", *arguments], EXTRACT_SECONDS)
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-threads", "1", *arguments]
+    result = run_on_video(command, video, EXTRACT_SECONDS) if video in arguments else run_tool(command, EXTRACT_SECONDS)
     if result.returncode != 0:
         raise ProbeError(f"ffmpeg could not make the audio copy of {video}: {stderr_tail(result) or 'exit ' + str(result.returncode)}")
 

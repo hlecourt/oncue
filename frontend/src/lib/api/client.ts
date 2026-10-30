@@ -43,10 +43,23 @@ export class ApiError extends Error {
 type Answer<T> = { data?: T; error?: unknown; response: Response }
 
 export async function unwrap<T>(pending: Promise<Answer<T>>): Promise<T> {
-  const { data, error, response } = await pending
-  if (response.ok) return data as T
-  const problem = (error ?? {}) as { code?: string; message?: string }
-  throw new ApiError(problem.message ?? translate("The server answered {status}.", { status: response.status }), problem.code ?? "error", response.status)
+  const answer = await pending
+  if (succeeded(answer)) return answer.data
+  const { code, message } = readProblem(answer.error)
+  throw new ApiError(message ?? translate("The server answered {status}.", { status: answer.response.status }), code ?? "error", answer.response.status)
+}
+
+// openapi-fetch sets data on every ok answer, undefined only for an empty body
+function succeeded<T>(answer: Answer<T>): answer is Answer<T> & { data: T } {
+  return answer.response.ok
+}
+
+function readProblem(error: unknown) {
+  if (typeof error !== "object" || error === null) return {}
+  return {
+    code: "code" in error && typeof error.code === "string" ? error.code : undefined,
+    message: "message" in error && typeof error.message === "string" ? error.message : undefined,
+  }
 }
 
 export function mediaUrl(path: string) {

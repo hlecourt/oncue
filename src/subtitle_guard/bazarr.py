@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 
 from . import configuration, jobs
-from .configuration import MODE
+from .configuration import MODE, SOURCE
 from .errors import ConfigError, SubtitleGuardError
 from .files import file_hash, read_regular, restore_version, save_backup, subtitle_lock
 from .guard import AUTOMATIC_BAND, evaluate_and_fix
@@ -26,10 +26,10 @@ from .state import load_state, update_state
 from .storage import now, state_path
 
 BAZARR_CONFIG = os.environ.get("BAZARR_CONFIG", "/config/config/config.yaml")
-RETRY_WAIT_SECONDS = 900
+REPLACEMENT_WAIT_SECONDS = 900
 BLACKLIST_DELAY_SECONDS = 20
 API_KEY_HEADER = "X-API-KEY"
-RETRY_STAGE = {"requested": "requested", "blacklisted": "blacklisted"}
+REPLACEMENT_STAGE = {"requested": "requested", "blacklisted": "blacklisted"}
 TRUSTED_DECISIONS = (DECISION["kept"], DECISION["fixed"])
 
 
@@ -60,7 +60,7 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
             state.update(video_size=os.path.getsize(video), attempts=[])
         state.setdefault("attempts", []).append(attempt)
         if not replace:
-            state.pop("pending_retry", None)
+            state.pop("pending_replacement", None)
 
     state = update_state(video, subtitle, record)
     report(subtitle, provider, outcome)
@@ -71,8 +71,8 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
         restore_best(video, subtitle, state)
         return outcome
     pending = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number, "subtitle": subtitle,
-               "provider": provider, "subtitle_id": subtitle_id, "language": language, "content_hash": received, "stage": RETRY_STAGE["requested"]}
-    update_state(video, subtitle, lambda state: state.update(pending_retry=pending))
+               "provider": provider, "subtitle_id": subtitle_id, "language": language, "content_hash": received, "stage": REPLACEMENT_STAGE["requested"]}
+    update_state(video, subtitle, lambda state: state.update(pending_replacement=pending))
     request_another(video, subtitle, queued)
     return outcome
 
@@ -201,29 +201,29 @@ def series_neighbours(series_id, video):
 
 def try_another_subtitle(video, subtitle):
     time.sleep(BLACKLIST_DELAY_SECONDS)
-    retry = blacklist_for_retry(video, subtitle)
-    if retry is None:
+    replacement = blacklist_for_replacement(video, subtitle)
+    if replacement is None:
         return 0
-    deadline = time.time() + RETRY_WAIT_SECONDS
+    deadline = time.time() + REPLACEMENT_WAIT_SECONDS
     while time.time() < deadline:
         time.sleep(15)
-        if another_arrived(video, subtitle, **retry):
+        if another_arrived(video, subtitle, **replacement):
             return 0
-    finish_retry(video, subtitle, **retry)
+    finish_replacement(video, subtitle, **replacement)
     return 0
 
 
-def blacklist_for_retry(video, subtitle):
+def blacklist_for_replacement(video, subtitle):
     state = load_state(video, subtitle)
-    pending = state.get("pending_retry")
+    pending = state.get("pending_replacement")
     if not pending:
         return None
     if replaced_since(subtitle, pending):
-        update_state(video, subtitle, lambda current: current.pop("pending_retry", None))
+        update_state(video, subtitle, lambda current: current.pop("pending_replacement", None))
         log("bazarr.replacement-cancelled", "the rejected subtitle was replaced before the blacklist, nothing sent to Bazarr", LEVEL["info"], video=video,
             subtitle=subtitle, provider=pending["provider"], subtitle_id=pending["subtitle_id"])
         return None
-    if pending.get("stage") == RETRY_STAGE["blacklisted"]:
+    if pending.get("stage") == REPLACEMENT_STAGE["blacklisted"]:
         return {"pending": pending, "attempts_before": len(state.get("attempts", []))}
     form = {"provider": pending["provider"], "subs_id": pending["subtitle_id"], "language": pending["language"],
             "subtitles_path": pending["subtitle"]}
@@ -234,8 +234,8 @@ def blacklist_for_retry(video, subtitle):
         form.update(radarrid=pending["media_id"])
         endpoint = "/api/movies/blacklist"
     bazarr_post(endpoint, form)
-    pending = {**pending, "stage": RETRY_STAGE["blacklisted"]}
-    update_state(video, subtitle, lambda current: current.update(pending_retry=pending))
+    pending = {**pending, "stage": REPLACEMENT_STAGE["blacklisted"]}
+    update_state(video, subtitle, lambda current: current.update(pending_replacement=pending))
     log("bazarr.blacklisted", f"subtitle blacklisted provider={pending['provider']} id={pending['subtitle_id']}", video=video, subtitle=subtitle,
         provider=pending["provider"], subtitle_id=pending["subtitle_id"], endpoint=endpoint)
     return {"pending": pending, "attempts_before": len(state.get("attempts", []))}
@@ -249,14 +249,14 @@ def another_arrived(video, subtitle, pending, attempts_before):
     return len(load_state(video, subtitle).get("attempts", [])) > attempts_before or replaced_since(subtitle, pending)
 
 
-def finish_retry(video, subtitle, pending, attempts_before):
+def finish_replacement(video, subtitle, pending, attempts_before):
     if another_arrived(video, subtitle, pending, attempts_before):
-        update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
+        update_state(video, subtitle, lambda state: state.pop("pending_replacement", None))
         return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
     restore_best(video, pending["subtitle"], load_state(video, subtitle))
     rescan(pending)
-    update_state(video, subtitle, lambda state: state.pop("pending_retry", None))
-    log("bazarr.replacement-timeout", f"no replacement after {RETRY_WAIT_SECONDS}s, best attempt restored", LEVEL["warning"], video=video, subtitle=subtitle)
+    update_state(video, subtitle, lambda state: state.pop("pending_replacement", None))
+    log("bazarr.replacement-timeout", f"no replacement after {REPLACEMENT_WAIT_SECONDS}s, best attempt restored", LEVEL["warning"], video=video, subtitle=subtitle)
     return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
 
@@ -308,7 +308,7 @@ def call_bazarr(request, timeout):
     started = time.time()
     try:
         response = OPENER.open(request, timeout=timeout)
-    except OSError as error:
+    except (OSError, ConfigError) as error:
         log("bazarr.api-error", f"{request.get_method()} {request.selector} failed: {error}", LEVEL["error"], method=request.get_method(),
             path=request.selector, error=str(error), seconds=round(time.time() - started, 2))
         raise
@@ -320,6 +320,9 @@ def call_bazarr(request, timeout):
 def api_key():
     if configuration.value("bazarr_api_key"):
         return configuration.value("bazarr_api_key")
+    if configuration.source("bazarr_url") == SOURCE["settings"]:
+        raise ConfigError("Bazarr's address was set in Settings, so its API key must be entered there too: the key in Bazarr's config is only sent "
+                          "to the default or environment address")
     with open(BAZARR_CONFIG) as handle:
         match = re.search(r"^auth:\n(?:[ \t]+.*\n)*?[ \t]+apikey: *(\S+)", handle.read(), re.MULTILINE)
     if match is None:
@@ -339,4 +342,4 @@ def origin(url):
     return parts.scheme, parts.hostname, parts.port or {"http": 80, "https": 443}.get(parts.scheme)
 
 
-OPENER = urllib.request.build_opener(SameOriginRedirect)
+OPENER = configuration.outbound_opener(SameOriginRedirect)

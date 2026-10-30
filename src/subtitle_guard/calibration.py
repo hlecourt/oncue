@@ -29,7 +29,7 @@ TRIAL_SHIFTED = "shifted"
 
 
 def calibrate_audio(root, limit=None):
-    rng = numpy.random.default_rng(0)
+    random_shifts = numpy.random.default_rng(0)
     results = []
     for video, subtitle, _ in library_items(root):
         if limit and len(results) >= limit:
@@ -39,7 +39,7 @@ def calibrate_audio(root, limit=None):
         truth = true_timings(video, subtitle)
         if truth is None:
             continue
-        shift = float(rng.choice([-1, 1]) * rng.uniform(*SHIFT_RANGE_SECONDS))
+        shift = float(random_shifts.choice([-1, 1]) * random_shifts.uniform(*SHIFT_RANGE_SECONDS))
         shift = abs(shift) if truth[0][0] + shift < 0 else shift
         results.append(trial(video, subtitle, truth, TRIAL_SHIFTED, [(start + shift, end + shift, text) for start, end, text in truth]))
         middle = truth[len(truth) // 2][0]

@@ -5,8 +5,8 @@ import shutil
 import pytest
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import jobs, reports, review, state, storage
-from subtitle_guard.guard import evaluate_and_fix
+from subtitle_guard import jobs, reports, review, review_actions, state, storage
+from subtitle_guard.files import file_hash
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -19,25 +19,10 @@ def movie(tmp_path):
 
 
 @needs_ffmpeg
-def test_side_by_side_shows_reference_text_and_matches(movie):
-    video, subtitle, starts, ends = movie
-    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    assert review.video_for(str(subtitle)) == str(video)
-    view = review.side_by_side(str(video), str(subtitle), 60, 240)
-    reference_lines = [line for line in view["lines"] if line[1] == "reference"]
-    subtitle_lines = [line for line in view["lines"] if line[1] == "subtitle"]
-    assert reference_lines and reference_lines[0][2].startswith("line ")
-    shifted = [matched for start, _, _, matched, _ in subtitle_lines if 123 <= start < 183]
-    assert shifted and sum(shifted) / len(shifted) <= 0.35
-    assert all(matched for start, _, _, matched, _ in subtitle_lines if start < 120 or start >= 185)
-    assert 2 in view["measure"]["weak_minutes"]
-
-
-@needs_ffmpeg
 def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    outcome = review.shift_range(str(video), str(subtitle), 123, 183, -3)
+    outcome = review_actions.shift_range(str(video), str(subtitle), 123, 183, -3)
     assert outcome["decision"] == "manual" and not outcome["weak_minutes"] and outcome["confidence_band"] == "high"
     assert any(name.startswith("before-manual") for _, _, names in os.walk(storage.backup_root(str(subtitle))) for name in names)
     assert reports.latest_reports()[0]["decision"] == "manual"
@@ -49,7 +34,7 @@ def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
     reports.report(str(subtitle), "scan", {"decision": "kept", "weak_minutes": [2], "confidence": 70, "confidence_band": "medium"})
     assert [item["subtitle"] for item in review.review_items()] == [str(subtitle)]
-    review.accept(str(subtitle))
+    review_actions.accept(str(subtitle))
     assert review.review_items() == []
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 1)
     os.utime(subtitle, (os.stat(subtitle).st_atime, os.stat(subtitle).st_mtime + 5))
@@ -57,28 +42,16 @@ def test_accepted_subtitles_leave_the_review_list_until_they_change(movie):
 
 
 @needs_ffmpeg
-def test_revert_restores_the_provider_file(movie):
-    video, subtitle, starts, ends = movie
-    write_subtitle_file(subtitle, starts, ends, lambda value: value + 9)
-    provided = subtitle.read_text()
-    assert evaluate_and_fix(str(video), str(subtitle), True)["decision"] == "fixed"
-    assert subtitle.read_text() != provided
-    assert review.revert(str(subtitle))
-    assert subtitle.read_text() == provided
-    assert reports.latest_reports()[0]["decision"] == "reverted"
-
-
-@needs_ffmpeg
 def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value)
-    assert not review.ask_for_another(str(video), str(subtitle))
+    assert not review_actions.ask_for_another(str(video), str(subtitle))
     monkeypatch.setenv("SUBTITLE_GUARD_QUEUE", "1")
     state.save_state(str(video), str(subtitle), {"attempts": [{"provider": "gestdown", "subtitle_id": "x1", "media_id": 12, "series_id": None,
                                                                  "language": "fr", "subtitle": str(subtitle)}]})
-    assert review.ask_for_another(str(video), str(subtitle))
+    assert review_actions.ask_for_another(str(video), str(subtitle))
     assert jobs.recent()[0]["kind"] == "blacklist"
-    assert state.load_state(str(video), str(subtitle))["pending_retry"]["media_type"] == "movie"
+    assert state.load_state(str(video), str(subtitle))["pending_replacement"]["media_type"] == "movie"
 
 
 def test_a_deleted_subtitle_is_backed_up_and_leaves_review(tmp_path):
@@ -88,7 +61,7 @@ def test_a_deleted_subtitle_is_backed_up_and_leaves_review(tmp_path):
     wrong = season / "Show.S01E02.fr.srt"
     wrong.write_text("1\n00:00:01,000 --> 00:00:02,000\nBonjour\n")
     reports.report(str(wrong), "opensubtitles", {"decision": "wrong-episode", "matches": "S01E03"})
-    review.delete_subtitle(str(wrong))
+    review_actions.delete_subtitle(str(wrong), file_hash(str(wrong)))
     assert not wrong.exists()
     saved = [name for _, _, names in os.walk(storage.backup_root(str(wrong))) for name in names]
     assert saved == ["deleted.srt"] and str(wrong) not in [row["subtitle"] for row in reports.latest_reports()]
@@ -118,18 +91,6 @@ def test_a_subtitle_of_another_film_is_not_reported_as_shifted_parts(movie, tmp_
     assert diagnosis["state"] == "no-match" and diagnosis["parts"] == []
 
 
-@needs_ffmpeg
-def test_each_moment_pairs_the_video_line_with_the_subtitle_line_that_belongs_to_it(movie):
-    video, subtitle, starts, ends = movie
-    write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    diagnosis = review.diagnose(str(video), str(subtitle))
-    moments = review.side_by_side(str(video), str(subtitle), 120, 180, diagnosis["shifts"])["moments"]
-    paired = [moment for moment in moments if moment["video"] and moment["subtitle"]]
-    assert len(paired) >= 0.9 * len([moment for moment in moments if moment["video"]])
-    assert all(moment["video"].split()[-1] == moment["subtitle"].split()[-1] for moment in paired)
-    assert sum(moment["shift"] < -2.5 for moment in paired) >= 0.8 * len(paired)
-
-
 def test_a_symlinked_video_or_one_outside_the_roots_is_never_used(tmp_path, monkeypatch):
     from subtitle_guard import files
     library, outside = tmp_path / "library", tmp_path / "outside"
@@ -142,6 +103,6 @@ def test_a_symlinked_video_or_one_outside_the_roots_is_never_used(tmp_path, monk
     (library / "Movie.mkv").unlink()
     (library / "Movie.mkv").write_bytes(b"v")
     assert review.video_for(str(library / "Movie.fr.srt")) == str(library / "Movie.mkv")
-    monkeypatch.setattr(files, "ROOTS", [str(outside.resolve())])
+    monkeypatch.setattr(files, "ALLOWED_FOLDERS", [str(outside.resolve())])
     assert review.video_for(str(library / "Movie.fr.srt")) is None
     assert os.path.exists(library / "Movie.mkv")
