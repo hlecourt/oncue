@@ -3,9 +3,9 @@ import os
 
 import pytest
 
-from subtitle_guard import reports, review_actions, storage
-from subtitle_guard.errors import EditRefusedError, StaleVersionError
-from subtitle_guard.files import file_hash
+from oncue import reports, review_actions, storage
+from oncue.errors import EditRefusedError, StaleVersionError
+from oncue.files import file_hash
 
 CUES = [(10.0, 11.0, "one"), (20.0, 21.0, "two"), (30.0, 31.0, "three")]
 

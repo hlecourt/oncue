@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import os
 
-from subtitle_guard.api.routes import media
-from subtitle_guard.storage import file_signature
+from oncue.api.routes import media
+from oncue.storage import file_signature
 
 
 def test_a_video_is_probed_once_until_it_changes(tmp_path, monkeypatch):

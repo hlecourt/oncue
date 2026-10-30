@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""State, report, backups and atomic writes under OnCue's state directory."""
+
+import fcntl
+import glob
+import hashlib
+import json
+import os
+import tempfile
+from contextlib import contextmanager
+from datetime import datetime
+
+from .errors import ConfigError
+
+STATE_DIRECTORY = os.environ.get("ONCUE_STATE", "/config/oncue")
+BACKUP_DIRECTORY = os.environ.get("ONCUE_BACKUPS", "/data/backup/oncue")
+
+
+def check_state_folder():
+    try:
+        os.makedirs(STATE_DIRECTORY, exist_ok=True)
+        with tempfile.TemporaryFile(dir=STATE_DIRECTORY):
+            pass
+    except OSError as error:
+        raise ConfigError(f"the state folder {STATE_DIRECTORY} cannot be written ({error.strerror}); set ONCUE_STATE to a folder this "
+                          "user can write") from error
+
+
+def state_path(*parts):
+    return os.path.join(STATE_DIRECTORY, *parts)
+
+
+def file_signature(path):
+    status = os.stat(path)
+    return f"{status.st_size}:{status.st_mtime_ns}:{status.st_ino}:{status.st_ctime_ns}"
+
+
+def backup_path(subtitle):
+    folder = os.path.join(backup_root(subtitle), datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+    os.makedirs(folder)
+    return folder
+
+
+def backup_root(subtitle):
+    subtitle = os.path.abspath(subtitle)
+    identity = hashlib.sha1(subtitle.encode()).hexdigest()[:12]
+    return os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), f"{os.path.basename(subtitle)}.{identity}")
+
+
+def backup_folders(subtitle):
+    subtitle = os.path.abspath(subtitle)
+    legacy_root = os.path.join(BACKUP_DIRECTORY, os.path.basename(os.path.dirname(os.path.dirname(subtitle))), os.path.basename(subtitle))
+    return sorted(folder for root in (backup_root(subtitle), legacy_root) for folder in glob.glob(os.path.join(glob.escape(root), "*"))
+                  if os.path.isdir(folder))
+
+
+def read_json(path):
+    with open(path) as handle:
+        return json.load(handle)
+
+
+def write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(data, handle)
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+        raise
+
+
+@contextmanager
+def heavy_disk_read():
+    os.makedirs(STATE_DIRECTORY, exist_ok=True)
+    with open(os.path.join(STATE_DIRECTORY, "heavy-disk-read.lock"), "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def now():
+    return datetime.now().isoformat(timespec="seconds")

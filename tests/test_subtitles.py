@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from pathlib import Path
 
-from subtitle_guard import state
-from subtitle_guard.guard import evaluate_and_fix
-from subtitle_guard.subtitles import ass_timestamp, parse_subtitle, write_subtitle
+from oncue import state
+from oncue.guard import evaluate_and_fix
+from oncue.subtitles import ass_timestamp, parse_subtitle, write_subtitle
 
 SRT = ("1\r\n00:00:01,000 --> 00:00:02,000\r\nBonjour\r\n\r\n2\r\n00:00:03,000 --> 00:00:04,000\r\n\r\n"
        "3\r\n00:00:05,500 --> 00:00:06,000\r\nDeux\r\nlignes\r\n4\r\n00:00:07,000 --> 00:00:08,000\r\nSans blanc avant\r\n")
@@ -103,7 +103,7 @@ def test_utf16_big_endian_with_crlf_comes_back_byte_for_byte(tmp_path):
 
 
 def test_impossible_sizes_and_times_are_not_checked(tmp_path):
-    from subtitle_guard.alignment import MAX_CHECKED_CUES, oversized_reason
+    from oncue.alignment import MAX_CHECKED_CUES, oversized_reason
     assert oversized_reason([(1.0, 2.0, "x")] * (MAX_CHECKED_CUES + 1)).startswith("too many lines")
     assert oversized_reason([(1.0, 9e9, "x")]).startswith("times beyond")
     assert oversized_reason([(1.0, 2.0, "x")]) is None

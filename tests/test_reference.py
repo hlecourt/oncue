@@ -6,7 +6,7 @@ import subprocess
 import pytest
 from media import video_with_reference
 
-from subtitle_guard import reference
+from oncue import reference
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -46,9 +46,9 @@ def test_track_choice_prefers_complete_text_tracks_then_english():
 
 
 def test_a_failed_probe_is_an_error_and_is_never_cached(tmp_path, monkeypatch):
-    from subtitle_guard import storage, tools
-    from subtitle_guard.errors import ProbeError
-    from subtitle_guard.guard import evaluate_and_fix
+    from oncue import storage, tools
+    from oncue.errors import ProbeError
+    from oncue.guard import evaluate_and_fix
     video, subtitle = tmp_path / "movie.mkv", tmp_path / "movie.fr.srt"
     video.write_bytes(b"not a video")
     subtitle.write_text("".join(f"{number}\n00:{number // 60:02d}:{number % 60:02d},000 --> 00:{number // 60:02d}:{number % 60:02d},500\nline\n\n"
@@ -80,15 +80,15 @@ def test_a_complete_bitmap_track_is_read_when_no_text_track_is_complete_for_this
 
 
 def test_a_hung_tool_raises_a_typed_error():
-    from subtitle_guard import tools
-    from subtitle_guard.errors import ToolError
+    from oncue import tools
+    from oncue.errors import ToolError
     with pytest.raises(ToolError):
         tools.run_tool(["sleep", "5"], 0.2)
 
 
 def test_an_oversized_matroska_element_is_refused(tmp_path):
-    from subtitle_guard import matroska
-    from subtitle_guard.errors import MatroskaError
+    from oncue import matroska
+    from oncue.errors import MatroskaError
     path = tmp_path / "huge.bin"
     path.write_bytes(bytes([0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]))
     with open(path, "rb") as handle, pytest.raises(MatroskaError):
@@ -96,7 +96,7 @@ def test_an_oversized_matroska_element_is_refused(tmp_path):
 
 
 def test_the_matroska_index_gives_the_same_timings_as_a_packet_scan(tmp_path, monkeypatch):
-    from subtitle_guard import matroska, reference
+    from oncue import matroska, reference
 
     video, starts, _ = video_with_reference(tmp_path)
     from_index = reference.extract_tracks(str(video))["tracks"]

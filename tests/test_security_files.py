@@ -5,10 +5,10 @@ import subprocess
 
 import pytest
 
-from subtitle_guard import files, reference
-from subtitle_guard.audio import audio_fix
-from subtitle_guard.errors import ProbeError, UnsafePathError
-from subtitle_guard.reference import MEDIA_INPUT_OPTIONS, probe_json
+from oncue import files, reference
+from oncue.audio import audio_fix
+from oncue.errors import ProbeError, UnsafePathError
+from oncue.reference import MEDIA_INPUT_OPTIONS, probe_json
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -17,9 +17,9 @@ def test_without_allowed_folders_nothing_is_written_but_a_dry_run_still_reads(tm
     subtitle = tmp_path / "Movie.fr.srt"
     subtitle.write_bytes(b"original")
     monkeypatch.setattr(files, "ALLOWED_FOLDERS", [])
-    with pytest.raises(UnsafePathError, match="SUBTITLE_GUARD_ROOTS"):
+    with pytest.raises(UnsafePathError, match="ONCUE_ROOTS"):
         files.replace_file(str(subtitle), b"changed")
-    with pytest.raises(UnsafePathError, match="SUBTITLE_GUARD_ROOTS"):
+    with pytest.raises(UnsafePathError, match="ONCUE_ROOTS"):
         files.remove_file(str(subtitle))
     assert subtitle.read_bytes() == b"original" and files.read_regular(str(subtitle)) == b"original"
 
@@ -49,7 +49,7 @@ def test_a_video_outside_the_allowed_folders_never_reaches_ffprobe(tmp_path, mon
     def never(command, timeout):
         raise AssertionError("ffprobe should not run")
     monkeypatch.setattr(reference, "run_tool", never)
-    with pytest.raises(ProbeError, match="outside SUBTITLE_GUARD_ROOTS"):
+    with pytest.raises(ProbeError, match="outside ONCUE_ROOTS"):
         probe_json(["ffprobe", str(outside / "Movie.mkv")], str(outside / "Movie.mkv"))
 
 
@@ -73,6 +73,6 @@ def test_ffsubsync_never_runs_on_a_file_our_ffprobe_refused(tmp_path, monkeypatc
 
     def never(*arguments, **options):
         raise AssertionError("ffsubsync should not run")
-    monkeypatch.setattr("subtitle_guard.audio.run_ffsubsync", never)
+    monkeypatch.setattr("oncue.audio.run_ffsubsync", never)
     outcome, timings = audio_fix(str(disguised), str(subtitle), {"cues": [(1.0, 2.0, "line")]})
     assert outcome["decision"] == "unverified" and outcome["reason"].startswith("could not read the video") and timings is None

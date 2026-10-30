@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-from subtitle_guard import reports, storage
+from oncue import reports, storage
 
 
 def test_the_old_report_file_is_imported_once_and_bad_rows_are_skipped(tmp_path):
@@ -46,7 +46,7 @@ def test_a_dry_run_that_would_fix_is_recorded_and_needs_a_look(tmp_path):
 def test_a_corrupt_state_file_is_set_aside_and_logged(tmp_path):
     from pathlib import Path
 
-    from subtitle_guard import logs, state
+    from oncue import logs, state
     path = state.state_file("/media/Ep.mkv", "/media/Ep.fr.srt")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     Path(path).write_text("{broken")
@@ -60,8 +60,8 @@ def test_processes_starting_together_import_the_old_history_exactly_once(tmp_pat
     row = "2026-10-27T10:00:00\tkept\teng-text\t0.9\t0.9\t0.1\tscan\t/media/Ep{number}.fr.srt\n"
     with open(storage.state_path("report.tsv"), "w") as handle:
         handle.write("".join(row.format(number=number) for number in range(3000)))
-    environment = {**os.environ, "SUBTITLE_GUARD_STATE": storage.STATE_DIRECTORY}
-    script = "from subtitle_guard import reports; print(len(reports.report_history()))"
+    environment = {**os.environ, "ONCUE_STATE": storage.STATE_DIRECTORY}
+    script = "from oncue import reports; print(len(reports.report_history()))"
     children = [subprocess.Popen([sys.executable, "-c", script], env=environment, stdout=subprocess.PIPE, text=True) for _ in range(4)]
     counts = [int(child.communicate(timeout=60)[0]) for child in children]
     assert counts == [3000] * 4

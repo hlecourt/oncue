@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from subtitle_guard import audio_copy, jobs
+from oncue import audio_copy, jobs
 
 
 def test_a_failed_audio_copy_is_made_again_only_when_asked(tmp_path):

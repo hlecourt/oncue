@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from subtitle_guard import reports, review_actions
-from subtitle_guard.errors import ProbeError
-from subtitle_guard.files import file_hash
-from subtitle_guard.subtitles import parse_subtitle
+from oncue import reports, review_actions
+from oncue.errors import ProbeError
+from oncue.files import file_hash
+from oncue.subtitles import parse_subtitle
 
 SRT = "1\n00:00:01,000 --> 00:00:02,000\nhello\n\n2\n00:00:03,000 --> 00:00:04,000\nworld\n"
 

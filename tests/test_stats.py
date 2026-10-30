@@ -5,8 +5,8 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from subtitle_guard import jobs, reports, stats
-from subtitle_guard.api.app import create_app
+from oncue import jobs, reports, stats
+from oncue.api.app import create_app
 
 TODAY = date.today()
 

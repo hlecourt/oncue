@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from subtitle_guard import bazarr, jobs, state, storage
-from subtitle_guard.errors import ConfigError
+from oncue import bazarr, jobs, state, storage
+from oncue.errors import ConfigError
 
 
 class FakeBazarr:
@@ -40,7 +40,7 @@ def rejected_download(tmp_path, monkeypatch):
     video.write_bytes(b"video")
     subtitle.write_text("subtitle")
     monkeypatch.setenv("BAZARR_API_KEY", "key")
-    monkeypatch.setenv("SUBTITLE_GUARD_MODE", "fix")
+    monkeypatch.setenv("ONCUE_MODE", "fix")
     monkeypatch.setattr(bazarr, "evaluate_and_fix", lambda video, subtitle, apply, neighbours: {"decision": "rejected", "reason": "no match"})
     monkeypatch.setattr(bazarr, "series_neighbours", lambda series, video: ())
     return str(video), str(subtitle)
@@ -162,8 +162,8 @@ def test_a_series_scan_queues_each_subtitle_with_its_neighbour_episodes(monkeypa
 
 
 def test_a_movie_scan_reports_each_result_and_goes_on_after_an_error(monkeypatch, capsys):
-    from subtitle_guard.errors import ProbeError
-    from subtitle_guard.reports import report_history
+    from oncue.errors import ProbeError
+    from oncue.reports import report_history
     movies = [{"title": "Broken", "path": "/media/Broken.mkv", "subtitles": [{"path": "/media/Broken.fr.srt", "code2": "fr"}]},
               {"title": "Fine", "path": "/media/Fine.mkv", "subtitles": [{"path": "/media/Fine.fr.srt", "code2": "fr"}]}]
     monkeypatch.setattr(bazarr, "bazarr_get", lambda path: {"data": movies})
@@ -175,7 +175,7 @@ def test_a_movie_scan_reports_each_result_and_goes_on_after_an_error(monkeypatch
     monkeypatch.setattr(bazarr, "evaluate_and_fix", evaluate)
     assert bazarr.scan_movies(False) == 0
     printed = capsys.readouterr().out
-    assert "Broken fr: error Invalid data" in printed and "Fine fr: subtitle-guard: kept" in printed
+    assert "Broken fr: error Invalid data" in printed and "Fine fr: oncue: kept" in printed
     assert [row["subtitle"] for row in report_history()] == ["/media/Fine.fr.srt"]
 
 

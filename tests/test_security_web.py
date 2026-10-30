@@ -8,18 +8,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from fastapi.testclient import TestClient
 
-from subtitle_guard import bazarr, configuration, notifications, storage
-from subtitle_guard.api import auth
-from subtitle_guard.api.app import create_app
-from subtitle_guard.api.security import CSRF_HEADER, SESSION_COOKIE, ip_or_none
-from subtitle_guard.errors import ConfigError
+from oncue import bazarr, configuration, notifications, storage
+from oncue.api import auth
+from oncue.api.app import create_app
+from oncue.api.security import CSRF_HEADER, SESSION_COOKIE, ip_or_none
+from oncue.errors import ConfigError
 
 PASSWORD = "a long enough password"
 
 
 @pytest.fixture
 def protected(monkeypatch):
-    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("ONCUE_UI_PASSWORD", PASSWORD)
     return TestClient(create_app("0.0.0.0"), base_url="http://guard.example:8484")
 
 
@@ -98,9 +98,9 @@ def test_bazarr_and_the_webhook_check_the_address_they_actually_connect_to(answe
 
 def test_an_ipv4_mapped_address_is_judged_as_the_ipv4_address(monkeypatch):
     assert ip_or_none("::ffff:10.0.0.5") == ipaddress.ip_address("10.0.0.5")
-    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
-    monkeypatch.setenv("SUBTITLE_GUARD_AUTH", "external")
-    monkeypatch.setenv("SUBTITLE_GUARD_TRUSTED_PROXIES", "10.0.0.0/8")
+    monkeypatch.setenv("ONCUE_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("ONCUE_AUTH", "external")
+    monkeypatch.setenv("ONCUE_TRUSTED_PROXIES", "10.0.0.0/8")
     app = create_app("0.0.0.0")
     assert TestClient(app, base_url="http://guard.example", client=("::ffff:10.0.0.5", 50000)).get("/api/status").status_code == 200
     assert TestClient(app, base_url="http://guard.example", client=("::ffff:203.0.113.9", 50000)).get("/api/status").status_code == 401
@@ -116,7 +116,7 @@ def test_one_account_is_locked_after_many_failures_from_any_number_of_addresses(
 
 
 def test_the_account_lock_spares_an_address_that_logged_in_in_the_last_30_days(monkeypatch):
-    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("ONCUE_UI_PASSWORD", PASSWORD)
     app = create_app("0.0.0.0")
 
     def log_in_from(address, password):
@@ -157,8 +157,8 @@ def test_a_new_password_ends_every_session_and_replaces_the_api_key():
 
 
 def test_the_secure_cookie_flag_follows_a_forwarded_https_only_from_a_trusted_proxy(monkeypatch):
-    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
-    monkeypatch.setenv("SUBTITLE_GUARD_TRUSTED_PROXIES", "10.0.0.0/8")
+    monkeypatch.setenv("ONCUE_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("ONCUE_TRUSTED_PROXIES", "10.0.0.0/8")
     app = create_app("0.0.0.0")
     login = {"json": {"user": "admin", "password": PASSWORD}, "headers": {"x-forwarded-proto": "https"}}
     direct = TestClient(app, base_url="http://guard.example", client=("203.0.113.9", 50000)).post("/api/session", **login)
@@ -170,4 +170,4 @@ def test_the_secure_cookie_flag_follows_a_forwarded_https_only_from_a_trusted_pr
 def test_the_api_description_needs_a_logged_in_user(protected):
     assert protected.get("/api/openapi.json").status_code == 401
     protected.post("/api/session", json={"user": "admin", "password": PASSWORD})
-    assert protected.get("/api/openapi.json").json()["info"]["title"] == "subtitle-guard"
+    assert protected.get("/api/openapi.json").json()["info"]["title"] == "OnCue"

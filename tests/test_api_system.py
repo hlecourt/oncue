@@ -8,11 +8,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from fastapi.testclient import TestClient
 
-from subtitle_guard import bazarr, files, jobs, notifications, reports, scans, storage, worker
-from subtitle_guard.api.app import create_app
-from subtitle_guard.api.security import CSRF_HEADER
+from oncue import bazarr, files, jobs, notifications, reports, scans, storage, worker
+from oncue.api.app import create_app
+from oncue.api.security import CSRF_HEADER
 
-GOOD_SETTINGS = {"general": {"use_postprocessing": True, "postprocessing_cmd": "python -m subtitle_guard hook --queue {{episode}}",
+GOOD_SETTINGS = {"general": {"use_postprocessing": True, "postprocessing_cmd": "python -m oncue hook --queue {{episode}}",
                              "use_postprocessing_threshold": False, "use_postprocessing_threshold_movie": False}, "subsync": {"use_subsync": False}}
 
 
@@ -54,7 +54,7 @@ def test_a_scan_through_the_watched_folders_queues_one_check_per_subtitle_and_ca
         folder.mkdir(parents=True)
         (folder / f"{name}.mkv").write_bytes(b"v")
         (folder / f"{name}.fr.srt").write_text("x")
-    monkeypatch.setenv("SUBTITLE_GUARD_LIBRARY", str(tmp_path / "media"))
+    monkeypatch.setenv("ONCUE_LIBRARY", str(tmp_path / "media"))
     monkeypatch.setattr(scans, "bazarr_configured", lambda: False)
     started = client.post("/api/scans").json()
     assert started["status"] == "listing" and started["source"] == "watched folders"
@@ -83,7 +83,7 @@ def test_the_webhook_sends_one_digest_per_interval_and_never_follows_a_redirect(
             return
     server = ThreadingHTTPServer(("127.0.0.1", 0), Receiver)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    monkeypatch.setenv("SUBTITLE_GUARD_WEBHOOK_URL", f"http://127.0.0.1:{server.server_address[1]}/hook")
+    monkeypatch.setenv("ONCUE_WEBHOOK_URL", f"http://127.0.0.1:{server.server_address[1]}/hook")
     assert notifications.send_due() is False
     reports.report(str(tmp_path / "A.fr.srt"), "scan", {"decision": "proposed", "confidence": 65, "confidence_band": "medium"})
     reports.report(str(tmp_path / "B.fr.srt"), "scan", {"decision": "kept", "confidence": 95, "confidence_band": "high"})
@@ -92,7 +92,7 @@ def test_the_webhook_sends_one_digest_per_interval_and_never_follows_a_redirect(
     assert notifications.send_due() is True and received[0]["count"] == 1 and received[0]["subtitles"][0]["name"] == "A.fr.srt"
     reports.report(str(tmp_path / "C.fr.srt"), "scan", {"decision": "rejected"})
     assert notifications.send_due() is False
-    monkeypatch.setenv("SUBTITLE_GUARD_WEBHOOK_URL", f"http://127.0.0.1:{server.server_address[1]}/moved")
+    monkeypatch.setenv("ONCUE_WEBHOOK_URL", f"http://127.0.0.1:{server.server_address[1]}/moved")
     storage.write_json(storage.state_path(notifications.STATE_FILE), {**storage.read_json(storage.state_path(notifications.STATE_FILE)), "time": 0})
     assert notifications.send_due() is False and len(received) == 2
     server.shutdown()
@@ -110,7 +110,7 @@ def test_the_system_page_and_the_backup_clean_up(client, tmp_path, monkeypatch):
     for folder in storage.backup_folders(str(kept)) + storage.backup_folders(str(gone)):
         os.utime(folder, (old, old))
     gone.unlink()
-    monkeypatch.setenv("SUBTITLE_GUARD_KEEP_VERSIONS", "1")
+    monkeypatch.setenv("ONCUE_KEEP_VERSIONS", "1")
     view = client.get("/api/system").json()
     assert set(view["checks"]) >= {"ffmpeg", "ffprobe", "ffsubsync", "bazarr"} and view["mode"] == "report" and view["backups_bytes"] > 0
     answer = client.post("/api/system/backups/clean-up").json()
@@ -118,7 +118,7 @@ def test_the_system_page_and_the_backup_clean_up(client, tmp_path, monkeypatch):
 
 
 def test_a_failing_check_shows_the_error_itself_not_the_traceback(client, monkeypatch):
-    from subtitle_guard.api.routes import system
+    from oncue.api.routes import system
     failing = {"ok": False, "error": "Traceback (most recent call last):\n  File \"<string>\", line 1\nModuleNotFoundError: No module named 'ffsubsync'\n"}
     monkeypatch.setattr(system, "health_checks", lambda: {"ffsubsync": failing})
     assert client.get("/api/system").json()["checks"]["ffsubsync"]["detail"] == "ModuleNotFoundError: No module named 'ffsubsync'"

@@ -1,5 +1,5 @@
 {
-  "name": "subtitle-guard-frontend",
+  "name": "oncue-frontend",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.16.1",

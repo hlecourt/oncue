@@ -11,4 +11,4 @@ benchmarks/work/
 .ruff_cache/
 
 # built front, made by pnpm build in frontend/
-src/subtitle_guard/api/static/
+src/oncue/api/static/

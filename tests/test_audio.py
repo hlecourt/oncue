@@ -6,9 +6,9 @@ import subprocess
 import numpy
 import pytest
 
-from subtitle_guard import audio
-from subtitle_guard.outcome import DECISION
-from subtitle_guard.subtitles import parse_subtitle, timestamp
+from oncue import audio
+from oncue.outcome import DECISION
+from oncue.subtitles import parse_subtitle, timestamp
 
 SRT = "".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 2)}\nline {number}\n\n" for number in range(1, 40))
 LONG_SRT = "".join(f"{number}\n{timestamp(number * 4.0)} --> {timestamp(number * 4.0 + 2)}\nline {number}\n\n" for number in range(1, 80))
@@ -41,9 +41,9 @@ def fake_ffsubsync(offsets, calls, on_run=None, speech=None):
 
 
 def test_an_audio_sync_is_never_written_on_its_own_and_waits_as_a_proposal(tmp_path, monkeypatch):
-    from subtitle_guard import guard, review_actions, storage
-    from subtitle_guard.catalog import proposal_for
-    from subtitle_guard.files import file_hash
+    from oncue import guard, review_actions, storage
+    from oncue.catalog import proposal_for
+    from oncue.files import file_hash
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(LONG_SRT)
     calls = []
@@ -62,9 +62,9 @@ def test_an_audio_sync_is_never_written_on_its_own_and_waits_as_a_proposal(tmp_p
 
 
 def test_a_proposal_for_an_older_version_of_the_file_is_never_applied(tmp_path, monkeypatch):
-    from subtitle_guard import guard, review_actions, storage
-    from subtitle_guard.errors import EditRefusedError
-    from subtitle_guard.files import file_hash
+    from oncue import guard, review_actions, storage
+    from oncue.errors import EditRefusedError
+    from oncue.files import file_hash
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(LONG_SRT)
     monkeypatch.setattr(guard, "load_reference", lambda video, hearing_impaired, count: None)
@@ -126,12 +126,12 @@ def test_a_sync_whose_parts_all_land_on_speech_is_trusted_and_one_off_by_a_secon
     ({"parts": 3, "agreeing": 3}, 30, "low"), (None, 30, "low"),
 ])
 def test_audio_confidence_is_the_share_of_parts_that_agree(agreement, score, band):
-    from subtitle_guard.confidence import confidence
+    from oncue.confidence import confidence
     assert confidence({"decision": DECISION["audio_synced"], "agreement": agreement}) == (score, band)
 
 
 def test_a_confident_audio_sync_is_still_a_proposal_while_automatic_audio_writes_are_off(tmp_path, monkeypatch):
-    from subtitle_guard import guard
+    from oncue import guard
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text("".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\n{text}\n\n" for number, (start, end, text) in enumerate(VARIED, 1)))
     shifted = [(start + 2.5, end + 2.5, text) for start, end, text in VARIED]
@@ -139,14 +139,14 @@ def test_a_confident_audio_sync_is_still_a_proposal_while_automatic_audio_writes
     monkeypatch.setattr(audio, "run_tool", fake_ffsubsync([2.5, 2.5], [], speech=speech_for(shifted, shifted[-1][1] + 10)))
     outcome = guard.evaluate_and_fix(str(tmp_path / "movie.mkv"), str(subtitle), True)
     assert outcome["confidence_band"] == "high" and outcome["decision"] == DECISION["proposed"]
-    monkeypatch.setenv("SUBTITLE_GUARD_AUDIO_AUTOMATIC", "1")
+    monkeypatch.setenv("ONCUE_AUDIO_AUTOMATIC", "1")
     subtitle.write_text(subtitle.read_text())
     outcome = guard.evaluate_and_fix(str(tmp_path / "movie.mkv"), str(subtitle), True)
     assert outcome["decision"] == DECISION["audio_synced"] and abs(parse_subtitle(str(subtitle))["cues"][0][0] - shifted[0][0]) < 0.01
 
 
 def test_the_calibration_counts_confident_results_that_are_wrong(tmp_path, monkeypatch):
-    from subtitle_guard import calibration
+    from oncue import calibration
     video, subtitle = tmp_path / "Film.mkv", tmp_path / "Film.en.srt"
     video.write_bytes(b"v")
     subtitle.write_text("x")

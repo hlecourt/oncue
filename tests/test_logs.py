@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from subtitle_guard import bazarr, cli, logs
-from subtitle_guard.guard import evaluate_and_fix
+from oncue import bazarr, cli, logs
+from oncue.guard import evaluate_and_fix
 
 
 def events():
@@ -96,7 +96,7 @@ def test_a_download_from_bazarr_is_logged_as_it_arrives(monkeypatch, tmp_path):
 
 
 def test_a_long_running_command_reports_its_start_and_health(monkeypatch, tmp_path):
-    from subtitle_guard import health
+    from oncue import health
     monkeypatch.delenv("BAZARR_API_KEY", raising=False)
     monkeypatch.setattr(health, "BAZARR_CONFIG", str(tmp_path / "missing.yaml"))
     checks = health.report_startup("worker", workers=2)
@@ -107,7 +107,7 @@ def test_a_long_running_command_reports_its_start_and_health(monkeypatch, tmp_pa
 
 
 def test_events_inside_a_job_carry_the_job_id(monkeypatch):
-    from subtitle_guard import jobs, worker
+    from oncue import jobs, worker
     job_id = jobs.enqueue(jobs.KIND["check"], {"video": "/missing.mkv", "subtitle": "/missing.fr.srt", "apply": False})
     monkeypatch.setattr(worker, "run_job", lambda job: (logs.log("guard.checked", "decision=kept"), {"decision": "kept", "summary": "in sync"})[1])
     worker.work_once(1)
