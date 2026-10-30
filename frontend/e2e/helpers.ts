@@ -15,7 +15,10 @@ export async function watchProblems(page: Page) {
 }
 
 export async function expectAccessible(page: Page) {
+  // contrast measured mid-fade (a button becoming enabled) depends on the machine's speed
+  const settled = await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" })
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze()
+  await settled.evaluate((style) => style.remove())
   const serious = results.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical")
   expect(serious.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).slice(0, 3).join(", ")}`)).toEqual([])
 }
