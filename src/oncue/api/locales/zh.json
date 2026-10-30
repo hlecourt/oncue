@@ -63,6 +63,8 @@
   "Synced to the audio, not checked": "已按音频同步，未检查",
   "That user name or password is not right.": "用户名或密码不正确。",
   "That version is back, and the one it replaced was backed up.": "已恢复该版本，被替换的版本已备份。",
+  "This video has no picture.": "此视频没有画面。",
+  "This part is past the end of the video.": "这一段在视频结束之后。",
   "The audio copy is not ready yet.": "音频副本尚未准备好。",
   "The last calibration found no wrong confident result in {count} trials.": "上次校准在 {count} 次试验中没有发现错误的高置信度结果。",
   "The last calibration found {count} confident audio syncs that were wrong.": "上次校准发现 {count} 个高置信度的音频同步是错误的。",

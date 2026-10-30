@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The light audio copy the editor plays: one mono AAC file per video and audio track, made once by a job, with its waveform peaks, kept in a
-cache under a size cap that drops the least recently played copies first."""
+"""The light copies the editor plays: one mono AAC file per video and audio track with its waveform peaks, made once by a job, and silent 30 s
+windows of the picture, made on demand; all kept in a cache under a size cap that drops the least recently played first."""
 
 import hashlib
 import os
 import tempfile
+import threading
 from contextlib import closing
 
 import numpy
@@ -19,6 +20,10 @@ from .tools import EXTRACT_SECONDS, run_tool, stderr_tail
 COPY_VERSION = 1
 PEAKS_PER_SECOND = 100
 PEAK_SAMPLE_RATE = 4000
+WINDOW_VERSION = 1
+WINDOW_SECONDS = 30
+WINDOW_HEIGHT = 720
+WINDOW_LOCK = threading.Lock()
 CACHE_BYTES = int(os.environ.get("ONCUE_AUDIO_CACHE_MB", "2048")) * 1024 * 1024
 
 
@@ -32,6 +37,12 @@ def copy_paths(video, track):
 def ready(video, track):
     audio, peaks = copy_paths(video, track)
     return os.path.exists(audio) and os.path.exists(peaks)
+
+
+def window_path(video, index):
+    status = os.stat(video)
+    key = hashlib.sha1(f"{WINDOW_VERSION}|{os.path.realpath(video)}|{status.st_size}|{status.st_mtime_ns}|window|{index}".encode()).hexdigest()
+    return os.path.join(state_path("audio-copies"), key + ".mp4")
 
 
 # a failed copy is made again only on an explicit retry, so the editor's polling does not run ffmpeg in a loop
@@ -76,11 +87,38 @@ def make_copy(video, track):
     return {"decision": "ready", "summary": f"audio copy of track {track} ready"}
 
 
+# a picture browsers already play is copied as is, which takes a fraction of a second; any other one is encoded again
+def video_window(video, index, copyable):
+    target = window_path(video, index)
+    with WINDOW_LOCK:
+        if not os.path.exists(target):
+            make_window(video, index, copyable, target)
+    os.utime(target)
+    return target
+
+
+def make_window(video, index, copyable, target):
+    os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(suffix=".mp4", dir=os.path.dirname(target))
+    os.close(descriptor)
+    picture = ["-c:v", "copy"] if copyable else ["-vf", f"scale=-2:min({WINDOW_HEIGHT}\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+                                                 "-pix_fmt", "yuv420p"]
+    try:
+        ffmpeg(["-ss", str(index * WINDOW_SECONDS), "-i", video, "-t", str(WINDOW_SECONDS), "-map", "0:v:0", "-an", "-sn", "-dn", *picture,
+                "-movflags", "+faststart", "-map_metadata", "-1", "-f", "mp4", "-y", temporary], video)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+    log("video-window.made", f"video window {index} made, {os.path.getsize(target) // 1024} KB", video=video, window=index, copied=copyable)
+    evict()
+
+
 def ffmpeg(arguments, video):
     command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-threads", "1", *arguments]
     result = run_on_video(command, video, EXTRACT_SECONDS) if video in arguments else run_tool(command, EXTRACT_SECONDS)
     if result.returncode != 0:
-        raise ProbeError(f"ffmpeg could not make the audio copy of {video}: {stderr_tail(result) or 'exit ' + str(result.returncode)}")
+        raise ProbeError(f"ffmpeg could not make the light copy of {video}: {stderr_tail(result) or 'exit ' + str(result.returncode)}")
 
 
 def played(video, track):
@@ -91,13 +129,13 @@ def played(video, track):
 
 def evict():
     folder = state_path("audio-copies")
-    copies = sorted((os.path.getmtime(path), path) for path in (os.path.join(folder, name) for name in os.listdir(folder)) if path.endswith(".m4a"))
+    copies = sorted((os.path.getmtime(path), path) for path in (os.path.join(folder, name) for name in os.listdir(folder)) if path.endswith((".m4a", ".mp4")))
     total = sum(os.path.getsize(path) for _, path in copies)
     for _, path in copies[:-1]:
         if total <= CACHE_BYTES:
             break
         total -= os.path.getsize(path)
-        for leftover in (path, path[: -len(".m4a")] + ".peaks"):
+        for leftover in (path, path.removesuffix(".m4a") + ".peaks"):
             if os.path.exists(leftover):
                 os.remove(leftover)
-        log("audio-copy.evicted", f"audio copy removed to stay under the cache cap: {path}", path=path)
+        log("audio-copy.evicted", f"light copy removed to stay under the cache cap: {path}", path=path)

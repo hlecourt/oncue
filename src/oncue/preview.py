@@ -10,7 +10,8 @@ from .storage import state_path
 from .tools import stderr_tail
 
 PREVIEW_SECONDS = 20
-FRAME_WIDTH = 640
+FRAME_WIDTH = 1280
+BROWSER_PIXEL_FORMATS = ("yuv420p", "yuvj420p")
 
 
 def audio_tracks(video):
@@ -23,6 +24,14 @@ def audio_tracks(video):
     return sorted(tracks, key=lambda track: (track["commentary"], not track["default"], track["index"]))
 
 
+def picture_facts(video):
+    streams = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-select_streams", "v:0", "-show_entries", "stream=codec_name,pix_fmt", "-of", "json",
+                          video], video).get("streams", [])
+    if not streams:
+        return None
+    return {"copyable": streams[0].get("codec_name") == "h264" and streams[0].get("pix_fmt") in BROWSER_PIXEL_FORMATS}
+
+
 def video_duration(video):
     duration = probe_json(["ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS, "-show_entries", "format=duration", "-of", "json", video],
                           video).get("format", {}).get("duration")
@@ -31,7 +40,7 @@ def video_duration(video):
 
 def still_frame(video, moment):
     return extract(["-ss", f"{moment:.3f}", "-i", video, "-map", "0:v:0", "-frames:v", "1", "-vf", f"scale='min({FRAME_WIDTH},iw)':-2",
-                    "-an", "-sn", "-dn", "-q:v", "5", "-f", "image2", "-c:v", "mjpeg"], ".jpg", video)
+                    "-an", "-sn", "-dn", "-q:v", "2", "-f", "image2", "-c:v", "mjpeg"], ".jpg", video)
 
 
 def extract(arguments, suffix, video):

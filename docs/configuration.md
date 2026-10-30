@@ -81,7 +81,7 @@ wins and shows as locked there.
 | `ONCUE_URL_BASE` | unset; for example `/oncue` behind a reverse proxy, applied on restart |
 | `ONCUE_AUTH` | `forms`; `local` skips the login from private addresses, `external` trusts a reverse proxy that authenticates |
 | `ONCUE_TRUSTED_PROXIES` | unset; reverse proxies whose `X-Forwarded-For` is believed, as addresses or networks separated by commas (`172.18.0.0/16`) |
-| `ONCUE_AUDIO_CACHE_MB` | `2048`: light audio copies the editor plays, least recently played removed first |
+| `ONCUE_AUDIO_CACHE_MB` | `2048`: light sound copies and video windows the editor plays, least recently played removed first |
 | `ONCUE_QUEUE` | unset; `1` makes `hook` queue its job, like `--queue` |
 | `ONCUE_HOOK_DIR` | unset; a folder Bazarr also sees, where `serve` copies the package for the hook |
 | `ONCUE_LIBRARY` | unset; folders to watch in `serve`, separated by `:` |
