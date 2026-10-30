@@ -4,7 +4,6 @@
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -335,10 +334,22 @@ def api_key():
         raise ConfigError("Bazarr's address was set in Settings, so its API key must be entered there too: the key in Bazarr's config is only sent "
                           "to the default or environment address")
     with open(BAZARR_CONFIG) as handle:
-        match = re.search(r"^auth:\n(?:[ \t]+.*\n)*?[ \t]+apikey: *(\S+)", handle.read(), re.MULTILINE)
-    if match is None:
+        key = auth_api_key(handle.read())
+    if key is None:
         raise ConfigError(f"no auth.apikey in {BAZARR_CONFIG}, set BAZARR_API_KEY")
-    return match.group(1).strip("'\"")
+    return key
+
+
+def auth_api_key(config):
+    inside_auth = False
+    for line in config.splitlines():
+        if line and not line[0].isspace():
+            inside_auth = line.rstrip() == "auth:"
+            continue
+        name, _, value = line.strip().partition(":")
+        if inside_auth and name == "apikey" and value.split():
+            return value.split()[0].strip("'\"")
+    return None
 
 
 class SameOriginRedirect(urllib.request.HTTPRedirectHandler):
