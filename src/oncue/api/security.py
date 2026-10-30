@@ -5,6 +5,7 @@ the routes depend on."""
 import asyncio
 import hmac
 import ipaddress
+import os
 import secrets
 import threading
 import urllib.parse
@@ -13,10 +14,12 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..configuration import AUTH_MODE
+from ..storage import read_json, state_path, write_json
 from .auth import LOCKOUT_SECONDS, LOOPBACK_HOSTS, api_key, locked_out, record_failure, record_success, session_for, verify
 from .i18n import current_locale, locale_from, tr
 
 SESSION_COOKIE = "oncue_session"
+INSTANCE_FILE = "instance.json"
 CSRF_HEADER = "X-CSRF-Token"
 API_KEY_HEADER = "X-Api-Key"
 MAX_BODY_BYTES = 64 * 1024
@@ -29,6 +32,14 @@ SECURITY_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosnif
                     "Content-Security-Policy": ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
                                                 "media-src 'self' blob:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; "
                                                 "base-uri 'self'")}
+
+
+# browsers keep one cookie per host name whatever the port, so each instance names its session after an id kept in its own state
+def session_cookie():
+    path = state_path(INSTANCE_FILE)
+    if not os.path.exists(path):
+        write_json(path, {"id": secrets.token_hex(4)})
+    return f"{SESSION_COOKIE}_{read_json(path)['id']}"
 
 
 async def guard(request, call_next):
@@ -82,7 +93,7 @@ def refusal(status, code, message):
 
 
 def current_session(request: Request):
-    return session_for(request.cookies.get(SESSION_COOKIE, "")) if request.app.state.login_required else None
+    return session_for(request.cookies.get(request.app.state.session_cookie, "")) if request.app.state.login_required else None
 
 
 def login_needed(request):
