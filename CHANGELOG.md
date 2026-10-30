@@ -26,8 +26,9 @@ First public version.
   Anchor a line where its voice starts, or nudge by 0.1 s and 1 s, on every line, from a line on, or on a selection; changes
   add up into a list with OnCue's fix (which can be turned off), undo with Ctrl Z, and one save writes them all with a
   backup and a check that the file did not change. Full keyboard control, phone layout.
-- The editor plays the real video with the sound, in 30 s windows made on demand around the playhead: a picture in H.264 is
-  copied as is, so it shows as soon as the editor opens; any other one is encoded again in 720p.
+- The editor plays the real video with the sound, in short windows made on demand around the playhead: a picture in H.264 is
+  copied as is, so it shows as soon as the editor opens; any other one is encoded again in 720p, 10 s at a time, with a
+  loading sign while it is made. The next window is made while the current one plays, so playback never stops at a seam.
 - Settings in the UI, stored next to the state; an environment variable always wins and the allowed folders and the
   confidence threshold stay set by the environment. A URL base for reverse proxies, login modes like the *arr apps (always,
   not from private addresses, or a proxy that authenticates), an API key for scripts, a webhook digest of what reached

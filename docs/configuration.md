@@ -94,6 +94,13 @@ wins and shows as locked there.
 | `BAZARR_API_KEY` | read from `BAZARR_CONFIG` |
 | `BAZARR_CONFIG` | `/config/config/config.yaml` |
 
+## Video in the editor
+
+The editor plays the video in short windows made on demand around the playhead, kept in the same cache as the sound copies. A
+picture in 8-bit H.264 is copied as is, so it shows as soon as the editor opens. Any other picture (HEVC, AV1, 10-bit) is encoded
+again in 720p, 10 seconds at a time: a few seconds per window on a recent processor, more on a small one, with still frames
+in the meantime.
+
 ## Running as a service
 
 `oncue serve` runs a supervisor, `ONCUE_WORKERS` worker processes (2 by default), the web UI and the folder

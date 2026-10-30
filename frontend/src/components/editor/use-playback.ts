@@ -39,6 +39,7 @@ export function usePlayback(subtitleId: string, fallbackDuration: number) {
     },
   })
   const duration = media.data?.duration ?? fallbackDuration
+  const windowSeconds = media.data?.window_seconds ?? null
   const soundTrack = media.data?.track
   const sound = useMemo(() => (player && soundTrack !== undefined ? { element: player, url: mediaUrl(`/api/subtitles/${subtitleId}/audio/${soundTrack}`) } : null), [player, soundTrack, subtitleId])
 
@@ -79,5 +80,5 @@ export function usePlayback(subtitleId: string, fallbackDuration: number) {
     return () => cancelAnimationFrame(frame)
   }, [playing])
 
-  return { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps }
+  return { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps, windowSeconds }
 }

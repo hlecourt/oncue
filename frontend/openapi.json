@@ -84,6 +84,17 @@
             },
             "title": "Tracks",
             "type": "array"
+          },
+          "window_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Seconds"
           }
         },
         "required": [
@@ -93,7 +104,8 @@
           "duration",
           "job",
           "failed",
-          "peaks_per_second"
+          "peaks_per_second",
+          "window_seconds"
         ],
         "title": "AudioState",
         "type": "object"
@@ -3433,7 +3445,7 @@
             "name": "index",
             "required": true,
             "schema": {
-              "maximum": 5760,
+              "maximum": 17280,
               "minimum": 0,
               "title": "Index",
               "type": "integer"
