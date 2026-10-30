@@ -121,4 +121,4 @@ service, so `docker logs` shows it. Each line is one JSON event: `time`, `level`
 the metadata; events written while a job runs also carry its `job` id. Events are named `component.past-tense`, for example
 `service.started` and `health.checked` at start, `bazarr.hook-received`, `bazarr.api-call`, `job.started`, `guard.checked` (with
 the decision, confidence, alignment figures and changes), `guard.rewritten`, `job.succeeded`, `job.failed` (with the trace),
-`review.shifted` for actions taken in the UI, and `supervisor.stopping`.
+`review.retimed` for timing saved from the editor, and `supervisor.stopping`.

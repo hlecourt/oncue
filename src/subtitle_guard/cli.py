@@ -104,7 +104,9 @@ def parse_options(raw):
     while index < len(raw):
         if raw[index] in flags:
             flags[raw[index]] = True
-        elif raw[index] == "--workers" and index + 1 < len(raw):
+        elif raw[index] == "--workers":
+            if index + 1 == len(raw):
+                raise UsageError("--workers needs a number")
             workers = whole_number(raw[index + 1])
             index += 1
         else:
@@ -307,7 +309,7 @@ def serve_roles(apply, workers, serve_web):
 
 
 COMMANDS = {
-    "hook": (6, UNBOUNDED, run_hook),
+    "hook": (len(HOOK_FIELDS) - 1, len(HOOK_FIELDS), run_hook),
     "check": (2, 2, run_check),
     "enqueue": (2, 2, run_enqueue),
     "scan-series": (1, 1, run_scan_series),

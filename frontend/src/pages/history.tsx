@@ -99,10 +99,10 @@ function Checks() {
                       <div className="text-xs text-muted-foreground">{when(row.time)}{row.started_by ? `, ${row.started_by}` : ""}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden align-top md:table-cell">
+                  <TableCell className="hidden align-top whitespace-normal md:table-cell">
                     <div className="flex items-center gap-2"><ToneDot tone={toneOf(row.tone)} />{row.words}</div>
                   </TableCell>
-                  <TableCell className="hidden align-top text-sm md:table-cell">{row.changes.map((sentence) => <div key={sentence}>{sentence}</div>)}</TableCell>
+                  <TableCell className="hidden align-top text-sm whitespace-normal md:table-cell">{row.changes.map((sentence) => <div key={sentence}>{sentence}</div>)}</TableCell>
                   <TableCell className="hidden align-top md:table-cell"><ConfidenceBadge confidence={row.confidence} band={row.band} /></TableCell>
                   <TableCell className="hidden whitespace-nowrap align-top text-xs text-muted-foreground md:table-cell">
                     <div>{when(row.time)}</div>

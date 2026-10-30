@@ -11,12 +11,11 @@ from .bazarr import REPLACEMENT_STAGE, request_another
 from .catalog import discard_proposal, proposal_for
 from .confidence import confidence
 from .configuration import MODE
-from .errors import EditRefusedError, StaleVersionError
+from .errors import EditRefusedError, StaleVersionError, ToolError
 from .files import file_hash, read_regular, remove_file, restore_version, save_backup, subtitle_lock
-from .guard import evaluate_and_fix
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
-from .logs import log
+from .logs import LEVEL, log
 from .outcome import DECISION
 from .reference import load_reference
 from .reports import report
@@ -26,54 +25,6 @@ from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
 
 STALE_VERSION = "the subtitle changed since this page was opened, reload it and try again"
 BEFORE_THE_START = "some lines would start before the beginning of the video"
-
-
-def apply_proposal(video, subtitle, expected_version=None):
-    version = file_hash(subtitle)
-    if expected_version and expected_version != version:
-        raise StaleVersionError(STALE_VERSION)
-    proposal = proposal_for(subtitle, version)
-    if proposal is None:
-        evaluate_and_fix(video, subtitle, False)
-        proposal = proposal_for(subtitle, version)
-    if proposal is None:
-        return None
-    with subtitle_lock(subtitle):
-        if file_hash(subtitle) != version:
-            raise StaleVersionError("the subtitle changed while the proposal was applied, nothing was written")
-        document = parse_subtitle(subtitle)
-        if len(document["cues"]) != len(proposal["timings"]):
-            raise EditRefusedError("the proposal does not match this file any more, nothing was written")
-        timings = [(start, end, text) for (start, end), (_, _, text) in zip(proposal["timings"], document["cues"], strict=True)]
-        backup_folder = save_backup(subtitle, "original")
-        write_subtitle(subtitle, document, timings)
-    discard_proposal(subtitle)
-    outcome = {"decision": DECISION["approved"], "reason": f"{proposal['kind']} proposal applied by hand", "changes": proposal.get("changes"),
-               "confidence": proposal.get("confidence"), "confidence_band": proposal.get("confidence_band"), "reference": proposal.get("reference") or ""}
-    report(subtitle, "ui", outcome)
-    log("review.proposal-applied", f"{proposal['kind']} proposal applied, backup={backup_folder}", subtitle=subtitle, backup=backup_folder,
-        confidence=proposal.get("confidence"))
-    return outcome
-
-
-def shift_range(video, subtitle, first, last, offset, expected_hash=None):
-    if first > last:
-        raise EditRefusedError("the part ends before it starts")
-    with subtitle_lock(subtitle):
-        if expected_hash and file_hash(subtitle) != expected_hash:
-            raise StaleVersionError(STALE_VERSION)
-        document = parse_subtitle(subtitle)
-        timings = [(start + offset, end + offset, text) if first <= start <= last else (start, end, text) for start, end, text in document["cues"]]
-        if any(start < 0 for start, _, _ in timings):
-            raise EditRefusedError(BEFORE_THE_START)
-        save_backup(subtitle, "before-manual")
-        write_subtitle(subtitle, document, timings)
-    discard_proposal(subtitle)
-    parts = [{"first": first, "last": last, "shift": round(offset, 2), "lines": sum(first <= start <= last for start, _, _ in document["cues"])}]
-    outcome = manual_outcome(video, subtitle, document["cues"], DECISION["manual"], f"shifted {first:.1f}-{last:.1f}s by {offset:+.2f}s", 1.0, parts)
-    log("review.shifted", f"manual shift range={first:.2f}-{last:.2f}s offset={offset:+.2f}s", subtitle=subtitle, first=first, last=last,
-        offset=offset, confidence=outcome["confidence"])
-    return outcome
 
 
 def retime(video, subtitle, expected_version, use_proposal, changes):
@@ -130,7 +81,11 @@ def replace_version(subtitle, expected_version, backup_label, write):
 
 def manual_outcome(video, subtitle, previous_cues, decision, reason, scale, parts):
     cues = parse_subtitle(subtitle)["cues"]
-    reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    try:
+        reference = load_reference(video, is_hearing_impaired(subtitle), len(cues))
+    except (ToolError, OSError) as error:
+        log("review.measure-failed", f"saved, but the video could not be read to measure the result: {error}", LEVEL["warning"], subtitle=subtitle, video=video)
+        reference = None
     previous = measure(previous_cues, reference) if reference else None
     measured = measure(cues, reference) if reference else None
     outcome = {"decision": decision, "reference": reference["kind"] if reference else "", "before": previous or {}, "after": measured or {},

@@ -8,8 +8,8 @@ from contextlib import suppress
 from datetime import datetime
 
 from . import configuration, jobs
-from .errors import SubtitleGuardError
-from .files import TEMPORARY_SUFFIX
+from .errors import SubtitleGuardError, UnsafePathError
+from .files import TEMPORARY_SUFFIX, remove_file
 from .guard import evaluate_and_fix
 from .logs import LEVEL, log, settings
 from .outcome import describe
@@ -97,9 +97,10 @@ def leftover_temporary(folder, name):
     if not name.endswith(TEMPORARY_SUFFIX):
         return False
     path = os.path.join(folder, name)
-    with suppress(FileNotFoundError):
+    # remove_file refuses outside SUBTITLE_GUARD_ROOTS (or without it): such a leftover is only skipped
+    with suppress(FileNotFoundError, UnsafePathError):
         if time.time() - os.path.getmtime(path) > LEFTOVER_SECONDS:
-            os.remove(path)
+            remove_file(path)
             log("watch.leftover-removed", f"removed a temporary file left by an interrupted write: {path}", LEVEL["warning"], file=path)
     return True
 

@@ -30,12 +30,13 @@ def prepare_audio(subtitle_id: str, body: AudioRequest) -> AudioState:
     except ToolError as error:
         raise HTTPException(422, {"code": "unreadable_video", "message": tr("The video cannot be read: {reason}", reason=error)}) from error
     if not tracks:
-        return AudioState(ready=False, track=None, tracks=[], duration=duration, job=None, peaks_per_second=PEAKS_PER_SECOND)
+        return AudioState(ready=False, track=None, tracks=[], duration=duration, job=None, failed=False, peaks_per_second=PEAKS_PER_SECOND)
     chosen = body.track if body.track is not None else tracks[0]["index"]
     if chosen not in [track["index"] for track in tracks]:
         raise HTTPException(422, {"code": "unknown_track", "message": tr("This video has no such audio track.")})
-    return AudioState(ready=ready(video, chosen), track=chosen, tracks=[AudioTrack(**track) for track in tracks], duration=duration,
-                      job=request_copy(video, chosen), peaks_per_second=PEAKS_PER_SECOND)
+    job, failed = request_copy(video, chosen, body.retry)
+    return AudioState(ready=ready(video, chosen), track=chosen, tracks=[AudioTrack(**track) for track in tracks], duration=duration, job=job, failed=failed,
+                      peaks_per_second=PEAKS_PER_SECOND)
 
 
 # the signature is only part of the cache key, so a changed video is probed again

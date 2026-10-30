@@ -178,12 +178,6 @@ class VersionGuard(BaseModel):
     version: str = Field(min_length=40, max_length=40, pattern="^[0-9a-f]+$")
 
 
-class Shift(VersionGuard):
-    first: float = Field(ge=0, le=48 * 3600)
-    last: float = Field(ge=0, le=48 * 3600)
-    offset: float = Field(ge=-3600, le=3600)
-
-
 class LineShift(BaseModel):
     first: int = Field(ge=0, le=200_000)
     last: int = Field(ge=0, le=200_000)
@@ -242,6 +236,7 @@ class SettingsView(BaseModel):
 
 class SettingsChange(BaseModel):
     changes: dict[str, object] = Field(max_length=20)
+    password: str = Field("", max_length=1000)
 
 
 class ApiKey(BaseModel):
@@ -303,6 +298,7 @@ class AudioTrack(BaseModel):
 
 class AudioRequest(BaseModel):
     track: int | None = Field(None, ge=0, le=999)
+    retry: bool = False
 
 
 class AudioState(BaseModel):
@@ -311,6 +307,7 @@ class AudioState(BaseModel):
     tracks: list[AudioTrack]
     duration: float
     job: int | None
+    failed: bool
     peaks_per_second: int
 
 

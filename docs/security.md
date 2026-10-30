@@ -8,8 +8,10 @@ How subtitle-guard protects its web UI, your files and Bazarr's key. To report a
   needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
   `SUBTITLE_GUARD_UI_PASSWORD`, or an account set with `subtitle-guard set-password` (stored as a scrypt hash with mode 600), or on
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
-  opening it. Five wrong attempts lock a client out for 10 minutes, and twenty in 10 minutes from any address lock the account,
-  except for addresses that logged in successfully in the last 30 days, so a stranger cannot lock you out. Logging in opens
+  opening it. Five wrong attempts lock a client out for 10 minutes, and twenty in 10 minutes from any address lock the account
+  for every address that did not log in successfully in the last 30 days. Those addresses keep logging in, but a stranger can
+  keep a new device or address locked out. Behind a reverse proxy missing from `SUBTITLE_GUARD_TRUSTED_PROXIES`, every client
+  has the proxy's address, so one client's wrong attempts lock out all of them. Logging in opens
   a session that expires on the server after 30 days (HttpOnly, SameSite=Strict, Secure behind a trusted HTTPS proxy that sets
   `X-Forwarded-Proto`); logging out ends it, and changing the password ends every session and replaces the API key.
 - Login modes (`SUBTITLE_GUARD_AUTH`): `local` skips the login only for a client with a private address that opens the UI by an IP

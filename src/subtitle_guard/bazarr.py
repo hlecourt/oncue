@@ -68,7 +68,7 @@ def handle_download(video, subtitle, language, provider, subtitle_id, media_id, 
         forget_attempt_copies(subtitle)
         return outcome
     if len(state["attempts"]) > configuration.value("replacements"):
-        restore_best(video, subtitle, state)
+        restore_best(video, subtitle, state, received)
         return outcome
     pending = {"media_type": "series" if series_number else "movie", "media_id": media_number, "series_id": series_number, "subtitle": subtitle,
                "provider": provider, "subtitle_id": subtitle_id, "language": language, "content_hash": received, "stage": REPLACEMENT_STAGE["requested"]}
@@ -251,22 +251,33 @@ def another_arrived(video, subtitle, pending, attempts_before):
 
 def finish_replacement(video, subtitle, pending, attempts_before):
     if another_arrived(video, subtitle, pending, attempts_before):
-        update_state(video, subtitle, lambda state: state.pop("pending_replacement", None))
+        update_state(video, subtitle, lambda state: forget_own_pending(state, pending))
         return {"decision": "replaced", "summary": "Bazarr downloaded another subtitle"}
-    restore_best(video, pending["subtitle"], load_state(video, subtitle))
+    restore_best(video, pending["subtitle"], load_state(video, subtitle), pending.get("content_hash"))
     rescan(pending)
-    update_state(video, subtitle, lambda state: state.pop("pending_replacement", None))
+    update_state(video, subtitle, lambda state: forget_own_pending(state, pending))
     log("bazarr.replacement-timeout", f"no replacement after {REPLACEMENT_WAIT_SECONDS}s, best attempt restored", LEVEL["warning"], video=video, subtitle=subtitle)
     return {"decision": DECISION["best_effort"], "summary": "no other subtitle arrived, kept the best version tried"}
 
 
-def restore_best(video, subtitle, state):
+def forget_own_pending(state, pending):
+    stored = state.get("pending_replacement") or {}
+    if (stored.get("subtitle_id"), stored.get("content_hash")) == (pending.get("subtitle_id"), pending.get("content_hash")):
+        state.pop("pending_replacement", None)
+
+
+def restore_best(video, subtitle, state, expected_hash):
     candidates = [attempt for attempt in state["attempts"] if attempt.get("subtitle") == subtitle and attempt.get("copy") and os.path.exists(attempt["copy"])]
     if not candidates:
         forget_attempt_copies(subtitle)
         return
     best = max(candidates, key=lambda attempt: (attempt.get("confidence") or 0, (attempt.get("after") or {}).get("matched", 0)))
     with subtitle_lock(subtitle):
+        if os.path.exists(subtitle) and file_hash(subtitle) != expected_hash:
+            forget_attempt_copies(subtitle)
+            log("bazarr.restore-skipped", "the subtitle changed since the replacement was asked for, the best attempt was not restored", LEVEL["warning"],
+                subtitle=subtitle)
+            return
         if os.path.exists(subtitle):
             save_backup(subtitle, "before-restore")
         restore_version(subtitle, best["copy"])
