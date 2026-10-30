@@ -146,7 +146,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the front, the tests and releases, and [CHANGELOG.md](CHANGELOG.md) for what
-changed. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+changed.
 
 ## Licence
 
