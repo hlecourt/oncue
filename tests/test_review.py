@@ -7,6 +7,7 @@ from media import video_with_reference, write_subtitle_file
 
 from subtitle_guard import jobs, reports, review, review_actions, state, storage
 from subtitle_guard.files import file_hash
+from subtitle_guard.subtitles import parse_subtitle
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -22,7 +23,8 @@ def movie(tmp_path):
 def test_manual_shift_fixes_a_stretch_and_keeps_a_backup(movie):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3 if 120 <= value < 180 else value)
-    outcome = review_actions.shift_range(str(video), str(subtitle), 123, 183, -3)
+    late = [index for index, (start, _, _) in enumerate(parse_subtitle(str(subtitle))["cues"]) if 123 <= start < 183]
+    outcome = review_actions.retime(str(video), str(subtitle), file_hash(str(subtitle)), False, [(late[0], late[-1], -3)])
     assert outcome["decision"] == "manual" and not outcome["weak_minutes"] and outcome["confidence_band"] == "high"
     assert any(name.startswith("before-manual") for _, _, names in os.walk(storage.backup_root(str(subtitle))) for name in names)
     assert reports.latest_reports()[0]["decision"] == "manual"

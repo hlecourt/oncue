@@ -14,11 +14,19 @@ export function usePlayback(subtitleId: string, fallbackDuration: number) {
   const [rate, setRate] = useState(1)
   const [track, setTrack] = useState<number | null>(null)
   const [player, setPlayer] = useState<HTMLAudioElement | null>(null)
+  const copyFailed = useRef(false)
 
   const media = useQuery({
     queryKey: ["audio", subtitleId, track],
-    queryFn: () => unwrap(api.POST("/api/subtitles/{subtitle_id}/audio", { params: { path: { subtitle_id: subtitleId } }, body: { track } })),
-    refetchInterval: (query) => (query.state.data && !query.state.data.ready && query.state.data.tracks.length ? 1500 : false),
+    queryFn: async () => {
+      const state = await unwrap(api.POST("/api/subtitles/{subtitle_id}/audio", { params: { path: { subtitle_id: subtitleId } }, body: { track, retry: copyFailed.current } }))
+      copyFailed.current = state.failed
+      if (state.failed) throw new ApiError(t("The sound could not be loaded."), "audio_copy_failed", 200)
+      return state
+    },
+    // after a failed copy only the Try again button asks again: a poll or a focus would make ffmpeg fail in a loop
+    refetchInterval: (query) => (!query.state.error && query.state.data && !query.state.data.ready && query.state.data.tracks.length ? 1500 : false),
+    refetchOnWindowFocus: (query) => !query.state.error,
   })
   const peaks = useQuery({
     queryKey: ["peaks", subtitleId, media.data?.track],

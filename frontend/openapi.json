@@ -16,6 +16,11 @@
       },
       "AudioRequest": {
         "properties": {
+          "retry": {
+            "default": false,
+            "title": "Retry",
+            "type": "boolean"
+          },
           "track": {
             "anyOf": [
               {
@@ -38,6 +43,10 @@
           "duration": {
             "title": "Duration",
             "type": "number"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "boolean"
           },
           "job": {
             "anyOf": [
@@ -83,6 +92,7 @@
           "tracks",
           "duration",
           "job",
+          "failed",
           "peaks_per_second"
         ],
         "title": "AudioState",
@@ -1367,6 +1377,12 @@
             "maxProperties": 20,
             "title": "Changes",
             "type": "object"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Password",
+            "type": "string"
           }
         },
         "required": [
@@ -1415,43 +1431,6 @@
           "message"
         ],
         "title": "SetupWarning",
-        "type": "object"
-      },
-      "Shift": {
-        "properties": {
-          "first": {
-            "maximum": 172800.0,
-            "minimum": 0.0,
-            "title": "First",
-            "type": "number"
-          },
-          "last": {
-            "maximum": 172800.0,
-            "minimum": 0.0,
-            "title": "Last",
-            "type": "number"
-          },
-          "offset": {
-            "maximum": 3600.0,
-            "minimum": -3600.0,
-            "title": "Offset",
-            "type": "number"
-          },
-          "version": {
-            "maxLength": 40,
-            "minLength": 40,
-            "pattern": "^[0-9a-f]+$",
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "version",
-          "first",
-          "last",
-          "offset"
-        ],
-        "title": "Shift",
         "type": "object"
       },
       "Sibling": {
@@ -2586,6 +2565,16 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2595,6 +2584,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
           }
         },
         "summary": "Change Settings",
@@ -2903,58 +2902,6 @@
         "summary": "Get Subtitle",
         "tags": [
           "subtitles"
-        ]
-      }
-    },
-    "/api/subtitles/{subtitle_id}/apply": {
-      "post": {
-        "operationId": "applyProposal",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "subtitle_id",
-            "required": true,
-            "schema": {
-              "title": "Subtitle Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VersionGuard"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommandResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Apply Proposal",
-        "tags": [
-          "commands"
         ]
       }
     },
@@ -3463,58 +3410,6 @@
           }
         },
         "summary": "Retime",
-        "tags": [
-          "commands"
-        ]
-      }
-    },
-    "/api/subtitles/{subtitle_id}/shift": {
-      "post": {
-        "operationId": "shiftLines",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "subtitle_id",
-            "required": true,
-            "schema": {
-              "title": "Subtitle Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Shift"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommandResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Shift Lines",
         "tags": [
           "commands"
         ]

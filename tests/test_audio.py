@@ -55,7 +55,8 @@ def test_an_audio_sync_is_never_written_on_its_own_and_waits_as_a_proposal(tmp_p
     proposal = proposal_for(str(subtitle), file_hash(str(subtitle)))
     assert proposal["kind"] == "audio" and proposal["timings"][0][0] == 6.5
     assert not os.listdir(audio.state_path("audio-work"))
-    applied = review_actions.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle))
+    monkeypatch.setattr(review_actions, "load_reference", lambda video, hearing_impaired, count: None)
+    applied = review_actions.retime(str(tmp_path / "movie.mkv"), str(subtitle), file_hash(str(subtitle)), True, [])
     assert applied["decision"] == DECISION["approved"] and parse_subtitle(str(subtitle))["cues"][0][0] == 6.5 and storage.backup_folders(str(subtitle))
     assert proposal_for(str(subtitle), file_hash(str(subtitle))) is None
 
@@ -73,7 +74,7 @@ def test_a_proposal_for_an_older_version_of_the_file_is_never_applied(tmp_path, 
     newer = LONG_SRT.replace("line 1\n", "LINE 1\n", 1)
     subtitle.write_text(newer)
     with pytest.raises(EditRefusedError):
-        review_actions.apply_proposal(str(tmp_path / "movie.mkv"), str(subtitle), seen)
+        review_actions.retime(str(tmp_path / "movie.mkv"), str(subtitle), seen, True, [])
     assert subtitle.read_text() == newer and not storage.backup_folders(str(subtitle))
 
 

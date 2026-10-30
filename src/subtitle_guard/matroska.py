@@ -4,10 +4,11 @@
 from functools import wraps
 
 from .errors import MatroskaError
-from .files import opened_video
+from .files import MAX_SUBTITLE_BYTES, opened_video
 
 MATROSKA_HEAD_BYTES = 64 * 1024
 MAX_ELEMENT_BYTES = 64 * 1024 * 1024
+MAX_CUE_POINTS = 200_000
 MATROSKA_ID = {"segment": 0x18538067, "seek_head": 0x114D9B74, "seek": 0x4DBB, "seek_id": 0x53AB, "cue_point": 0xBB, "seek_position": 0x53AC, "info": 0x1549A966,
                "timestamp_scale": 0x2AD7B1, "tracks": 0x1654AE6B, "track_entry": 0xAE, "track_number": 0xD7, "cues": 0x1C53BB6B,
                "cue_time": 0xB3, "cue_track_positions": 0xB7, "cue_track": 0xF7, "cue_cluster_position": 0xF1,
@@ -49,11 +50,17 @@ def matroska_texts(video, stream_count, stream, ass=False):
         items = entries.get(stream, [])
         if not items or not all(location for _, _, location in items):
             return None
-        cluster_header_lengths, texts = {}, []
-        for start, duration, (cluster, relative) in sorted(items, key=lambda item: item[2]):
+        earliest_by_location = {}
+        for start, duration, location in sorted(items, key=lambda item: item[0]):
+            earliest_by_location.setdefault(location, (start, duration))
+        cluster_header_lengths, texts, total_bytes = {}, [], 0
+        for (cluster, relative), (start, duration) in sorted(earliest_by_location.items()):
             payload = block_payload(handle, block_position(handle, segment_start, cluster, relative, cluster_header_lengths))
             if payload is None:
                 return None
+            total_bytes += len(payload)
+            if total_bytes > MAX_SUBTITLE_BYTES:
+                raise MatroskaError(f"subtitle blocks larger than {MAX_SUBTITLE_BYTES} bytes")
             line = payload.decode("utf-8", errors="replace")
             texts.append((start, start + (duration or 2.0), line.split(",", 8)[-1] if ass else line))
     return sorted(texts)
@@ -80,10 +87,13 @@ def read_index(handle, stream_count):
         return None
     stream_by_track = {number: index for index, number in enumerate(track_numbers)}
     cues = read_element(handle, positions[MATROSKA_ID["cues"]])
-    entries = {}
+    entries, point_count = {}, 0
     for point_id, point_start, point_end in ebml_children(cues, 0, len(cues)):
         if point_id != MATROSKA_ID["cue_point"]:
             continue
+        point_count += 1
+        if point_count > MAX_CUE_POINTS:
+            raise MatroskaError(f"more than {MAX_CUE_POINTS} cue points")
         fields = list(ebml_children(cues, point_start, point_end))
         ticks = next(unsigned(cues, start, end) for element_id, start, end in fields if element_id == MATROSKA_ID["cue_time"])
         for element_id, start, end in fields:

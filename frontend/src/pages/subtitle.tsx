@@ -27,6 +27,7 @@ import { REVIEW_KEY } from "@/pages/review"
 
 type Version = Schemas["Version"]
 type Confirm = { kind: "delete" } | { kind: "restore"; version: Version } | null
+type Opened = { detail: Schemas["SubtitleDetail"]; lines: Schemas["Lines"] }
 
 export function SubtitlePage() {
   const t = useT()
@@ -34,6 +35,8 @@ export function SubtitlePage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [confirm, setConfirm] = useState<Confirm>(null)
+  const [opened, setOpened] = useState<Opened | null>(null)
+  const [editing, setEditing] = useState(false)
   const path = { params: { path: { subtitle_id: subtitleId } } }
   const detail = useQuery({ queryKey: ["subtitle", subtitleId], queryFn: () => unwrap(api.GET("/api/subtitles/{subtitle_id}", path)) })
   const lines = useQuery({ queryKey: ["lines", subtitleId], queryFn: () => unwrap(api.GET("/api/subtitles/{subtitle_id}/lines", path)) })
@@ -80,7 +83,11 @@ export function SubtitlePage() {
     )
   }
   if (!detail.data || !lines.data) return <EditorSkeleton />
-  const subtitle = detail.data
+  const latest = { detail: detail.data, lines: lines.data }
+  const changedOnDisk = opened?.detail.id === subtitleId && versionKey(opened) !== versionKey(latest)
+  if (opened?.detail.id !== subtitleId || (changedOnDisk && !editing)) setOpened(latest)
+  if (!opened) return <EditorSkeleton />
+  const subtitle = opened.detail
 
   const keepButton = <Button size="sm" variant="outline" className="hidden md:inline-flex" disabled={command.isPending} onClick={() => command.mutate("keep")}>{t("Keep as is")}</Button>
   const menuItems = (
@@ -104,7 +111,13 @@ export function SubtitlePage() {
 
   return (
     <>
-      <Editor key={`${subtitle.version}-${lines.data.version}`} detail={subtitle} lines={lines.data} actions={keepButton} menuItems={menuItems} onNext={nextInReview} onRestore={(version) => setConfirm({ kind: "restore", version })} />
+      <Editor key={`${subtitle.id}-${versionKey(opened)}`} detail={subtitle} lines={opened.lines} actions={keepButton} menuItems={menuItems} onNext={nextInReview}
+        onRestore={(version) => setConfirm({ kind: "restore", version })} onEditing={setEditing} notice={changedOnDisk && (
+          <div role="status" className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b bg-unsaved-soft px-3 py-2 text-sm text-unsaved-ink">
+            <span className="min-w-0 flex-1">{t("This file changed on disk while you were editing it. Your changes can no longer be saved: reload to get the new version.")}</span>
+            <Button size="sm" variant="outline" onClick={() => setOpened(latest)}>{t("Reload")}</Button>
+          </div>
+        )} />
       <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -123,6 +136,10 @@ export function SubtitlePage() {
       </AlertDialog>
     </>
   )
+}
+
+function versionKey(opened: Opened) {
+  return `${opened.detail.version}-${opened.lines.version}`
 }
 
 function versionLabel(label: string) {

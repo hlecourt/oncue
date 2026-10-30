@@ -34,14 +34,19 @@ def ready(video, track):
     return os.path.exists(audio) and os.path.exists(peaks)
 
 
-def request_copy(video, track):
+# a failed copy is made again only on an explicit retry, so the editor's polling does not run ffmpeg in a loop
+def request_copy(video, track, retry=False):
     if ready(video, track):
-        return None
+        return None, False
     with closing(jobs.connect()) as connection:
-        waiting = connection.execute("select id from jobs where kind = ? and status in (?, ?) and json_extract(arguments, '$.video') = ? "
-                                     "and json_extract(arguments, '$.track') = ?", (jobs.KIND["audio_copy"], jobs.STATUS["queued"], jobs.STATUS["running"],
-                                                                                    video, track)).fetchone()
-    return waiting["id"] if waiting else jobs.enqueue(jobs.KIND["audio_copy"], {"video": video, "track": track})
+        latest = connection.execute("select id, status from jobs where kind = ? and json_extract(arguments, '$.video') = ? and json_extract(arguments, '$.track') = ? "
+                                    "order by status in (?, ?) desc, id desc limit 1", (jobs.KIND["audio_copy"], video, track, jobs.STATUS["queued"],
+                                                                                         jobs.STATUS["running"])).fetchone()
+    if latest and latest["status"] in (jobs.STATUS["queued"], jobs.STATUS["running"]):
+        return latest["id"], False
+    if latest and latest["status"] == jobs.STATUS["failed"] and not retry:
+        return None, True
+    return jobs.enqueue(jobs.KIND["audio_copy"], {"video": video, "track": track}), False
 
 
 def make_copy(video, track):

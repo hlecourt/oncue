@@ -11,30 +11,10 @@ from ...errors import EditRefusedError, StaleVersionError
 from ...files import inside_allowed_folders
 from ..i18n import tr
 from ..lookup import known_path
-from ..schemas import BulkAction, BulkResult, CommandResult, Restore, Retime, Shift, VersionGuard
+from ..schemas import BulkAction, BulkResult, CommandResult, Restore, Retime, VersionGuard
 from ..security import require_csrf
 
 router = APIRouter(tags=["commands"], dependencies=[Depends(require_csrf)])
-SELECTION_MARGIN_SECONDS = 0.05
-
-
-@router.post("/subtitles/{subtitle_id}/apply", operation_id="applyProposal")
-def apply_proposal(subtitle_id: str, body: VersionGuard) -> CommandResult:
-    path, video = writable(subtitle_id)
-    outcome = refused_or(lambda: review_actions.apply_proposal(video, path, body.version))
-    if outcome is None:
-        raise HTTPException(409, {"code": "nothing_to_apply", "message": tr("There is no fix to apply for this subtitle.")})
-    return CommandResult(message=tr("The fix was applied and the previous file was backed up."), decision=outcome["decision"])
-
-
-@router.post("/subtitles/{subtitle_id}/shift", operation_id="shiftLines")
-def shift_lines(subtitle_id: str, body: Shift) -> CommandResult:
-    path, video = writable(subtitle_id)
-    outcome = refused_or(lambda: review_actions.shift_range(video, path, body.first - SELECTION_MARGIN_SECONDS, body.last + SELECTION_MARGIN_SECONDS, body.offset,
-                                                    body.version))
-    seconds = f"{abs(body.offset):.2f}"
-    message = tr("The lines now appear {seconds} s earlier.", seconds=seconds) if body.offset < 0 else tr("The lines now appear {seconds} s later.", seconds=seconds)
-    return CommandResult(message=message, decision=outcome["decision"])
 
 
 @router.post("/subtitles/{subtitle_id}/retime", operation_id="retimeLines")

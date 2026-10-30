@@ -36,9 +36,10 @@ def proposed(tmp_path, monkeypatch, client):
 def test_applying_the_proposal_needs_the_token_and_the_version_the_page_saw(client, proposed):
     identity, subtitle, starts = proposed
     version = file_hash(str(subtitle))
-    assert client.post(f"/api/subtitles/{identity}/apply", json={"version": version}, headers={CSRF_HEADER: ""}).status_code == 403
-    assert client.post(f"/api/subtitles/{identity}/apply", json={"version": "0" * 40}).json()["code"] == "stale_version"
-    answer = client.post(f"/api/subtitles/{identity}/apply", json={"version": version})
+    guard_fix = {"use_proposal": True, "changes": []}
+    assert client.post(f"/api/subtitles/{identity}/retime", json={"version": version, **guard_fix}, headers={CSRF_HEADER: ""}).status_code == 403
+    assert client.post(f"/api/subtitles/{identity}/retime", json={"version": "0" * 40, **guard_fix}).json()["code"] == "stale_version"
+    answer = client.post(f"/api/subtitles/{identity}/retime", json={"version": version, **guard_fix})
     assert answer.status_code == 200 and answer.json()["decision"] == "approved"
     moved = [start for start, _, _ in parse_subtitle(str(subtitle))["cues"] if 119 <= start < 181]
     assert max(abs(a - b) for a, b in zip(moved, [start for start in starts if 120 <= start < 180], strict=False)) < 0.25
@@ -48,12 +49,17 @@ def test_applying_the_proposal_needs_the_token_and_the_version_the_page_saw(clie
 def test_lines_move_and_any_saved_version_comes_back(client, proposed):
     identity, subtitle, _ = proposed
     before = subtitle.read_bytes()
-    answer = client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": -0.5})
-    assert answer.status_code == 200 and subtitle.read_bytes() != before
-    assert client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": "nan"}).status_code == 422
+    last = len(parse_subtitle(str(subtitle))["cues"]) - 1
+
+    def retime(first, last, offset):
+        return client.post(f"/api/subtitles/{identity}/retime", json={"version": file_hash(str(subtitle)), "use_proposal": False,
+                                                                     "changes": [{"first": first, "last": last, "offset": offset}]})
+
+    assert retime(0, last, -0.5).status_code == 200 and subtitle.read_bytes() != before
+    assert retime(0, last, "nan").status_code == 422
     moved = subtitle.read_bytes()
-    for refused in ({"first": 0, "last": 9999, "offset": -600}, {"first": 100, "last": 10, "offset": 1}):
-        answer = client.post(f"/api/subtitles/{identity}/shift", json={"version": file_hash(str(subtitle)), **refused})
+    for refused in ((0, last, -600), (10, 1, 1)):
+        answer = retime(*refused)
         assert answer.status_code == 422 and answer.json()["code"] == "refused"
     assert subtitle.read_bytes() == moved
     saved = next(item for item in client.get(f"/api/subtitles/{identity}").json()["versions"] if item["label"] == "before-manual")
@@ -99,8 +105,8 @@ def test_without_allowed_folders_the_ui_changes_no_file(client, proposed, monkey
     identity, subtitle, _ = proposed
     monkeypatch.setattr(files, "ALLOWED_FOLDERS", [])
     before = subtitle.read_bytes()
-    for action, body in (("apply", {"version": file_hash(str(subtitle))}), ("delete", {"version": file_hash(str(subtitle))}),
-                         ("shift", {"version": file_hash(str(subtitle)), "first": 0, "last": 9999, "offset": 1})):
+    for action, body in (("delete", {"version": file_hash(str(subtitle))}),
+                         ("retime", {"version": file_hash(str(subtitle)), "use_proposal": False, "changes": [{"first": 0, "last": 1, "offset": 1}]})):
         answer = client.post(f"/api/subtitles/{identity}/{action}", json=body)
         assert answer.status_code == 409 and answer.json()["code"] == "no_allowed_folders"
     assert subtitle.read_bytes() == before
