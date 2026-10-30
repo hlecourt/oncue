@@ -21,9 +21,9 @@ type Setting = Schemas["SettingView"]
 type Draft = Record<string, unknown>
 
 const GROUPS = [
-  { title: "Behaviour", description: "What the guard does on its own.", names: ["mode", "workers", "watched_folders", "watch_seconds", "audio_automatic"] },
+  { title: "Behaviour", description: "What OnCue does on its own.", names: ["mode", "workers", "watched_folders", "watch_seconds", "audio_automatic"] },
   { title: "Backups", description: "How many saved versions each subtitle keeps.", names: ["keep_versions", "keep_days"] },
-  { title: "Bazarr", description: "Where the guard asks for subtitles and lists the library.", names: ["bazarr_url", "bazarr_api_key", "replacements"] },
+  { title: "Bazarr", description: "Where OnCue asks for subtitles and lists the library.", names: ["bazarr_url", "bazarr_api_key", "replacements"] },
   { title: "Notifications", description: "A message to a webhook when subtitles reach Review.", names: ["webhook_url", "webhook_minutes"] },
   { title: "Access", description: "How people log in and where the UI lives.", names: ["auth_mode", "url_base"] },
 ]
@@ -94,7 +94,7 @@ export function SettingsPage() {
             {settings.data.fixed.map((item) => (
               <div key={item.name} className="space-y-1">
                 <div className="font-medium">{item.name === "allowed_folders" ? t("Allowed folders") : t("Automatic fixes need a confidence of")}</div>
-                <div className="font-mono text-xs">{Array.isArray(item.value) ? (item.value.length ? item.value.join(", ") : t("Not set: the UI cannot change files until SUBTITLE_GUARD_ROOTS is set")) : String(item.value)}</div>
+                <div className="font-mono text-xs">{Array.isArray(item.value) ? (item.value.length ? item.value.join(", ") : t("Not set: the UI cannot change files until ONCUE_ROOTS is set")) : String(item.value)}</div>
                 <div className="text-xs text-muted-foreground">{item.why}</div>
               </div>
             ))}

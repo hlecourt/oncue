@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Misalign known-good subtitles in controlled ways, run the guard on each, and measure every line against its true time.
+"""Misalign known-good subtitles in controlled ways, run OnCue on each, and measure every line against its true time.
 
 usage: torture.py WORK_FOLDER CORPUS_JSON [LABEL_FILTER]
 CORPUS_JSON: [{"name": ..., "video": ..., "truth": synced subtitle, "other": synced subtitle of another episode or film}, ...]
@@ -11,15 +11,15 @@ import time
 
 import numpy
 
-from subtitle_guard import alignment, reference, storage, subtitles
-from subtitle_guard.confidence import confidence
-from subtitle_guard.guard import AUTOMATIC_BAND, summarize
+from oncue import alignment, reference, storage, subtitles
+from oncue.confidence import confidence
+from oncue.guard import AUTOMATIC_BAND, summarize
 
 with open(sys.argv[2]) as corpus_file:
     work, corpus = sys.argv[1], json.load(corpus_file)
 only = sys.argv[3] if len(sys.argv) > 3 else ""
 os.makedirs(work, exist_ok=True)
-storage.STATE_DIRECTORY = os.environ.get("SUBTITLE_GUARD_STATE") or os.path.join(work, "state")
+storage.STATE_DIRECTORY = os.environ.get("ONCUE_STATE") or os.path.join(work, "state")
 PAL = 23.976 / 25
 FILM = 23.976 / 24
 

@@ -12,7 +12,7 @@ Merged from two independent plans (Claude, Codex), then challenged with the owne
 ### Engine
 
 - **Automatic fix rule.** A subtitle is written without a person only at confidence 80 or more, otherwise a proposal goes to Review. This covers audio sync too.
-- **Audio sync confidence.** It is scored by the guard itself, from speech onsets, a null test and the agreement of two voice detectors. Automatic audio writes stay off until calibration shows no false positives.
+- **Audio sync confidence.** It is scored by OnCue itself, from speech onsets, a null test and the agreement of two voice detectors. Automatic audio writes stay off until calibration shows no false positives.
 - **Bazarr first.**
   - A Bazarr download below high confidence gets replacements first.
   - Only when they all fail does the best version, with its proposal, reach Review.
@@ -23,7 +23,7 @@ Merged from two independent plans (Claude, Codex), then challenged with the owne
   - A proposal belongs to one version of the file. Any change on disk discards it and triggers a new check.
   - Apply refuses a stale version.
 - **Backups.**
-  - A backup is made only when the guard writes.
+  - A backup is made only when OnCue writes.
   - Retention: the first version always, plus the last 5 versions and anything under 30 days. Both values are settings.
   - A version history with restore is shown per subtitle.
 
@@ -50,9 +50,9 @@ Merged from two independent plans (Claude, Codex), then challenged with the owne
   - Log: aligned mono columns, JSON, copy, export.
   - System: health, effective configuration with its sources, backup space and clean-up, "Scan library" with progress and stop, Bazarr connection test.
     It also checks Bazarr's own settings through its API and warns when:
-    - Bazarr's subtitle synchronization is on (it writes before the guard, without a confidence check, and the downloaded original is lost);
-    - a post-processing threshold is on (subtitles scored above it never reach the guard);
-    - post-processing is off, or its command does not call the guard.
+    - Bazarr's subtitle synchronization is on (it writes before OnCue, without a confidence check, and the downloaded original is lost);
+    - a post-processing threshold is on (subtitles scored above it never reach OnCue);
+    - post-processing is off, or its command does not call OnCue.
   - Settings (ADR 0003):
     - Environment variables win, and their fields show as locked.
     - Allowed folders and the confidence threshold are not editable.

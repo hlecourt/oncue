@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-from subtitle_guard import reports, stats
+from oncue import reports, stats
 
 
 def test_the_dashboard_is_computed_once_until_a_new_check_is_reported(tmp_path, monkeypatch):

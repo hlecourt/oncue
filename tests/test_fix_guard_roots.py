@@ -4,7 +4,7 @@ import shutil
 import pytest
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import files, guard, storage
+from oncue import files, guard, storage
 
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -16,6 +16,6 @@ def test_a_sure_fix_is_not_written_and_not_backed_up_without_allowed_folders(tmp
     before = subtitle.read_bytes()
     monkeypatch.setattr(files, "ALLOWED_FOLDERS", [])
     outcome = guard.evaluate_and_fix(str(video), str(subtitle), True)
-    assert outcome["decision"] == "unverified" and "SUBTITLE_GUARD_ROOTS" in outcome["reason"]
+    assert outcome["decision"] == "unverified" and "ONCUE_ROOTS" in outcome["reason"]
     assert subtitle.read_bytes() == before
     assert not list((tmp_path / "backup").rglob("*.srt")) and str(tmp_path / "backup") == storage.BACKUP_DIRECTORY

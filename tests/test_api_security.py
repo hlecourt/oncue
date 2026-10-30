@@ -8,11 +8,11 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from subtitle_guard import storage
-from subtitle_guard.api import auth, security
-from subtitle_guard.api.app import create_app
-from subtitle_guard.api.security import CSRF_HEADER, SESSION_COOKIE
-from subtitle_guard.errors import ConfigError
+from oncue import storage
+from oncue.api import auth, security
+from oncue.api.app import create_app
+from oncue.api.security import CSRF_HEADER, SESSION_COOKIE
+from oncue.errors import ConfigError
 
 LOCAL = "http://127.0.0.1"
 PASSWORD = "a long enough password"
@@ -25,7 +25,7 @@ def local():
 
 @pytest.fixture
 def protected(monkeypatch):
-    monkeypatch.setenv("SUBTITLE_GUARD_UI_PASSWORD", PASSWORD)
+    monkeypatch.setenv("ONCUE_UI_PASSWORD", PASSWORD)
     return TestClient(create_app("0.0.0.0"), base_url="http://guard.example:8484")
 
 
@@ -96,7 +96,7 @@ def test_the_session_cookie_is_http_only_and_strict(protected):
 
 def test_the_engine_cli_and_bazarr_hook_never_import_the_web_stack():
     blocked = "import sys\nfor name in ('fastapi', 'uvicorn', 'starlette', 'pydantic'):\n    sys.modules[name] = None\n"
-    script = blocked + "import subtitle_guard.cli, subtitle_guard.bazarr, subtitle_guard.worker\nprint('ok')"
+    script = blocked + "import oncue.cli, oncue.bazarr, oncue.worker\nprint('ok')"
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
     assert result.stdout.strip() == "ok", result.stderr
 

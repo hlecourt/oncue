@@ -1,20 +1,20 @@
-# subtitle-guard next to Bazarr: Bazarr runs the hook after each download, and the guard can ask it for another subtitle.
-# The guard must see the media at the same paths as Bazarr, and share Bazarr's /config for the hook.
+# OnCue next to Bazarr: Bazarr runs the hook after each download, and OnCue can ask it for another subtitle.
+# OnCue must see the media at the same paths as Bazarr, and share Bazarr's /config for the hook.
 services:
-  subtitle-guard:
-    image: ghcr.io/hlecourt/subtitle-guard:0.1.0
-    command: serve --workers 2          # report only until the mode is set to fix, in the UI or with SUBTITLE_GUARD_MODE
+  oncue:
+    image: ghcr.io/hlecourt/oncue:0.1.0
+    command: serve --workers 2          # report only until the mode is set to fix, in the UI or with ONCUE_MODE
     restart: unless-stopped
     user: "1000:1000"                   # the user that owns your media and Bazarr's files
     ports:
       - "8484:8484"                     # web UI
     environment:
-      SUBTITLE_GUARD_STATE: /config/subtitle-guard
-      SUBTITLE_GUARD_BACKUPS: /data/backup/subtitle-guard
-      SUBTITLE_GUARD_UI_PASSWORD: ${SUBTITLE_GUARD_UI_PASSWORD:-}   # empty: a password for admin is generated and printed once in the logs
-      SUBTITLE_GUARD_ROOTS: /data/media                       # the only folders whose subtitles may be changed
-      SUBTITLE_GUARD_QUEUE: "1"                               # Bazarr hooks go through the queue and the workers
-      SUBTITLE_GUARD_HOOK_DIR: /config/subtitle-guard/hook    # serve copies the package here, where Bazarr's hook runs it
+      ONCUE_STATE: /config/oncue
+      ONCUE_BACKUPS: /data/backup/oncue
+      ONCUE_UI_PASSWORD: ${ONCUE_UI_PASSWORD:-}   # empty: a password for admin is generated and printed once in the logs
+      ONCUE_ROOTS: /data/media                       # the only folders whose subtitles may be changed
+      ONCUE_QUEUE: "1"                               # Bazarr hooks go through the queue and the workers
+      ONCUE_HOOK_DIR: /config/oncue/hook    # serve copies the package here, where Bazarr's hook runs it
       BAZARR_URL: http://bazarr:6767
       BAZARR_API_KEY: ${BAZARR_API_KEY}
     volumes:

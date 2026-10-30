@@ -1,6 +1,6 @@
 # Settings are editable in the UI, environment variables win, allowed folders and the confidence threshold are not editable
 
-Settings edited in the UI are stored in the state folder, but an environment variable always wins and its field shows as locked, so a compose file stays the source of truth for those who use one. Two things are deliberately not editable in the UI: the allowed folders, because they are the boundary of where the guard may write and a stolen session must not be able to widen it, and the high-confidence threshold, because it is the product's promise and a setting would invite lowering it.
+Settings edited in the UI are stored in the state folder, but an environment variable always wins and its field shows as locked, so a compose file stays the source of truth for those who use one. Two things are deliberately not editable in the UI: the allowed folders, because they are the boundary of where OnCue may write and a stolen session must not be able to widen it, and the high-confidence threshold, because it is the product's promise and a setting would invite lowering it.
 
 ## Considered Options
 

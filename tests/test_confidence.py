@@ -2,9 +2,9 @@
 import numpy
 from synthetic import dialogue, translation
 
-from subtitle_guard.alignment import judge
-from subtitle_guard.confidence import confidence
-from subtitle_guard.guard import summarize
+from oncue.alignment import judge
+from oncue.confidence import confidence
+from oncue.guard import summarize
 
 STRONG = {"matched": 0.85, "noise": 0.2, "worst_window": 0.7, "passed": True}
 BORDERLINE = {"matched": 0.48, "noise": 0.2, "worst_window": 0.33, "passed": True}

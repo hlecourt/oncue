@@ -1,5 +1,5 @@
 name: Feature request
-description: Something the guard should do
+description: Something OnCue should do
 labels: [enhancement]
 body:
   - type: textarea

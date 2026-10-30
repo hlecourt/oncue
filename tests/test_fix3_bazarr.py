@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import pytest
 
-from subtitle_guard import bazarr, state, storage
-from subtitle_guard.files import file_hash
+from oncue import bazarr, state, storage
+from oncue.files import file_hash
 
 
 @pytest.fixture

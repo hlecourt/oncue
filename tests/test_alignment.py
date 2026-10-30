@@ -3,7 +3,7 @@ import numpy
 import pytest
 from synthetic import dialogue, translation
 
-from subtitle_guard.alignment import judge
+from oncue.alignment import judge
 
 PAL = 23.976 / 25
 

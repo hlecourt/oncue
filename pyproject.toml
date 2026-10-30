@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "subtitle-guard"
+name = "oncue"
 dynamic = ["version"]
 description = "Verify and repair subtitle timing against a subtitle track embedded in the video, with a Bazarr integration."
 readme = "README.md"
@@ -29,10 +29,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hlecourt/subtitle-guard"
-Issues = "https://github.com/hlecourt/subtitle-guard/issues"
-Changelog = "https://github.com/hlecourt/subtitle-guard/blob/main/CHANGELOG.md"
-Security = "https://github.com/hlecourt/subtitle-guard/security/policy"
+Homepage = "https://github.com/hlecourt/oncue"
+Issues = "https://github.com/hlecourt/oncue/issues"
+Changelog = "https://github.com/hlecourt/oncue/blob/main/CHANGELOG.md"
+Security = "https://github.com/hlecourt/oncue/security/policy"
 
 [project.optional-dependencies]
 audio = ["ffsubsync>=0.5.1,<0.6"]
@@ -41,19 +41,19 @@ test = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3"]
 dev = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3", "ruff==0.17.3"]
 
 [project.scripts]
-subtitle-guard = "subtitle_guard.cli:main"
+oncue = "oncue.cli:main"
 
 [tool.hatch.version]
-path = "src/subtitle_guard/__init__.py"
+path = "src/oncue/__init__.py"
 
 [tool.hatch.build]
-artifacts = ["src/subtitle_guard/api/static/"]
+artifacts = ["src/oncue/api/static/"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["frontend/node_modules", "frontend/test-results", "frontend/playwright-report"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/subtitle_guard"]
+packages = ["src/oncue"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -67,5 +67,5 @@ select = ["E", "W", "F", "I", "B", "SIM", "UP", "RUF", "PLW", "BLE", "ISC"]
 ignore = ["E501", "SIM108"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/subtitle_guard/worker.py" = ["BLE001"]
+"src/oncue/worker.py" = ["BLE001"]
 "tests/test_subtitles.py" = ["RUF001"]

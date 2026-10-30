@@ -5,9 +5,9 @@ import shutil
 import pytest
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import jobs, reports, review, review_actions, state, storage
-from subtitle_guard.files import file_hash
-from subtitle_guard.subtitles import parse_subtitle
+from oncue import jobs, reports, review, review_actions, state, storage
+from oncue.files import file_hash
+from oncue.subtitles import parse_subtitle
 
 needs_ffmpeg = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
@@ -48,7 +48,7 @@ def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
     video, subtitle, starts, ends = movie
     write_subtitle_file(subtitle, starts, ends, lambda value: value)
     assert not review_actions.ask_for_another(str(video), str(subtitle))
-    monkeypatch.setenv("SUBTITLE_GUARD_QUEUE", "1")
+    monkeypatch.setenv("ONCUE_QUEUE", "1")
     state.save_state(str(video), str(subtitle), {"attempts": [{"provider": "gestdown", "subtitle_id": "x1", "media_id": 12, "series_id": None,
                                                                  "language": "fr", "subtitle": str(subtitle)}]})
     assert review_actions.ask_for_another(str(video), str(subtitle))
@@ -57,7 +57,7 @@ def test_asking_for_another_needs_a_bazarr_attempt(movie, monkeypatch):
 
 
 def test_a_deleted_subtitle_is_backed_up_and_leaves_review(tmp_path):
-    from subtitle_guard import reports
+    from oncue import reports
     season = tmp_path / "Show" / "Season 1"
     season.mkdir(parents=True)
     wrong = season / "Show.S01E02.fr.srt"
@@ -94,7 +94,7 @@ def test_a_subtitle_of_another_film_is_not_reported_as_shifted_parts(movie, tmp_
 
 
 def test_a_symlinked_video_or_one_outside_the_roots_is_never_used(tmp_path, monkeypatch):
-    from subtitle_guard import files
+    from oncue import files
     library, outside = tmp_path / "library", tmp_path / "outside"
     library.mkdir()
     outside.mkdir()

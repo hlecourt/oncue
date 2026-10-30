@@ -11,9 +11,9 @@ RUN corepack pnpm@12.16.1 run build
 
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="subtitle-guard" \
+LABEL org.opencontainers.image.title="oncue" \
       org.opencontainers.image.description="Checks subtitle timing against a track embedded in the video and repairs it" \
-      org.opencontainers.image.source="https://github.com/hlecourt/subtitle-guard" \
+      org.opencontainers.image.source="https://github.com/hlecourt/oncue" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}"
 COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
@@ -22,14 +22,14 @@ COPY requirements/docker.txt ./requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-COPY --from=front /build/src/subtitle_guard/api/static ./src/subtitle_guard/api/static
+COPY --from=front /build/src/oncue/api/static ./src/oncue/api/static
 RUN pip install --no-cache-dir --no-deps --no-build-isolation . \
-    && useradd --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin guard \
-    && mkdir -p /config /backup && chown guard:guard /config /backup
+    && useradd --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin oncue \
+    && mkdir -p /config /backup && chown oncue:oncue /config /backup
 
-ENV SUBTITLE_GUARD_STATE=/config SUBTITLE_GUARD_BACKUPS=/backup SUBTITLE_GUARD_UI_HOST=0.0.0.0 SUBTITLE_GUARD_FFSUBSYNC_PATH=""
+ENV ONCUE_STATE=/config ONCUE_BACKUPS=/backup ONCUE_UI_HOST=0.0.0.0 ONCUE_FFSUBSYNC_PATH=""
 USER 1000:1000
 EXPOSE 8484
 HEALTHCHECK --interval=60s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8484/ready', timeout=4)" || exit 1
-ENTRYPOINT ["subtitle-guard"]
+ENTRYPOINT ["oncue"]
 CMD ["serve"]

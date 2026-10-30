@@ -49,10 +49,10 @@ export function SystemPage() {
 
   return (
     <>
-      <PageHeader title={t("System")} description={t("The health of what the guard depends on, the library scan, and the backups.")} />
+      <PageHeader title={t("System")} description={t("The health of what OnCue depends on, the library scan, and the backups.")} />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>{t("Health")}</CardTitle><CardDescription>{system.data ? t("subtitle-guard {version}, mode {mode}", { version: system.data.version, mode: system.data.mode === "fix" ? t("Fix automatically") : t("Report only") }) : " "}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Health")}</CardTitle><CardDescription>{system.data ? t("OnCue {version}, mode {mode}", { version: system.data.version, mode: system.data.mode === "fix" ? t("Fix automatically") : t("Report only") }) : " "}</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             {!system.data && <Skeleton className="h-40 w-full" />}
             {system.data && Object.entries(system.data.checks).map(([name, check]) => (
@@ -65,10 +65,10 @@ export function SystemPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Bazarr</CardTitle><CardDescription>{t("Bazarr's own settings that decide what reaches the guard.")}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Bazarr</CardTitle><CardDescription>{t("Bazarr's own settings that decide what reaches OnCue.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             {!bazarr.data && <Skeleton className="h-24 w-full" />}
-            {bazarr.data?.warnings.length === 0 && <div className="flex items-center gap-2 text-sm"><CheckCircle2Icon className="size-4 text-success" />{t("Bazarr is set up for the guard.")}</div>}
+            {bazarr.data?.warnings.length === 0 && <div className="flex items-center gap-2 text-sm"><CheckCircle2Icon className="size-4 text-success" />{t("Bazarr is set up for OnCue.")}</div>}
             {bazarr.data?.warnings.map((warning) => (
               <Alert key={warning.code} variant={["unreachable", "not_set_up"].includes(warning.code) ? "default" : "destructive"}>
                 <AlertTriangleIcon />
@@ -97,7 +97,7 @@ export function SystemPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>{t("Backups")}</CardTitle><CardDescription>{t("A copy is kept each time the guard writes a subtitle.")}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>{t("Backups")}</CardTitle><CardDescription>{t("A copy is kept each time OnCue writes a subtitle.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             <div className="font-mono text-2xl font-semibold tabular-nums">{system.data ? bytes(system.data.backups_bytes) : "-"}</div>
             <Button variant="outline" className="h-auto min-h-9 py-1.5 whitespace-normal" onClick={() => cleanUp.mutate()} disabled={cleanUp.isPending}>{t("Clean up old backups now")}</Button>

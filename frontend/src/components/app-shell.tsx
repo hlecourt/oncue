@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link, Outlet, useMatches } from "@tanstack/react-router"
-import { ActivityIcon, ChartNoAxesColumnIcon, FilesIcon, HistoryIcon, LanguagesIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, ShieldCheckIcon, SunIcon } from "lucide-react"
+import { ActivityIcon, ChartNoAxesColumnIcon, FilesIcon, HistoryIcon, LanguagesIcon, ListChecksIcon, LogOutIcon, MonitorIcon, MoonIcon, ScrollTextIcon, SearchIcon, SettingsIcon, SunIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import { CommandMenu } from "@/components/command-menu"
+import { OnCueMark } from "@/components/oncue-mark"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
@@ -56,7 +57,7 @@ export function AppShell() {
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
-    document.title = `${toReview ? `(${toReview}) ` : ""}${title ? `${title} - ` : ""}subtitle-guard`
+    document.title = `${toReview ? `(${toReview}) ` : ""}${title ? `${title} - ` : ""}OnCue`
   }, [toReview, title])
 
   return (
@@ -67,10 +68,10 @@ export function AppShell() {
             <SidebarMenuItem>
               <SidebarMenuButton asChild size="lg">
                 <Link to="/">
-                  <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                    <ShieldCheckIcon className="size-4" />
+                  <span className="flex size-8 shrink-0">
+                    <OnCueMark className="size-8" />
                   </span>
-                  <span className="font-semibold group-data-[collapsible=icon]:sr-only">subtitle-guard</span>
+                  <span className="font-semibold group-data-[collapsible=icon]:sr-only">OnCue</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

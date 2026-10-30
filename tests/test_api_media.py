@@ -7,9 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 from media import video_with_reference, write_subtitle_file
 
-from subtitle_guard import audio_copy, jobs, reports, worker
-from subtitle_guard.api.app import create_app
-from subtitle_guard.api.security import CSRF_HEADER
+from oncue import audio_copy, jobs, reports, worker
+from oncue.api.app import create_app
+from oncue.api.security import CSRF_HEADER
 
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ShieldCheckIcon } from "lucide-react"
 import { type FormEvent, useState } from "react"
 
+import { OnCueMark } from "@/components/oncue-mark"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
@@ -34,15 +34,13 @@ export function LoginPage() {
     <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
       <div className="w-full max-w-sm space-y-4">
         <div className="flex items-center justify-center gap-2 font-semibold">
-          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <ShieldCheckIcon className="size-4" />
-          </span>
-          subtitle-guard
+          <OnCueMark className="size-8" />
+          OnCue
         </div>
         <Card>
           <CardHeader>
             <h1 className="leading-none font-semibold">{t("Log in")}</h1>
-            <CardDescription>{t("Use the account of this subtitle-guard.")}</CardDescription>
+            <CardDescription>{t("Use the account of this OnCue server.")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={submit}>
@@ -70,7 +68,7 @@ export function LoginPage() {
         <Collapsible className="text-center text-sm text-muted-foreground">
           <CollapsibleTrigger className="underline-offset-4 hover:underline">{t("How do I set the password?")}</CollapsibleTrigger>
           <CollapsibleContent className="mt-2 text-left">
-            {t("Set SUBTITLE_GUARD_UI_USER and SUBTITLE_GUARD_UI_PASSWORD, or run subtitle-guard set-password. On a first start without one, a password for admin is printed once in the service logs.")}
+            {t("Set ONCUE_UI_USER and ONCUE_UI_PASSWORD, or run oncue set-password. On a first start without one, a password for admin is printed once in the service logs.")}
           </CollapsibleContent>
         </Collapsible>
       </div>

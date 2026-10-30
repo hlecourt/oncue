@@ -1,10 +1,10 @@
-# subtitle-guard
+# <img src="docs/logo/oncue-icon.svg" width="40" height="40" alt="" align="top"> OnCue
 
-[![tests](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/tests.yml)
-[![codeql](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml/badge.svg)](https://github.com/hlecourt/subtitle-guard/actions/workflows/codeql.yml)
+[![tests](https://github.com/hlecourt/oncue/actions/workflows/tests.yml/badge.svg)](https://github.com/hlecourt/oncue/actions/workflows/tests.yml)
+[![codeql](https://github.com/hlecourt/oncue/actions/workflows/codeql.yml/badge.svg)](https://github.com/hlecourt/oncue/actions/workflows/codeql.yml)
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Out-of-sync subtitles, fixed for you. subtitle-guard checks every external subtitle in your media library against the
+Out-of-sync subtitles, fixed for you. OnCue checks every external subtitle in your media library against the
 subtitle track embedded in the video, fixes the timing on its own when it is sure, and lets you fix the rest by ear in a web
 editor. It works on the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
 
@@ -16,7 +16,7 @@ Status: alpha.
 
 Subtitles found online are often made for another release: a streaming cut instead of the Blu-ray, a 25 fps master instead of
 23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync mostly apply one offset and one frame rate, and
-automatic syncs rarely tell you when they got it wrong. subtitle-guard instead:
+automatic syncs rarely tell you when they got it wrong. OnCue instead:
 
 - compares your subtitle with a track already embedded in the video (text or picture, any language), which is the one
   source of timing made for that exact file;
@@ -30,35 +30,35 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 ## Quick start
 
 ```
-curl -O https://raw.githubusercontent.com/hlecourt/subtitle-guard/main/examples/docker-compose.yml
+curl -O https://raw.githubusercontent.com/hlecourt/oncue/main/examples/docker-compose.yml
 docker compose up -d
-docker compose logs subtitle-guard | grep password
+docker compose logs oncue | grep password
 ```
 
-Edit the media paths in the file first: `SUBTITLE_GUARD_LIBRARY` lists the folders to watch, `SUBTITLE_GUARD_ROOTS` the only
+Edit the media paths in the file first: `ONCUE_LIBRARY` lists the folders to watch, `ONCUE_ROOTS` the only
 folders whose subtitles may be changed, and `user:` must own your media. Then open `http://<host>:8484` and log in as `admin`
 with the password printed in the logs.
 
-The guard checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one
+OnCue checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one
 after that. It starts in `report` mode: it shows what it would do and writes nothing until you switch to `fix` in Settings.
 
-Without Docker: `pip install "subtitle-guard[web,audio]"` from a release wheel, with Python 3.11+, `ffmpeg` and `ffprobe`
+Without Docker: `pip install "oncue[web,audio]"` from a release wheel, with Python 3.11+, `ffmpeg` and `ffprobe`
 on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
 ## With Bazarr (optional)
 
-With [Bazarr](https://www.bazarr.media/), the guard checks each subtitle as soon as it is downloaded, and when a download is
+With [Bazarr](https://www.bazarr.media/), OnCue checks each subtitle as soon as it is downloaded, and when a download is
 not in sync with confidence it asks Bazarr for another one before bothering you, keeping the best version tried. Use
 [examples/docker-compose.bazarr.yml](examples/docker-compose.bazarr.yml), then in Bazarr, Settings > Subtitles >
 Post-processing, turn post-processing on with this command:
 
 ```
-/usr/bin/env PYTHONPATH=/config/subtitle-guard/hook /lsiopy/bin/python -m subtitle_guard hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
+/usr/bin/env PYTHONPATH=/config/oncue/hook /lsiopy/bin/python -m oncue hook --queue "{{episode}}" "{{subtitles}}" "{{subtitles_language_code2}}" "{{provider}}" "{{subtitle_id}}" "{{episode_id}}" "{{series_id}}"
 ```
 
-And turn off two Bazarr options, or the guard never sees the downloads as they arrive:
+And turn off two Bazarr options, or OnCue never sees the downloads as they arrive:
 
-- **Subtitle synchronization** (`use_subsync`): it rewrites each file before the guard sees it, without any confidence check.
+- **Subtitle synchronization** (`use_subsync`): it rewrites each file before OnCue sees it, without any confidence check.
 - **Post-processing threshold** (series and movies): it skips the best-scored downloads, and that score rates release names,
   not timing.
 
@@ -72,7 +72,7 @@ In plain words, in English, French or Simplified Chinese, light or dark, on a ph
 - **Editor**: the video, your lines, and a timeline with your subtitle, the sound and the video's own subtitle. Play, press
   **It starts here** where the voice starts, or nudge by 0.1 s or 1 s, on every line, from a line on, or on a selection;
   changes add up and one Save writes them, after a backup. The keyboard does it all (press `?`).
-- **Dashboard**: what the guard did over a period: checks, fixes, offsets, languages, and with Bazarr, subtitle providers
+- **Dashboard**: what OnCue did over a period: checks, fixes, offsets, languages, and with Bazarr, subtitle providers
   ranked by how often their downloads arrive in sync.
 - **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
@@ -85,7 +85,7 @@ Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an
 ## Safety
 
 - `report` mode by default: nothing is written until you choose `fix`.
-- Nothing is written outside `SUBTITLE_GUARD_ROOTS` (the compose examples set it), and never through a symbolic link.
+- Nothing is written outside `ONCUE_ROOTS` (the compose examples set it), and never through a symbolic link.
 - Every write is atomic, after a backup, and refused if the file changed since it was checked; saved versions can be restored.
 - A login is required beyond the machine itself. Details: [docs/security.md](docs/security.md); to report a vulnerability,
   [SECURITY.md](SECURITY.md).
@@ -96,11 +96,11 @@ Most settings can be changed in the UI; an environment variable always wins. The
 
 | Variable | Default |
 |---|---|
-| `SUBTITLE_GUARD_MODE` | `report`; `fix` writes sure fixes on its own |
-| `SUBTITLE_GUARD_LIBRARY` | unset: the media folders to watch |
-| `SUBTITLE_GUARD_ROOTS` | unset: the folders the guard may change; nothing is written when unset |
-| `SUBTITLE_GUARD_WORKERS` | `2` |
-| `SUBTITLE_GUARD_UI_USER` / `SUBTITLE_GUARD_UI_PASSWORD` | `admin` / generated on first start |
+| `ONCUE_MODE` | `report`; `fix` writes sure fixes on its own |
+| `ONCUE_LIBRARY` | unset: the media folders to watch |
+| `ONCUE_ROOTS` | unset: the folders OnCue may change; nothing is written when unset |
+| `ONCUE_WORKERS` | `2` |
+| `ONCUE_UI_USER` / `ONCUE_UI_PASSWORD` | `admin` / generated on first start |
 | `BAZARR_URL` / `BAZARR_API_KEY` | `http://localhost:6767` / read from Bazarr's config |
 
 All of them, the CLI and the log format: [docs/configuration.md](docs/configuration.md).
@@ -127,7 +127,7 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 ## Troubleshooting
 
 - **A subtitle is never checked**: it must sit next to its video with the video's name (`Movie.mkv`, `Movie.fr.srt`) under a
-  folder of `SUBTITLE_GUARD_LIBRARY`. With Bazarr, check that post-processing is on and that the command's paths exist inside
+  folder of `ONCUE_LIBRARY`. With Bazarr, check that post-processing is on and that the command's paths exist inside
   the Bazarr container.
 - **"Cannot be checked: could not read the video"**: the reason is in the `guard.checked` event on the Log page.
 - **Files owned by root or not writable**: set `user:` in the compose file to the owner of the media.

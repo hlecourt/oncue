@@ -30,7 +30,7 @@ export function SubtitlesPage() {
 
   return (
     <>
-      <PageHeader title={t("Subtitles")} description={t("Every subtitle the guard has checked. Open one to listen to it and fix its timing by hand, even when it is not in Review.")} />
+      <PageHeader title={t("Subtitles")} description={t("Every subtitle OnCue has checked. Open one to listen to it and fix its timing by hand, even when it is not in Review.")} />
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <Input placeholder={t("Search a file or a folder")} value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full sm:w-80" aria-label={t("Search the subtitles")} />
         {listing.data && <span className="text-sm text-muted-foreground">{total === 1 ? t("{count} subtitle", { count: total }) : t("{count} subtitles", { count: total })}</span>}

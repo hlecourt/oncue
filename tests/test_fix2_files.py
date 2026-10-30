@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from subtitle_guard import files, library, review
-from subtitle_guard.errors import UnsafePathError
+from oncue import files, library, review
+from oncue.errors import UnsafePathError
 
 
 def test_a_fifo_named_like_a_subtitle_is_refused_without_blocking(tmp_path):

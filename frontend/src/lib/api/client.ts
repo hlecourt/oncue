@@ -26,7 +26,7 @@ const security: Middleware = {
   },
 }
 
-export const LOGGED_OUT_EVENT = "subtitle-guard:logged-out"
+export const LOGGED_OUT_EVENT = "oncue:logged-out"
 export const api = createClient<paths>({ baseUrl: apiRoot, credentials: "same-origin" })
 api.use(security)
 

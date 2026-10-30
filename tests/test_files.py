@@ -4,10 +4,10 @@ import os
 import numpy
 import pytest
 
-from subtitle_guard import files, storage
-from subtitle_guard.errors import UnsafePathError
-from subtitle_guard.guard import evaluate_and_fix
-from subtitle_guard.subtitles import parse_subtitle, timestamp, write_subtitle
+from oncue import files, storage
+from oncue.errors import UnsafePathError
+from oncue.guard import evaluate_and_fix
+from oncue.subtitles import parse_subtitle, timestamp, write_subtitle
 
 LINES = 150
 SRT = "".join(f"{number}\n{timestamp(number * 3.0)} --> {timestamp(number * 3.0 + 1)}\nline {number}\n\n" for number in range(1, LINES + 1))
@@ -74,7 +74,7 @@ def test_same_named_subtitles_never_share_backups_and_backups_never_overwrite(tm
 
 
 def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):
-    from subtitle_guard import guard
+    from oncue import guard
     starts = numpy.cumsum(numpy.random.default_rng(3).uniform(1.5, 6.0, LINES))
     late = "".join(f"{number}\n{timestamp(start)} --> {timestamp(start + 1)}\nline {number}\n\n" for number, start in enumerate(starts, 1))
     subtitle = tmp_path / "movie.fr.srt"
@@ -95,7 +95,7 @@ def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkey
 def test_a_same_size_change_with_the_mtime_put_back_is_still_seen(tmp_path):
     import time
 
-    from subtitle_guard.storage import file_signature
+    from oncue.storage import file_signature
     subtitle = tmp_path / "movie.fr.srt"
     subtitle.write_text(SRT)
     before = os.stat(subtitle)

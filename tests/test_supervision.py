@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from subtitle_guard import heartbeats, jobs, logs, storage, worker
+from oncue import heartbeats, jobs, logs, storage, worker
 
 
 class Stop(Exception):
@@ -65,7 +65,7 @@ def supervision(monkeypatch):
 
 
 def logged_events():
-    return [json.loads(line) for line in Path(storage.state_path("subtitle-guard.log")).read_text().splitlines()]
+    return [json.loads(line) for line in Path(storage.state_path("oncue.log")).read_text().splitlines()]
 
 
 def serve_web():
@@ -129,8 +129,8 @@ def test_a_timed_out_tool_is_killed_with_its_children(tmp_path):
 
     import pytest
 
-    from subtitle_guard import tools
-    from subtitle_guard.errors import ToolError
+    from oncue import tools
+    from oncue.errors import ToolError
     marker = tmp_path / "child-alive"
     script = f"import subprocess, time; subprocess.Popen(['sh', '-c', 'sleep 2; touch {marker}']); time.sleep(30)"
     with pytest.raises(ToolError):
@@ -142,9 +142,9 @@ def test_a_timed_out_tool_is_killed_with_its_children(tmp_path):
 
 def test_a_crashed_role_is_restarted_and_a_stop_ends_every_role(tmp_path):
     marker = str(tmp_path / "role")
-    script = ("import sys; from subtitle_guard import worker; import roles; worker.SUPERVISION_SECONDS = 0.2; "
+    script = ("import sys; from oncue import worker; import roles; worker.SUPERVISION_SECONDS = 0.2; "
               "sys.exit(worker.supervise({'worker-1': (roles.crash_once_then_wait, (sys.argv[1],))}))")
-    environment = {**os.environ, "SUBTITLE_GUARD_STATE": str(tmp_path / "state"), "PYTHONPATH": os.path.dirname(__file__)}
+    environment = {**os.environ, "ONCUE_STATE": str(tmp_path / "state"), "PYTHONPATH": os.path.dirname(__file__)}
     supervisor = subprocess.Popen([sys.executable, "-c", script, marker], env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 20
     while not os.path.exists(marker + ".restarted") and time.time() < deadline:
@@ -160,7 +160,7 @@ def test_a_crashed_role_is_restarted_and_a_stop_ends_every_role(tmp_path):
     except ProcessLookupError:
         alive = False
     assert not alive and not os.path.exists(tmp_path / "state" / "supervisor.json")
-    events = [json.loads(line)["event"] for line in (tmp_path / "state" / "subtitle-guard.log").read_text().splitlines()]
+    events = [json.loads(line)["event"] for line in (tmp_path / "state" / "oncue.log").read_text().splitlines()]
     assert "supervisor.role-restarted" in events and "supervisor.stopped" in events
 
 
@@ -213,7 +213,7 @@ def test_a_stop_signal_ends_every_role_and_kills_the_ones_that_stay(supervision,
 
 
 def test_the_worker_count_comes_from_the_settings_unless_given(monkeypatch):
-    monkeypatch.setenv("SUBTITLE_GUARD_WORKERS", "3")
+    monkeypatch.setenv("ONCUE_WORKERS", "3")
     monkeypatch.setattr(worker, "supervise", sorted)
     assert worker.run_workers() == ["worker-1", "worker-2", "worker-3"] and worker.run_workers(1) == ["worker-1"]
 
