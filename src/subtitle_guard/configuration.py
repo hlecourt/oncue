@@ -19,7 +19,7 @@ SOURCE = {"environment": "environment", "settings": "settings", "default": "defa
 MODE = {"report": "report", "fix": "fix"}
 AUTH_MODE = {"forms": "forms", "local": "local", "external": "external"}
 CACHE = {}
-URL_BASE = re.compile(r"(/[A-Za-z0-9._-]+)+")
+PATH_SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
 CLOUD_METADATA_ADDRESSES = (ipaddress.ip_address("fd00:ec2::254"), ipaddress.ip_address("100.100.100.200"))
 
 
@@ -126,7 +126,7 @@ def validated(setting, new):
         raise ConfigError(f"{setting.variable} must be one of {', '.join(setting.choices)}")
     if setting.kind == "url" and new and urllib.parse.urlparse(new).scheme not in ("http", "https"):
         raise ConfigError(f"{setting.variable} must start with http:// or https://")
-    if setting.kind == "path" and new and (not URL_BASE.fullmatch(new) or ".." in new):
+    if setting.kind == "path" and new and (not plain_path(new) or ".." in new):
         raise ConfigError(f"{setting.variable} must look like /subtitle-guard")
     return new
 
@@ -164,3 +164,7 @@ class CheckedHTTPHandler(urllib.request.HTTPHandler):
 class CheckedHTTPSHandler(urllib.request.HTTPSHandler):
     def https_open(self, request):
         return self.do_open(CheckedHTTPSConnection, request)
+
+
+def plain_path(value):
+    return value.startswith("/") and all(PATH_SEGMENT.fullmatch(segment) for segment in value[1:].split("/"))
