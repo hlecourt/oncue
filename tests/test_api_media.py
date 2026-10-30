@@ -68,3 +68,35 @@ def test_the_copy_keeps_the_subtitle_clock_when_the_audio_starts_late(tmp_path):
         audio_copy.make_copy(str(video), 1)
         peaks = numpy.fromfile(audio_copy.copy_paths(str(video), 1)[1], dtype=numpy.uint8)
         assert int(numpy.argmax(peaks)) / audio_copy.PEAKS_PER_SECOND == pytest.approx(expected, abs=0.06)
+
+
+def picture_that_turns_white_at(folder, seconds, codec, name):
+    video = folder / name
+    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:size=64x64:rate=25:duration={seconds}",
+                    "-f", "lavfi", "-i", "color=c=white:size=64x64:rate=25:duration=40", "-filter_complex", "[0][1]concat=n=2:v=1", *codec, str(video)], check=True)
+    return video
+
+
+def first_frame_brightness(path):
+    pixels = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", str(path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                            check=True, capture_output=True).stdout
+    return sum(pixels) / len(pixels)
+
+
+@pytest.mark.parametrize("codec", [["-c:v", "libx264", "-g", "48", "-pix_fmt", "yuv420p"], ["-c:v", "mpeg4", "-g", "48"]], ids=["copied", "encoded again"])
+def test_a_video_window_starts_exactly_at_its_time(tmp_path, codec):
+    video = picture_that_turns_white_at(tmp_path, audio_copy.WINDOW_SECONDS, codec, "Movie.mkv")
+    copyable = codec[1] == "libx264"
+    window = audio_copy.video_window(str(video), 1, copyable)
+    duration = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", window], check=True, capture_output=True,
+                                    text=True).stdout)
+    assert first_frame_brightness(window) > 200 and duration == pytest.approx(audio_copy.WINDOW_SECONDS, abs=1)
+    assert audio_copy.video_window(str(video), 1, copyable) == window
+
+
+def test_a_video_window_is_served_with_ranges_and_bounded(client, listened):
+    identity, _ = listened
+    part = client.get(f"/api/subtitles/{identity}/video/0", headers={"Range": "bytes=0-99"})
+    assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-type"] == "video/mp4"
+    assert client.get(f"/api/subtitles/{identity}/video/99").json()["code"] == "past_the_end"
+    assert client.get(f"/api/subtitles/{identity}/video/-1").status_code == 422
