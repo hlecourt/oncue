@@ -351,7 +351,6 @@
   "stopped": "arrêtés",
   "sure fix": "correctif sûr",
   "verdict when the subtitle arrived": "verdict à l'arrivée du sous-titre",
-  "written on its own": "écrit tout seul",
   "{count} check": "{count} vérification",
   "{count} checks": "{count} vérifications",
   "{count} fix": "{count} correctif",
@@ -387,5 +386,7 @@
   "Enter your password to see the key.": "Saisissez votre mot de passe pour voir la clé.",
   "This file changed on disk while you were editing it. Your changes can no longer be saved: reload to get the new version.": "Ce fichier a changé sur le disque pendant que vous le modifiiez. Vos modifications ne peuvent plus être enregistrées : rechargez pour obtenir la nouvelle version.",
   "Confirm with your password": "Confirmez avec votre mot de passe",
-  "Changing the log in or the URL base needs your password.": "Changer la connexion ou l'URL de base demande votre mot de passe."
+  "Changing the log in or the URL base needs your password.": "Changer la connexion ou l'URL de base demande votre mot de passe.",
+  "sent to Review": "envoyés à revoir",
+  "sure, 80 or more": "sûrs, 80 ou plus"
 }
