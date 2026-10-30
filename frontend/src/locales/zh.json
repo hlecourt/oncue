@@ -384,5 +384,8 @@
   "Leave without saving?": "不保存就离开吗？",
   "Your changes to the timing are not saved yet.": "您对时间轴的修改尚未保存。",
   "Show the API key": "显示 API 密钥",
-  "Enter your password to see the key.": "输入您的密码以查看密钥。"
+  "Enter your password to see the key.": "输入您的密码以查看密钥。",
+  "This file changed on disk while you were editing it. Your changes can no longer be saved: reload to get the new version.": "您修改期间，此文件已在磁盘上被更改。您的更改已无法保存：请刷新以获取新版本。",
+  "Confirm with your password": "请输入密码确认",
+  "Changing the log in or the URL base needs your password.": "更改登录方式或基础 URL 需要输入密码。"
 }

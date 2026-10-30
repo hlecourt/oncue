@@ -189,7 +189,7 @@ def test_the_supervisor_restarts_a_dead_worker_with_its_job_and_follows_the_sett
         (worker.work_forever, (1,)), (worker.work_forever, (2,)), (worker.work_forever, (1,)), (serve_web, ())]
     assert supervision.started[1][2].signals == [signal.SIGTERM, signal.SIGKILL] and not supervision.started[2][2].signals
     assert jobs.job(job_id)["status"] == "queued" and clock.slept == [worker.SUPERVISION_SECONDS] * 3
-    assert storage.read_json(storage.state_path("supervisor.json"))["workers"] == ["worker-1", "worker-2"]
+    assert storage.read_json(storage.state_path("supervisor.json"))["workers"] == ["worker-1"]
     assert os.environ[heartbeats.SUPERVISED_VARIABLE] == "1"
     events = [event["event"] for event in logged_events()]
     assert {"supervisor.started", "supervisor.role-restarted", "webhook.error", "supervisor.roles-changed"} <= set(events)

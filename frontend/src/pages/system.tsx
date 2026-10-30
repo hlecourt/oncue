@@ -100,7 +100,7 @@ export function SystemPage() {
           <CardHeader><CardTitle>{t("Backups")}</CardTitle><CardDescription>{t("A copy is kept each time the guard writes a subtitle.")}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             <div className="font-mono text-2xl font-semibold tabular-nums">{system.data ? bytes(system.data.backups_bytes) : "-"}</div>
-            <Button variant="outline" onClick={() => cleanUp.mutate()} disabled={cleanUp.isPending}>{t("Clean up old backups now")}</Button>
+            <Button variant="outline" className="h-auto min-h-9 py-1.5 whitespace-normal" onClick={() => cleanUp.mutate()} disabled={cleanUp.isPending}>{t("Clean up old backups now")}</Button>
           </CardContent>
         </Card>
       </div>

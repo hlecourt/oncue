@@ -38,21 +38,39 @@ const KEY_PROMPTS = {
   renew: { title: "Make a new API key?", description: "Scripts that use the current key stop working until they get the new one.", confirm: "Make a new key" },
 } as const
 type KeyPrompt = keyof typeof KEY_PROMPTS
+const PASSWORD_SETTINGS = ["auth_mode", "url_base"]
 
 export function SettingsPage() {
   const t = useT()
   const queryClient = useQueryClient()
+  const session = useSession()
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => unwrap(api.GET("/api/settings")) })
   const [draft, setDraft] = useState<Draft>({})
+  const [askingPassword, setAskingPassword] = useState(false)
+  const [password, setPassword] = useState("")
+  const closePrompt = () => {
+    setAskingPassword(false)
+    setPassword("")
+  }
   const save = useMutation({
-    mutationFn: () => unwrap(api.PATCH("/api/settings", { body: { changes: draft } })),
+    mutationFn: () => unwrap(api.PATCH("/api/settings", { body: { changes: draft, password } })),
     onSuccess: (view) => {
       queryClient.setQueryData(["settings"], view)
       setDraft({})
+      closePrompt()
       toast.success(t("Settings saved."))
     },
     onError: (error) => toast.error(error.message),
   })
+  const startSave = () => {
+    const needsPassword = Boolean(session.data?.login_required) && PASSWORD_SETTINGS.some((name) => name in draft)
+    if (needsPassword) setAskingPassword(true)
+    else save.mutate()
+  }
+  const submitPassword = (event: FormEvent) => {
+    event.preventDefault()
+    save.mutate()
+  }
   if (settings.error) return <LoadError error={settings.error} onRetry={() => settings.refetch()} />
   if (!settings.data) return <Skeleton className="h-96 w-full" />
   const byName = Object.fromEntries(settings.data.settings.map((setting) => [setting.name, setting]))
@@ -89,10 +107,28 @@ export function SettingsPage() {
           <span className="text-sm">{changed > 1 ? t("{count} unsaved changes", { count: changed }) : t("{count} unsaved change", { count: changed })}</span>
           <div className="flex gap-2">
             <Button variant="ghost" disabled={save.isPending} onClick={() => setDraft({})}>{t("Discard")}</Button>
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>{changed > 1 ? t("Save {count} changes", { count: changed }) : t("Save {count} change", { count: changed })}</Button>
+            <Button disabled={save.isPending} onClick={startSave}>{changed > 1 ? t("Save {count} changes", { count: changed }) : t("Save {count} change", { count: changed })}</Button>
           </div>
         </div>
       )}
+      <Dialog open={askingPassword} onOpenChange={(open) => !open && closePrompt()}>
+        <DialogContent>
+          <form className="grid gap-4" onSubmit={submitPassword}>
+            <DialogHeader>
+              <DialogTitle>{t("Confirm with your password")}</DialogTitle>
+              <DialogDescription>{t("Changing the log in or the URL base needs your password.")}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="settings-password">{t("Password")}</Label>
+              <Input id="settings-password" type="password" autoComplete="current-password" autoFocus value={password} onChange={(event) => setPassword(event.target.value)} />
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button type="button" variant="outline">{t("Cancel")}</Button></DialogClose>
+              <Button type="submit" disabled={save.isPending || !password}>{t("Save")}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

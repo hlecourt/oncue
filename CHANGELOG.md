@@ -62,6 +62,14 @@ First public version.
 - The Dashboard and the audio preparation no longer re-read every check, every file or the video's tracks on each refresh.
 - The Matroska Cues index is read again: a CRC-32 or padding element in the seek head made every read fall back to the slower
   packet scan. A second seek head at the end of the file is followed too.
+- Lowering the number of workers requeues the checks they were running and updates the worker list, so `/ready` no longer
+  stays at 503. A failed sound copy says so in the editor with Try again instead of retrying forever.
+- Bazarr replacements: an old timer no longer clears a newer request, restoring the best attempt is skipped when the file
+  changed meanwhile, and a save from the editor is always recorded in the history, even when its measure fails.
+- An allowed folder can itself be a watched folder. The Bazarr hook refuses extra arguments instead of misreading them.
+- The editor keeps your changes when the file changes on disk and says so, instead of reloading; long French labels wrap
+  on History, the Dashboard, the System page and the editor on phones; the Dashboard's chart values have text labels for
+  screen readers. The unused `/apply` and `/shift` API routes are removed: `/retime` does both.
 
 ### Security
 
@@ -87,3 +95,8 @@ First public version.
   sound file and a subtitle copy made by the guard.
 - With a login, the API key is only shown or replaced after the password is entered again. The account lock never applies to
   an address that logged in successfully in the last 30 days, and a request body must arrive within 30 seconds.
+- Hostile files can no longer stall the guard: subtitle markup is stripped in linear time, a FIFO named like a subtitle is
+  refused instead of blocking a worker, and the Matroska reader ignores repeated index entries and caps what it reads.
+- Changing the login mode or the URL base asks for the password, and the URL base only accepts plain path segments.
+  Leftover temporary files are only cleaned inside the allowed folders, and the guard's sound work folder is emptied at
+  start.

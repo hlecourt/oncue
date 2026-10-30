@@ -15,6 +15,7 @@ from ..security import login_needed, password_accepted, require_csrf, require_us
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 HIGH_CONFIDENCE = 80
+PASSWORD_SETTINGS = ("auth_mode", "url_base")
 
 
 @router.get("", operation_id="getSettings", dependencies=[Depends(require_user)])
@@ -22,8 +23,10 @@ def get_settings() -> SettingsView:
     return settings_view()
 
 
-@router.patch("", operation_id="changeSettings", dependencies=[Depends(require_csrf)])
-def change_settings(body: SettingsChange) -> SettingsView:
+@router.patch("", operation_id="changeSettings", dependencies=[Depends(require_csrf)], responses={403: {"model": Problem}, 429: {"model": Problem}})
+def change_settings(body: SettingsChange, request: Request) -> SettingsView:
+    if any(name in body.changes for name in PASSWORD_SETTINGS):
+        require_password(request, body.password)
     outside = [folder for folder in body.changes.get("watched_folders") or [] if isinstance(folder, str) and not inside_allowed_folders(folder)]
     if outside:
         raise HTTPException(422, {"code": "outside_allowed_folders", "message": tr("Not inside the allowed folders: {folders}.", folders=", ".join(outside))})

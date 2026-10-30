@@ -139,7 +139,8 @@ light or dark, and fits phones, tablets and large screens. `Ctrl K` opens a sear
 - **System**: whether ffmpeg, ffprobe, ffsubsync, the folders, Bazarr and the workers are working, the Bazarr settings that keep
   subtitles from the guard, the library scan with its progress, and the size of the backups with a clean-up.
 - **Settings**: every setting of the table below, by group; a setting set in the environment shows as locked. The API key for
-  scripts is shown, copied or replaced here; when you logged in with a password, showing or replacing it asks for the password again.
+  scripts is shown, copied or replaced here; when you logged in with a password, showing or replacing it asks for the password again,
+  and so does changing the login mode or the URL base.
 
 ![A subtitle in the editor](docs/screenshots/subtitle.png)
 
@@ -157,8 +158,10 @@ The UI talks to a JSON API under `/api`, described at `/api/openapi.json`. Scrip
   needs a user name and password: `SUBTITLE_GUARD_UI_USER` and
   `SUBTITLE_GUARD_UI_PASSWORD`, or an account set with `subtitle-guard set-password` (stored as a scrypt hash with mode 600), or on
   first start without either, a password for `admin` generated and printed once. A broken account file stops the UI instead of
-  opening it. Five wrong attempts lock a client out for 10 minutes, and twenty in 10 minutes from any address lock the account,
-  except for addresses that logged in successfully in the last 30 days, so a stranger cannot lock you out. Logging in opens
+  opening it. Five wrong attempts lock a client out for 10 minutes, and twenty in 10 minutes from any address lock the account
+  for every address that did not log in successfully in the last 30 days. Those addresses keep logging in, but a stranger can
+  keep a new device or address locked out. Behind a reverse proxy missing from `SUBTITLE_GUARD_TRUSTED_PROXIES`, every client
+  has the proxy's address, so one client's wrong attempts lock out all of them. Logging in opens
   a session that expires on the server after 30 days (HttpOnly, SameSite=Strict, Secure behind a trusted HTTPS proxy that sets
   `X-Forwarded-Proto`); logging out ends it, and changing the password ends every session and replaces the API key.
 - Login modes (`SUBTITLE_GUARD_AUTH`): `local` skips the login only for a client with a private address that opens the UI by an IP
@@ -209,7 +212,7 @@ service, so `docker logs` shows it. Each line is one JSON event: `time`, `level`
 the metadata; events written while a job runs also carry its `job` id. Events are named `component.past-tense`, for example
 `service.started` and `health.checked` at start, `bazarr.hook-received`, `bazarr.api-call`, `job.started`, `guard.checked` (with
 the decision, confidence, alignment figures and changes), `guard.rewritten`, `job.succeeded`, `job.failed` (with the trace),
-`review.shifted` for actions taken in the UI, and `supervisor.stopping`.
+`review.retimed` for timing saved from the editor, and `supervisor.stopping`.
 
 ### Settings
 

@@ -24,7 +24,8 @@ TEMPORARY_SUFFIX = ".subtitle-guard-tmp"
 
 
 def inside_allowed_folders(path):
-    return not ALLOWED_FOLDERS or any(os.path.realpath(path).startswith(root + os.sep) for root in ALLOWED_FOLDERS)
+    real = os.path.realpath(path)
+    return not ALLOWED_FOLDERS or any(real == root or real.startswith(root + os.sep) for root in ALLOWED_FOLDERS)
 
 
 @contextmanager
@@ -51,7 +52,7 @@ def read_regular(path, confined=True):
         raise UnsafePathError(f"refusing a file outside SUBTITLE_GUARD_ROOTS: {path}")
     with open_folder(folder) as folder_descriptor:
         try:
-            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder_descriptor)
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder_descriptor)
         except OSError as error:
             if error.errno == errno.ELOOP:
                 raise UnsafePathError(f"refusing to read a symlink: {path}") from error

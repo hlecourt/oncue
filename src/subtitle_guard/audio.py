@@ -38,6 +38,7 @@ PART_SEARCH_SECONDS = 3.0
 PART_AGREEMENT_SECONDS = 0.3
 PART_MIN_LIFT = 4.0
 CHANCE_LAGS = numpy.arange(10 * SPEECH_FRAMES_PER_SECOND, 60 * SPEECH_FRAMES_PER_SECOND, 25)
+AUDIO_WORK_FOLDER = "audio-work"
 ARGUMENTS_CHECK_SCRIPT = ("import sys\nsys.path.insert(0, sys.argv.pop(1))\nfrom ffsubsync.ffsubsync import make_parser\nmake_parser().parse_args(sys.argv[1:])")
 
 
@@ -45,22 +46,23 @@ def audio_fix(video, subtitle, document):
     extension = os.path.splitext(subtitle)[1].lower()
     if extension not in AUDIO_SYNC_FORMATS:
         return {"decision": DECISION["unverified"], "reason": "no usable subtitle track embedded in the video, format not supported by ffsubsync"}, None
-    work = state_path("audio-work")
+    work = state_path(AUDIO_WORK_FOLDER)
     os.makedirs(work, mode=0o700, exist_ok=True)
-    descriptor, soundtrack = tempfile.mkstemp(prefix="soundtrack-", suffix=".flac", dir=work)
-    os.close(descriptor)
-    descriptor, output = tempfile.mkstemp(prefix="audio-", suffix=extension, dir=work)
-    os.close(descriptor)
-    descriptor, source = tempfile.mkstemp(prefix="subtitle-", suffix=extension, dir=work)
+    created = []
     try:
-        with os.fdopen(descriptor, "wb") as handle:
+        for prefix, suffix in (("soundtrack-", ".flac"), ("audio-", extension), ("subtitle-", extension)):
+            descriptor, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=work)
+            created.append(path)
+            os.close(descriptor)
+        soundtrack, output, source = created
+        with open(source, "wb") as handle:
             handle.write(read_regular(subtitle, confined=False))
         extract_soundtrack(video, soundtrack)
         return synced_timings(soundtrack, source, subtitle, document, output)
     except ProbeError as error:
         return {"decision": DECISION["unverified"], "reason": f"could not read the video, nothing changed: {error}"}, None
     finally:
-        for leftover in (soundtrack, output, source):
+        for leftover in created:
             if os.path.exists(leftover):
                 os.remove(leftover)
 
@@ -96,7 +98,7 @@ def synced_timings(soundtrack, source, subtitle, document, output):
 
 
 def speech_mask(soundtrack, subtitle):
-    work = state_path("audio-work")
+    work = state_path(AUDIO_WORK_FOLDER)
     os.makedirs(work, mode=0o700, exist_ok=True)
     descriptor, output = tempfile.mkstemp(prefix="speech-", suffix=".npy", dir=work)
     os.close(descriptor)

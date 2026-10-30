@@ -22,7 +22,7 @@ from .storage import file_signature, heavy_disk_read, read_json, state_path, wri
 from .subtitles import is_hearing_impaired, parse_subtitle, parse_timed_text
 from .tools import EXTRACT_SECONDS, stderr_tail
 
-MARKUP = re.compile(r"\{[^}]*\}|<[^>]+>")
+MARKUP = re.compile(r"\{[^}]{0,500}\}|<[^>]{1,500}>")
 DIAGNOSIS_CACHE_VERSION = 3
 
 
