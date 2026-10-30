@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { cn } from "cn"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { mediaUrl } from "@/lib/api/client"
 import { useT } from "@/lib/i18n"
@@ -10,19 +10,24 @@ const FRAME_DELAY_MS = 250
 export function Preview({ subtitleId, time, playing, caption, className }: { subtitleId: string; time: number; playing: boolean; caption: string; className?: string }) {
   const t = useT()
   const [frame, setFrame] = useState<string | null>(null)
+  const previousRequest = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     if (playing) return
     let cancelled = false
-    let shown: string | null = null
-    const timer = setTimeout(async () => {
+    const showFrame = async () => {
+      if (cancelled) return
       const answer = await fetch(mediaUrl(`/api/subtitles/${subtitleId}/frame?time=${time.toFixed(2)}`), { credentials: "same-origin" })
       if (!answer.ok || cancelled) return
-      shown = URL.createObjectURL(await answer.blob())
+      const shown = URL.createObjectURL(await answer.blob())
       setFrame((previous) => {
         if (previous) URL.revokeObjectURL(previous)
         return shown
       })
+    }
+    // the server extracts one frame at a time and answers 503 to a second request
+    const timer = setTimeout(() => {
+      previousRequest.current = previousRequest.current.then(showFrame).catch(() => setFrame(null))
     }, FRAME_DELAY_MS)
     return () => {
       cancelled = true

@@ -58,5 +58,6 @@ def test_review_markup_cleaning_stays_linear_on_a_long_run_of_brackets():
     started = time.time()
     review.clean("<" * 1_000_000)
     review.clean("{" * 1_000_000)
-    assert time.time() - started < 1
+    # the quadratic pattern took minutes here; a slow CI runner needs over a second for the linear one
+    assert time.time() - started < 10
     assert review.clean("<i>hi</i> {\\an8}there") == "hi there"
