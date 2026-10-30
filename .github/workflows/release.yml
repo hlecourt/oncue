@@ -1,28 +1,44 @@
 name: release
 
+# A release is a merged pull request that sets the version and adds its CHANGELOG section; run by hand, it only rehearses
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main]
+    paths: ["src/oncue/__init__.py", "CHANGELOG.md"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  tests:
-    uses: ./.github/workflows/tests.yml
-
   version:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      publish: ${{ steps.read.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check that the tag matches the package version
-        if: github.event_name == 'push'
+      - id: read
+        name: Release a version only once, and only when the CHANGELOG has its section
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/oncue/__init__.py)
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match __version__ $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::notice::CHANGELOG.md has no section for $version yet: nothing to release"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::notice::v$version is already released"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  tests:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    uses: ./.github/workflows/tests.yml
 
   image:
     needs: [tests, version]
@@ -59,8 +75,8 @@ jobs:
             ghcr.io/${{ github.repository }}
             name=docker.io/${{ env.DOCKERHUB_USERNAME }}/oncue,enable=${{ env.DOCKERHUB_USERNAME != '' }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},value=v${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.version.outputs.version }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -68,13 +84,13 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.event_name == 'push' && github.ref_name || 'dry-run' }}
+          build-args: VERSION=${{ github.event_name == 'push' && format('v{0}', needs.version.outputs.version) || 'dry-run' }}
           provenance: mode=max
           sbom: true
 
   release:
     runs-on: ubuntu-24.04
-    needs: image
+    needs: [image, version]
     permissions:
       contents: write
       id-token: write
@@ -98,8 +114,11 @@ jobs:
         if: github.event_name == 'push'
         with:
           subject-path: dist/*
-      - name: Publish the GitHub release with the wheel and the sdist
+      - name: Tag the merge and publish the GitHub release with the wheel, the sdist and the CHANGELOG section
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md for what changed in this release."
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { inside = 1; next } /^## \[/ { inside = 0 } inside' CHANGELOG.md > notes.md
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

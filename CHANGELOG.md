@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 First public version.
 
 ### Added
@@ -59,6 +61,8 @@ First public version.
 
 ### Fixed
 
+- Two instances on one machine no longer log each other out: each names its session cookie after an id kept in its own
+  state folder, so two containers that both listen on 8484 get two cookies.
 - Check again wrote fixes in `report` mode and without allowed folders; it now follows the mode like every other check.
 - A finished library scan, or one whose listing failed, kept new scans from starting.
 - The lines shown in the editor and the version they are saved against now come from the same read of the file, and a delete
