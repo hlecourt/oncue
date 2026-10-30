@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""What the editor plays and draws: the light audio copy of a video track (streamed with range requests), its waveform peaks, and a still frame."""
+"""What the editor plays and draws: the light audio copy of a video track and silent 30 s windows of the picture (streamed with range requests),
+the waveform peaks, and a still frame."""
 
 import threading
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import FileResponse, Response
 
-from ...audio_copy import PEAKS_PER_SECOND, copy_paths, played, ready, request_copy
+from ...audio_copy import PEAKS_PER_SECOND, WINDOW_SECONDS, copy_paths, played, ready, request_copy, video_window
 from ...errors import ToolError
-from ...preview import audio_tracks, still_frame, video_duration
+from ...preview import audio_tracks, picture_facts, still_frame, video_duration
 from ...storage import file_signature
 from ..i18n import tr
 from ..schemas import AudioRequest, AudioState, AudioTrack
@@ -45,6 +46,11 @@ def video_facts(video, signature):
     return audio_tracks(video), video_duration(video)
 
 
+@lru_cache(maxsize=KNOWN_VIDEOS)
+def picture(video, signature):
+    return picture_facts(video), video_duration(video)
+
+
 @router.get("/audio/{track}", operation_id="streamAudio", dependencies=[Depends(require_user)], response_class=FileResponse)
 def stream_audio(subtitle_id: str, track: int):
     _, video = located(subtitle_id)
@@ -59,6 +65,20 @@ def audio_peaks(subtitle_id: str, track: int):
     if not ready(video, track):
         raise HTTPException(404, {"code": "not_ready", "message": tr("The audio copy is not ready yet.")})
     return FileResponse(copy_paths(video, track)[1], media_type="application/octet-stream")
+
+
+@router.get("/video/{index}", operation_id="streamVideoWindow", dependencies=[Depends(require_user)], response_class=FileResponse)
+def stream_video_window(subtitle_id: str, index: int = Path(ge=0, le=MAX_SECONDS // WINDOW_SECONDS)):
+    _, video = located(subtitle_id)
+    try:
+        facts, duration = picture(video, file_signature(video))
+        if facts is None:
+            raise HTTPException(404, {"code": "no_picture", "message": tr("This video has no picture.")})
+        if index * WINDOW_SECONDS >= duration:
+            raise HTTPException(404, {"code": "past_the_end", "message": tr("This part is past the end of the video.")})
+        return FileResponse(video_window(video, index, facts["copyable"]), media_type="video/mp4")
+    except ToolError as error:
+        raise HTTPException(422, {"code": "unreadable_video", "message": tr("The video cannot be read: {reason}", reason=error)}) from error
 
 
 @router.get("/frame", operation_id="stillFrame", dependencies=[Depends(require_user)], response_class=Response)

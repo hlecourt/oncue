@@ -3415,6 +3415,52 @@
         ]
       }
     },
+    "/api/subtitles/{subtitle_id}/video/{index}": {
+      "get": {
+        "operationId": "streamVideoWindow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subtitle_id",
+            "required": true,
+            "schema": {
+              "title": "Subtitle Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "maximum": 5760,
+              "minimum": 0,
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Video Window",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/system": {
       "get": {
         "operationId": "getSystem",
