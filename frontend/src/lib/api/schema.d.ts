@@ -603,6 +603,8 @@ export interface components {
             track: number | null;
             /** Tracks */
             tracks: components["schemas"]["AudioTrack"][];
+            /** Window Seconds */
+            window_seconds: number | null;
         };
         /** AudioTrack */
         AudioTrack: {

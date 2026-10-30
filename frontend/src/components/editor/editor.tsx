@@ -70,7 +70,7 @@ export function Editor({ detail, lines, actions, menuItems, notice, onNext, onRe
   const [helping, setHelping] = useState(false)
   const { hasGuardFix, guardOn, setGuardOn, scope, setScope, pickScope, shown, pending, held, moves, changeCount, negative, move, undo, save, blocker } =
     useChanges({ detail, lines, current, selection, onNext })
-  const { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps } = usePlayback(detail.id, shown.at(-1)?.end ?? 0)
+  const { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps, windowSeconds } = usePlayback(detail.id, shown.at(-1)?.end ?? 0)
 
   const videoText = useMemo(() => shown.map((line) => nearestText(lines.reference, line.start)), [shown, lines.reference])
   const bands = useMemo(() => overviewBands(shown, pending, guardOn && hasGuardFix ? detail.parts : []), [shown, pending, guardOn, hasGuardFix, detail.parts])
@@ -243,7 +243,7 @@ export function Editor({ detail, lines, actions, menuItems, notice, onNext, onRe
       <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:overflow-hidden lg:[grid-template-areas:'stage_panel''toolbar_panel''timeline_timeline']">
         <div className="sticky top-0 z-10 border-b bg-background lg:contents">
           <div className="flex min-h-0 flex-col items-center justify-center gap-2 bg-stage lg:[grid-area:stage] lg:px-4 lg:pt-4 lg:pb-2">
-            <Preview subtitleId={detail.id} time={time} playing={playing} rate={rate} caption={playingLine >= 0 ? shown[playingLine]!.text : ""}
+            <Preview subtitleId={detail.id} time={time} duration={duration} playing={playing} rate={rate} windowSeconds={windowSeconds} caption={playingLine >= 0 ? shown[playingLine]!.text : ""}
               className="rounded-none lg:h-[calc(100%-3rem)] lg:w-auto lg:max-w-full lg:rounded-md" />
             <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center px-3 py-1.5 lg:px-0 lg:py-0">
               <span className="font-mono text-[13px] whitespace-nowrap tabular-nums">{clock(time, 2)} <span className="text-muted-foreground">/ {clock(duration, 0)}</span></span>

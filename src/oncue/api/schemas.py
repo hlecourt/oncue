@@ -309,6 +309,7 @@ class AudioState(BaseModel):
     job: int | None
     failed: bool
     peaks_per_second: int
+    window_seconds: int | None
 
 
 class Tally(BaseModel):

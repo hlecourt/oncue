@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The light copies the editor plays: one mono AAC file per video and audio track with its waveform peaks, made once by a job, and silent 30 s
+"""The light copies the editor plays: one mono AAC file per video and audio track with its waveform peaks, made once by a job, and silent
 windows of the picture, made on demand; all kept in a cache under a size cap that drops the least recently played first."""
 
 import hashlib
@@ -20,9 +20,11 @@ from .tools import EXTRACT_SECONDS, run_tool, stderr_tail
 COPY_VERSION = 1
 PEAKS_PER_SECOND = 100
 PEAK_SAMPLE_RATE = 4000
-WINDOW_VERSION = 1
-WINDOW_SECONDS = 30
+WINDOW_VERSION = 2
+COPIED_WINDOW_SECONDS = 30
+ENCODED_WINDOW_SECONDS = 10
 WINDOW_HEIGHT = 720
+WINDOW_ENCODING = ("-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p")
 WINDOW_LOCK = threading.Lock()
 CACHE_BYTES = int(os.environ.get("ONCUE_AUDIO_CACHE_MB", "2048")) * 1024 * 1024
 
@@ -39,9 +41,14 @@ def ready(video, track):
     return os.path.exists(audio) and os.path.exists(peaks)
 
 
-def window_path(video, index):
+# a window to encode again is shorter, so its first picture shows sooner
+def window_seconds(copyable):
+    return COPIED_WINDOW_SECONDS if copyable else ENCODED_WINDOW_SECONDS
+
+
+def window_path(video, index, seconds):
     status = os.stat(video)
-    key = hashlib.sha1(f"{WINDOW_VERSION}|{os.path.realpath(video)}|{status.st_size}|{status.st_mtime_ns}|window|{index}".encode()).hexdigest()
+    key = hashlib.sha1(f"{WINDOW_VERSION}|{os.path.realpath(video)}|{status.st_size}|{status.st_mtime_ns}|window|{seconds}|{index}".encode()).hexdigest()
     return os.path.join(state_path("audio-copies"), key + ".mp4")
 
 
@@ -89,7 +96,7 @@ def make_copy(video, track):
 
 # a picture browsers already play is copied as is, which takes a fraction of a second; any other one is encoded again
 def video_window(video, index, copyable):
-    target = window_path(video, index)
+    target = window_path(video, index, window_seconds(copyable))
     with WINDOW_LOCK:
         if not os.path.exists(target):
             make_window(video, index, copyable, target)
@@ -101,11 +108,14 @@ def make_window(video, index, copyable, target):
     os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(suffix=".mp4", dir=os.path.dirname(target))
     os.close(descriptor)
-    picture = ["-c:v", "copy"] if copyable else ["-vf", f"scale=-2:min({WINDOW_HEIGHT}\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-                                                 "-pix_fmt", "yuv420p"]
+    seconds = window_seconds(copyable)
+    source = ["-ss", str(index * seconds), "-i", video, "-t", str(seconds), "-map", "0:v:0", "-an", "-sn", "-dn"]
+    output = ["-movflags", "+faststart", "-map_metadata", "-1", "-f", "mp4", "-y", temporary]
     try:
-        ffmpeg(["-ss", str(index * WINDOW_SECONDS), "-i", video, "-t", str(WINDOW_SECONDS), "-map", "0:v:0", "-an", "-sn", "-dn", *picture,
-                "-movflags", "+faststart", "-map_metadata", "-1", "-f", "mp4", "-y", temporary], video)
+        if copyable:
+            ffmpeg([*source, "-c:v", "copy", *output], video)
+        else:
+            encode_window(video, source, output)
         os.replace(temporary, target)
     finally:
         if os.path.exists(temporary):
@@ -114,8 +124,13 @@ def make_window(video, index, copyable, target):
     evict()
 
 
-def ffmpeg(arguments, video):
-    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-threads", "1", *arguments]
+def encode_window(video, source, output):
+    ffmpeg(["-hwaccel", "auto", *source, "-vf", f"scale=-2:min({WINDOW_HEIGHT}\\,ih)", *WINDOW_ENCODING, *output], video, decoder_threads="0")
+
+
+# a picture to encode again is decoded on every core, as a 4K video read on one core takes longer than the window lasts
+def ffmpeg(arguments, video, decoder_threads="1"):
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *MEDIA_INPUT_OPTIONS, "-threads", decoder_threads, *arguments]
     result = run_on_video(command, video, EXTRACT_SECONDS) if video in arguments else run_tool(command, EXTRACT_SECONDS)
     if result.returncode != 0:
         raise ProbeError(f"ffmpeg could not make the light copy of {video}: {stderr_tail(result) or 'exit ' + str(result.returncode)}")

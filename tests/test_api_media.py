@@ -85,17 +85,19 @@ def first_frame_brightness(path):
 
 @pytest.mark.parametrize("codec", [["-c:v", "libx264", "-g", "48", "-pix_fmt", "yuv420p"], ["-c:v", "mpeg4", "-g", "48"]], ids=["copied", "encoded again"])
 def test_a_video_window_starts_exactly_at_its_time(tmp_path, codec):
-    video = picture_that_turns_white_at(tmp_path, audio_copy.WINDOW_SECONDS, codec, "Movie.mkv")
     copyable = codec[1] == "libx264"
+    seconds = audio_copy.window_seconds(copyable)
+    video = picture_that_turns_white_at(tmp_path, seconds, codec, "Movie.mkv")
     window = audio_copy.video_window(str(video), 1, copyable)
     duration = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", window], check=True, capture_output=True,
                                     text=True).stdout)
-    assert first_frame_brightness(window) > 200 and duration == pytest.approx(audio_copy.WINDOW_SECONDS, abs=1)
+    assert first_frame_brightness(window) > 200 and duration == pytest.approx(seconds, abs=1)
     assert audio_copy.video_window(str(video), 1, copyable) == window
 
 
 def test_a_video_window_is_served_with_ranges_and_bounded(client, listened):
     identity, _ = listened
+    assert client.post(f"/api/subtitles/{identity}/audio", json={}).json()["window_seconds"] == audio_copy.ENCODED_WINDOW_SECONDS
     part = client.get(f"/api/subtitles/{identity}/video/0", headers={"Range": "bytes=0-99"})
     assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-type"] == "video/mp4"
     assert client.get(f"/api/subtitles/{identity}/video/99").json()["code"] == "past_the_end"
