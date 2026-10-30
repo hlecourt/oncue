@@ -10,7 +10,7 @@ editor. It works on the folders of a Jellyfin, Plex or Emby library, and can als
 
 Status: alpha.
 
-![A subtitle in the editor](docs/screenshots/subtitle.png)
+![A subtitle 4 s late, fixed by ear: pick a line, click where the voice starts, press It starts here](docs/screenshots/oncue-sync.webp)
 
 ## Why
 
@@ -76,9 +76,14 @@ In plain words, in English, French or Simplified Chinese, light or dark, on a ph
   ranked by how often their downloads arrive in sync.
 - **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
-![The dashboard, on six months of sample data](docs/screenshots/dashboard.png)
+![A subtitle in the editor, its lines on the sound and on the video's own subtitle](docs/screenshots/subtitle.png)
 
 ![Review](docs/screenshots/review.png)
+
+![The dashboard, on six months of sample data](docs/screenshots/dashboard.png)
+
+The video in these images is [Tears of Steel](https://mango.blender.org), (c) Blender Foundation, licensed under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).
 
 Scripts use the JSON API under `/api` (described at `/api/openapi.json`) with an `X-Api-Key` header.
 
