@@ -87,7 +87,11 @@ export function Editor({ detail, lines, actions, menuItems, notice, onNext, onRe
     else setCurrent(index)
     seek(shown[index]!.start)
   }
-  const anchor = () => chosen && move(time - chosen.start)
+  const anchor = () => {
+    if (!chosen) return
+    move(delta)
+    seek(chosen.start + delta)
+  }
   const hear = () => {
     if (!chosen) return
     seek(chosen.start - HEAR_BEFORE_SECONDS)
