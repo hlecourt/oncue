@@ -1,0 +1,5 @@
+name: subtitle-guard
+# tests use plain asserts, temporary files and loose permissions on purpose; the shipped code is what gets scanned
+paths-ignore:
+  - tests
+  - frontend/e2e

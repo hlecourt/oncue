@@ -94,6 +94,13 @@ def test_the_api_key_never_follows_a_redirect_to_another_host():
     assert handler.redirect_request(request, io.BytesIO(), 302, "Found", {}, "http://bazarr:6767/api/movies/") is not None
 
 
+def test_the_api_key_is_read_from_the_auth_block_of_bazarrs_config():
+    config = "general:\n  apikey: not-this-one\n  port: 6767\nauth:\n  type: null\n  apikey: 'abc123'  # comment\n  username: ''\nbackup:\n  apikey: nor-this\n"
+    assert bazarr.auth_api_key(config) == "abc123"
+    assert bazarr.auth_api_key("auth:\n  apikey:\n") is None
+    assert bazarr.auth_api_key("auth:\n" + "  x: y\n" * 50_000) is None
+
+
 def test_a_config_without_an_api_key_is_a_clear_error(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text("general:\n  port: 6767\n")
