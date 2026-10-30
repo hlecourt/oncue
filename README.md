@@ -76,7 +76,7 @@ In plain words, in English, French or Simplified Chinese, light or dark, on a ph
   ranked by how often their downloads arrive in sync.
 - **Subtitles**, **History**, **Log**, **System** and **Settings** for everything else.
 
-![The dashboard](docs/screenshots/dashboard.png)
+![The dashboard, on six months of sample data](docs/screenshots/dashboard.png)
 
 ![Review](docs/screenshots/review.png)
 
