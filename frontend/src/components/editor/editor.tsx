@@ -64,13 +64,13 @@ export function Editor({ detail, lines, actions, menuItems, notice, onNext, onRe
   const locale = useLocale()
   const wide = useWide()
   const [current, setCurrent] = useState(0)
-  const [selection, setSelection] = useState<[number, number] | null>(null)
+  const [selection, setSelection] = useState<[number, number] | null>(lines.lines.length ? [0, 0] : null)
   const [span, setSpan] = useState(SPANS[1]!)
   const [tab, setTab] = useState("lines")
   const [helping, setHelping] = useState(false)
   const { hasGuardFix, guardOn, setGuardOn, scope, setScope, pickScope, shown, pending, held, moves, changeCount, negative, move, undo, save, blocker } =
     useChanges({ detail, lines, current, selection, onNext })
-  const { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps, windowSeconds } = usePlayback(detail.id, shown.at(-1)?.end ?? 0)
+  const { media, peaks, time, playing, rate, setRate, setTrack, duration, sound, seek, start, play, audioProps, windowSeconds } = usePlayback(detail.id, shown.at(-1)?.end ?? 0, shown[0]?.start ?? 0)
 
   const videoText = useMemo(() => shown.map((line) => nearestText(lines.reference, line.start)), [shown, lines.reference])
   const bands = useMemo(() => overviewBands(shown, pending, guardOn && hasGuardFix ? detail.parts : []), [shown, pending, guardOn, hasGuardFix, detail.parts])

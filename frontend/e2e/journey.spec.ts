@@ -37,6 +37,25 @@ test.describe.serial("from Review to a fixed subtitle", () => {
     await expect(page).toHaveTitle(/^\(2\) Review/)
   })
 
+  test("the editor opens at the first line before and after sound becomes ready", async ({ page }) => {
+    await page.goto("/")
+    await page.getByRole("link", { name: LATE }).click()
+    const first = page.getByRole("list", { name: "Lines of the subtitle" }).getByRole("button").first()
+    await expect(first).toHaveAttribute("aria-current", "true")
+    await expect(first).toHaveAttribute("aria-pressed", "true")
+    const start = await first.locator("span").first().textContent()
+    const seconds = start!.split(":").reduce((sum, part) => sum * 60 + Number(part), 0)
+    expect(seconds).toBeGreaterThan(0)
+    await expect(page.locator("audio")).toHaveCount(1, { timeout: 60_000 })
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeCloseTo(seconds, 2)
+    await page.getByRole("button", { name: "Play", exact: true }).click()
+    await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible()
+    await page.getByRole("button", { name: "Pause", exact: true }).click()
+    const paused = await page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)
+    await page.getByRole("button", { name: "+5 s", exact: true }).click()
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(paused + 4)
+  })
+
   test("a file changed behind the page is never overwritten", async ({ page, baseURL }) => {
     const problems = await watchProblems(page)
     await page.goto("/")
