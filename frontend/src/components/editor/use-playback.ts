@@ -6,10 +6,10 @@ import { toast } from "sonner"
 import { ApiError, api, mediaUrl, unwrap } from "@/lib/api/client"
 import { useT } from "@/lib/i18n"
 
-export function usePlayback(subtitleId: string, fallbackDuration: number) {
+export function usePlayback(subtitleId: string, fallbackDuration: number, initialTime = 0) {
   const t = useT()
   const audio = useRef<HTMLAudioElement>(null)
-  const [time, setTime] = useState(0)
+  const [time, setTime] = useState(Math.max(0, initialTime))
   const [playing, setPlaying] = useState(false)
   const [rate, setRate] = useState(1)
   const [track, setTrack] = useState<number | null>(null)
@@ -58,6 +58,7 @@ export function usePlayback(subtitleId: string, fallbackDuration: number) {
         setPlayer(element)
       },
       src: mediaUrl(`/api/subtitles/${subtitleId}/audio/${media.data.track}`),
+      onLoadedMetadata: (event: SyntheticEvent<HTMLAudioElement>) => { event.currentTarget.currentTime = time },
       onPlay: () => setPlaying(true),
       onPause: () => setPlaying(false),
       onEnded: () => setPlaying(false),
