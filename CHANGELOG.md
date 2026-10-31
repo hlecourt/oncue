@@ -5,8 +5,6 @@ from the pull requests it merged. The project uses [Semantic Versioning](https:/
 
 ## [0.1.0] - 2026-10-30
 
-- The editor opens with its first line selected and the playhead at that line, including when the audio finishes loading.
-
 First public version.
 
 ### Added
