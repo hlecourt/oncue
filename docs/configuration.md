@@ -113,18 +113,25 @@ sentence-transformers model that publishes an ONNX export once, into the state v
 calibrated families can write: multilingual-e5-small (the light default) and LaBSE; any other model only proposes.
 
 ```
-hf download intfloat/multilingual-e5-small --include "onnx/model.onnx" "tokenizer.json" "modules.json" "sentence_bert_config.json" "1_Pooling/*" --local-dir /config/models/e5small
+hf download intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3 --include "onnx/model.onnx" "tokenizer.json" "modules.json" "sentence_bert_config.json" "1_Pooling/*" --local-dir /config/models/e5small
+python -c 'from onnxruntime.quantization import QuantType, quantize_dynamic; quantize_dynamic("/config/models/e5small/onnx/model.onnx", "/config/models/e5small/onnx/model.int8.onnx", weight_type=QuantType.QInt8)'
+mv /config/models/e5small/onnx/model.int8.onnx /config/models/e5small/onnx/model.onnx
 echo '{"prompts": {"query": "query: "}}' > /config/models/e5small/config_sentence_transformers.json
 ONCUE_TEXT_CHECK=1 ONCUE_TEXT_MODEL=/config/models/e5small
 ```
+
+The calibration was measured on that revision: `tokenizer.json` sha256 `0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39`, and
+the int8 `onnx/model.onnx` quantised by ONNX Runtime 1.31.1 sha256 `8da4c9ba0ad59f58e8566839425d7fd6339d31414d0ce5cba2d7d0afb75dd8b6`. Another
+revision or quantiser may score lines differently from what the safety models were fitted on.
 
 | Model (int8) | Size | 22-minute episode, 4-core home server, 2 threads |
 |---|---|---|
 | `intfloat/multilingual-e5-small` (MIT), the default | 112 MB | about 4 s, about 0.5 GB |
 | `sentence-transformers/LaBSE` (Apache-2.0), optional | 449 MB | about 12 s, about 0.9 GB |
 
-With the check on, OnCue writes passages it can vouch for and leaves the rest to a person: on the held-out evaluation set it made
-159 automatic writes with none wrong, but most files still end in Review for a few lines no text could settle (see ADR 0007).
+With the check on, OnCue writes passages it can vouch for and leaves the rest to a person. On its last blind evaluation set
+(363 damaged cases from 10 videos) it made 72 automatic writes, 1 of them with a wrong line, and on 8 real downloaded files it
+made 2 writes, none wrong, without fully repairing any of them; most files still end in Review (see ADR 0012).
 
 The reference text comes from a text track directly. A picture track (PGS) is read by Tesseract when it is installed (a few
 minutes per episode, once, then cached), or from an SRT you made elsewhere, saved as
