@@ -22,6 +22,7 @@ WEAK_MINUTES_PATTERN = re.compile(r"(\d+(,\d+)*)?")
 BANDS = ("", "high", "medium", "low", "none")
 DRY_RUN = "dry-run"
 FORCED_TAG = ".forced."
+UNSETTLED_TEXT = "unsettled"
 WRITING_DECISIONS = (DECISION["fixed"], DECISION["audio_synced"], DECISION["best_effort"])
 RESULT = f"case when applied = 0 and decision in ({', '.join(repr(decision) for decision in WRITING_DECISIONS)}) then '{DRY_RUN}' else decision end"
 COLUMNS = ("time", "subtitle", "provider", "decision", "reference", "matched_before", "matched", "weak_minutes", "note", "confidence", "band", "changes",
@@ -33,9 +34,9 @@ def report(subtitle, provider, outcome, applied=True):
     values = (now(), subtitle, provider, outcome["decision"], outcome.get("reference", ""), text(before.get("matched")), text(after.get("matched")),
               ",".join(str(minute) for minute in outcome.get("weak_minutes", [])), outcome.get("matches", "") or outcome.get("reason", ""),
               text(outcome.get("confidence")), outcome.get("confidence_band", ""), json.dumps(outcome["changes"]) if outcome.get("changes") else "",
-              int(applied), outcome.get("seconds"))
+              int(applied), outcome.get("seconds"), (outcome.get("text") or {}).get("verdict", ""))
     with closing(connect()) as connection:
-        connection.execute(f"insert into reports ({', '.join(COLUMNS)}, seconds) values ({', '.join('?' * (len(COLUMNS) + 1))})", values)
+        connection.execute(f"insert into reports ({', '.join(COLUMNS)}, seconds, text_verdict) values ({', '.join('?' * (len(COLUMNS) + 2))})", values)
 
 
 def latest_reports():
@@ -75,6 +76,11 @@ def needs_review(row):
     if FORCED_TAG in os.path.basename(row["subtitle"]).lower():
         return False
     if not row["applied"] and row["decision"] == DECISION["fixed"]:
+        return True
+    if row.get("text_verdict") == UNSETTLED_TEXT:
+        return True
+    # a keep under the automatic band is not "in sync": a person confirms it (rows from before bands were stored have none)
+    if row["decision"] == DECISION["kept"] and row["band"] not in ("high", ""):
         return True
     return row["decision"] not in SETTLED_DECISIONS or bool(row["weak_minutes"]) or row["band"] == "low"
 

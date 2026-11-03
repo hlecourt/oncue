@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import numpy
 import pytest
-from synthetic import dialogue, translation
+from synthetic import dialogue, split_translation, translation
 
 from oncue.alignment import judge
 
@@ -49,11 +49,27 @@ def test_synced_subtitle_is_kept(episode):
     assert run(cues, truth, reference)[0] == "kept"
 
 
+@pytest.mark.parametrize("seed", [1, 2, 4])
+def test_a_synced_translation_that_splits_lines_is_kept(seed):
+    starts, ends = dialogue(seed)
+    decision, _, _, _ = judge(split_translation(starts, ends, seed), {"kind": "eng-text", "starts": starts, "ends": ends})
+    assert decision == "kept"
+
+
 def test_local_shift_inside_a_good_file_is_fixed(episode):
     reference, cues, truth = episode
     decision, within_second = run(distorted(cues, lambda value: value + 3 if 500 <= value < 590 else value), truth, reference)
     assert decision == "fixed"
     assert within_second >= 0.95
+
+
+def test_a_steady_speed_error_off_the_usual_frame_rates_is_fixed_in_one_part(episode):
+    reference, cues, truth = episode
+    decision, _, _, attempt = judge(distorted(cues, lambda value: value * 0.985 + 4), reference)
+    errors = numpy.abs(numpy.array([timing[0] for timing in attempt["timings"]]) - numpy.array(truth))
+    assert decision == "fixed"
+    assert attempt["segments"] == 1
+    assert numpy.mean(errors <= 0.3) >= 0.95
 
 
 def test_offset_beyond_search_range_is_rejected(episode):

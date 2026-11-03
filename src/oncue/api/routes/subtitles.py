@@ -12,6 +12,8 @@ from ...catalog import known_ids, proposal_for
 from ...catalog import subtitle_id as known_id
 from ...files import file_hash, inside_allowed_folders, read_regular
 from ...library import SUBTITLE_EXTENSIONS, external_subtitles
+from ...reference import paired_cues
+from ...reference_text import reference_texts
 from ...reports import latest_reports, report_history
 from ...storage import backup_folders
 from ...subtitles import parse_subtitle
@@ -96,7 +98,7 @@ def get_lines(subtitle_id: str) -> Lines:
 
 
 def reference_lines(video, reference):
-    texts = review.reference_texts(video, reference) or [(start, end, "") for start, end in zip(reference["starts"], reference["ends"], strict=False)]
+    texts = reference_texts(video, reference) or [(start, end, "") for start, end in paired_cues(reference["starts"], reference["ends"])]
     return [Line(start=float(start), end=float(end), text=review.clean(text)) for start, end, text in texts]
 
 

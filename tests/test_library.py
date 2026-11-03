@@ -61,7 +61,7 @@ def test_watch_queues_new_and_changed_subtitles_once(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
-def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys):
+def test_scan_folder_fixes_a_misaligned_subtitle(tmp_path, capsys, timing_writes):
     starts, ends = dialogue(6, minutes=6)
     lines = "\n".join(f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1))
     (tmp_path / "reference.srt").write_text(lines)

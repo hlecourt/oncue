@@ -25,5 +25,6 @@ def video_with_reference(folder, name="Movie (2020)/Movie.2020.mkv", seed=8, min
 
 
 def write_subtitle_file(path, starts, ends, shift):
-    path.write_text("\n".join(f"{number}\n{timestamp(shift(start))} --> {timestamp(shift(end))}\nligne {number}\n"
+    # a line moves as a whole, by the shift of its start, as a late passage does
+    path.write_text("\n".join(f"{number}\n{timestamp(shift(start))} --> {timestamp(end + shift(start) - start)}\nligne {number}\n"
                               for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1)))

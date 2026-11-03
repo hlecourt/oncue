@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import os
 from pathlib import Path
 
-from oncue import state
+import pytest
+
+from oncue import review_actions, state, storage
+from oncue.errors import OutputRefusedError
+from oncue.files import file_hash
 from oncue.guard import evaluate_and_fix
-from oncue.subtitles import ass_timestamp, parse_subtitle, write_subtitle
+from oncue.subtitles import ass_timestamp, output_flaw, parse_subtitle, write_subtitle
 
 SRT = ("1\r\n00:00:01,000 --> 00:00:02,000\r\nBonjour\r\n\r\n2\r\n00:00:03,000 --> 00:00:04,000\r\n\r\n"
        "3\r\n00:00:05,500 --> 00:00:06,000\r\nDeux\r\nlignes\r\n4\r\n00:00:07,000 --> 00:00:08,000\r\nSans blanc avant\r\n")
@@ -107,3 +112,45 @@ def test_impossible_sizes_and_times_are_not_checked(tmp_path):
     assert oversized_reason([(1.0, 2.0, "x")] * (MAX_CHECKED_CUES + 1)).startswith("too many lines")
     assert oversized_reason([(1.0, 9e9, "x")]).startswith("times beyond")
     assert oversized_reason([(1.0, 2.0, "x")]) is None
+
+
+def dialogue_srt(folder, count=12):
+    return write(folder, "Show.fr.srt", "".join(f"{number}\n00:00:{2 * number:02d},000 --> 00:00:{2 * number + 1:02d},000\nligne {number}\n\n"
+                                                for number in range(1, count + 1)))
+
+
+@pytest.mark.parametrize(("change", "flaw"), [
+    (lambda timings: [(start - 3, end - 3, text) if index < 2 else (start, end, text) for index, (start, end, text) in enumerate(timings)],
+     "before the beginning"),
+    (lambda timings: [(end + 0.5, start, text) if index == 4 else (start, end, text) for index, (start, end, text) in enumerate(timings)],
+     "end before it starts"),
+    (lambda timings: [(start + 2.5, end + 2.5, text) if index == 4 else (start, end, text) for index, (start, end, text) in enumerate(timings)],
+     "swap order"),
+    (lambda timings: [(start, end + 2.0, text) if index == 4 else (start, end, text) for index, (start, end, text) in enumerate(timings)],
+     "overlap"),
+    (lambda timings: timings[:-1], "do not match"),
+])
+def test_timings_that_would_not_be_written_as_decided_are_refused_and_the_file_is_untouched(tmp_path, change, flaw):
+    path = dialogue_srt(tmp_path)
+    before = Path(path).read_bytes()
+    document = parse_subtitle(path)
+    timings = change(document["cues"])
+    assert flaw in output_flaw(document, timings)
+    with pytest.raises(OutputRefusedError, match=flaw):
+        write_subtitle(path, document, timings)
+    assert Path(path).read_bytes() == before
+
+
+def test_a_passage_moved_as_a_whole_passes_the_output_check_and_reads_back_exactly(tmp_path):
+    path = dialogue_srt(tmp_path)
+    document = parse_subtitle(path)
+    timings = [(start + 0.3333, end + 0.3333, text) for start, end, text in document["cues"]]
+    write_subtitle(path, document, timings)
+    assert [round(start, 3) for start, _, _ in parse_subtitle(path)["cues"]] == [round(start, 3) for start, _, _ in timings]
+
+
+def test_an_edit_by_hand_that_would_overlap_an_untouched_line_is_refused_before_any_backup(tmp_path):
+    path = dialogue_srt(tmp_path)
+    with pytest.raises(OutputRefusedError, match="overlap"):
+        review_actions.retime(str(tmp_path / "Show.mkv"), path, file_hash(path), False, [(5, 8, -1.8)])
+    assert not any(names for _, _, names in os.walk(storage.backup_root(path)))

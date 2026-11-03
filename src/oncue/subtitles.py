@@ -5,11 +5,15 @@ import codecs
 import os
 import re
 
+from .errors import OutputRefusedError
 from .files import read_regular, replace_file
 
 TIMING = re.compile(r"^\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[,.]\d{1,3})")
 HEARING_IMPAIRED_TAGS = (".hi.", ".sdh.", ".cc.")
 BYTE_ORDER_MARKS = ((codecs.BOM_UTF8, "utf-8"), (codecs.BOM_UTF16_LE, "utf-16-le"), (codecs.BOM_UTF16_BE, "utf-16-be"))
+WRITTEN_PRECISION = {"ass": 0.006, "srt": 0.0006, "vtt": 0.0006}
+OVERLAP_TOLERANCE_SECONDS = 0.5
+ORDER_TOLERANCE_SECONDS = 0.001
 
 
 def is_hearing_impaired(subtitle):
@@ -105,8 +109,44 @@ def clock(value):
 
 
 def write_subtitle(path, document, timings):
+    """The only way OnCue writes timings, automatic or by hand: the exact bytes are rendered, read back and checked first, and refused
+    rather than written when they would not say what was decided."""
+    rendered = rendered_bytes(document, timings)
+    flaw = output_flaw(document, timings, rendered)
+    if flaw:
+        raise OutputRefusedError(f"not written: {flaw}")
+    replace_file(path, rendered)
+
+
+def rendered_bytes(document, timings):
     lines = ass_lines(document, timings) if document["format"] == "ass" else timed_lines(document, timings)
-    replace_file(path, bytes.fromhex(document.get("bom", "")) + document["newline"].join(lines).encode(document["encoding"]))
+    return bytes.fromhex(document.get("bom", "")) + document["newline"].join(lines).encode(document["encoding"])
+
+
+def output_flaw(document, timings, rendered=None):
+    """Why these timings must not be written, or "": nothing before zero (it would be clamped), no line ending before it starts, no two
+    neighbouring lines swapped or overlapping more than they already did (a pair the original already overlapped may not overlap further),
+    the seams between moved and untouched lines included, checked on the rendered bytes read back, which must say the same timings."""
+    cues = document["cues"]
+    if len(timings) != len(cues):
+        return "the timings do not match the lines of the file"
+    if any(start < 0 or end < 0 for start, end, _ in timings):
+        return "a line would start before the beginning of the video"
+    if any(end < start for start, end, _ in timings):
+        return "a line would end before it starts"
+    written = parse_subtitle("", raw=rendered if rendered is not None else rendered_bytes(document, timings))["cues"]
+    precision = WRITTEN_PRECISION.get(document["format"], 0.0006)
+    if len(written) != len(timings) or any(abs(read[0] - start) > precision or abs(read[1] - end) > precision
+                                           for read, (start, end, _) in zip(written, timings, strict=True)):
+        return "the written file would not read back as these timings"
+    for index in range(len(cues) - 1):
+        (start, end, _), (next_start, _, _) = written[index], written[index + 1]
+        (old_start, old_end, _), (old_next_start, _, _) = cues[index], cues[index + 1]
+        if start - next_start > max(old_start - old_next_start, 0.0) + ORDER_TOLERANCE_SECONDS:
+            return f"lines {index + 1} and {index + 2} would swap order"
+        if end - next_start > max(old_end - old_next_start, 0.0) + OVERLAP_TOLERANCE_SECONDS:
+            return f"line {index + 1} would overlap line {index + 2}"
+    return ""
 
 
 def timed_lines(document, timings):
