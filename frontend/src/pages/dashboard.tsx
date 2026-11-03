@@ -16,7 +16,7 @@ type Stats = Schemas["StatsView"]
 type Translate = ReturnType<typeof useT>
 
 const RANGES = [{ value: "30", label: "30 days", days: 30 }, { value: "182", label: "6 months", days: 182 }, { value: "all", label: "All time", days: undefined }] as const
-const AUTOMATIC_FROM = 80
+const AUTOMATIC_FROM = 90
 const CONFIDENCE_STEP = 5
 const CHECK_TIME_STEP = 0.5
 const REFRESH_MS = 15_000
@@ -280,7 +280,7 @@ function ConfidenceChart({ bins, number, t }: { bins: number[]; number: (value: 
   return (
     <>
       <div className="mb-4 grid grid-cols-2 gap-3">
-        <Split tone="bg-guard" label={t("sure, 80 or more")} value={number(sure)} share={`${surePercent}%`} />
+        <Split tone="bg-guard" label={t("sure, 90 or more")} value={number(sure)} share={`${surePercent}%`} />
         <Split tone="bg-to-review" label={t("sent to Review")} value={number(unsure)} share={`${sure + unsure ? 100 - surePercent : 0}%`} />
       </div>
       <div className="relative">

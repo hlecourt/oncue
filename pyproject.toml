@@ -37,6 +37,7 @@ Security = "https://github.com/hlecourt/oncue/security/policy"
 [project.optional-dependencies]
 audio = ["ffsubsync>=0.5.1,<0.6"]
 web = ["fastapi>=0.162,<0.200", "uvicorn>=0.54,<0.100"]
+text = ["onnxruntime>=1.20,<2", "tokenizers>=0.20,<1"]
 test = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3"]
 dev = ["pytest>=8", "pytest-cov>=5", "httpx2>=2.16,<3", "ruff==0.17.3"]
 

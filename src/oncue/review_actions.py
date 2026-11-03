@@ -6,12 +6,12 @@ import hashlib
 import os
 
 from . import configuration, jobs
-from .alignment import cue_starts, score, weak_minutes
+from .alignment import score
 from .bazarr import REPLACEMENT_STAGE, request_another
 from .catalog import discard_proposal, proposal_for
 from .confidence import confidence
 from .configuration import MODE
-from .errors import EditRefusedError, StaleVersionError, ToolError
+from .errors import EditRefusedError, OutputRefusedError, StaleVersionError, ToolError
 from .files import file_hash, read_regular, remove_file, restore_version, save_backup, subtitle_lock
 from .heartbeats import worker_health
 from .library import VIDEO_EXTENSIONS, folder_neighbours
@@ -21,7 +21,7 @@ from .reference import load_reference
 from .reports import report
 from .state import load_state, update_state
 from .storage import backup_folders, file_signature
-from .subtitles import is_hearing_impaired, parse_subtitle, write_subtitle
+from .subtitles import is_hearing_impaired, output_flaw, parse_subtitle, write_subtitle
 
 STALE_VERSION = "the subtitle changed since this page was opened, reload it and try again"
 BEFORE_THE_START = "some lines would start before the beginning of the video"
@@ -34,6 +34,9 @@ def retime(video, subtitle, expected_version, use_proposal, changes):
     if use_proposal and (proposal is None or len(proposal["timings"]) != len(cues)):
         raise EditRefusedError("OnCue's fix does not match this file any more")
     timings = retimed_timings(cues, proposal, changes)
+    flaw = output_flaw(document, timings)
+    if flaw:
+        raise OutputRefusedError(f"not written: {flaw}")
     backup_folder = replace_version(subtitle, expected_version, "original" if proposal else "before-manual", lambda: write_subtitle(subtitle, document, timings))
     guard_changes = (proposal or {}).get("changes") or {}
     parts = guard_changes.get("parts", []) + [{"first": cues[first][0], "last": cues[last][0], "shift": round(offset, 2), "lines": last - first + 1}
@@ -97,10 +100,10 @@ def manual_outcome(video, subtitle, previous_cues, decision, reason, scale, part
 
 
 def measure(cues, reference):
-    original = score(cue_starts(cues), reference["starts"])
+    original = score(cues, reference)
     if original is None:
         return None
-    outcome = {"decision": DECISION["kept"], "after": original, "weak_minutes": weak_minutes(cues, reference)}
+    outcome = {"decision": DECISION["kept"], "after": original, "weak_minutes": original["weak_minutes"]}
     trust, band = confidence(outcome)
     return {**original, "weak_minutes": outcome["weak_minutes"], "confidence": trust, "confidence_band": band}
 

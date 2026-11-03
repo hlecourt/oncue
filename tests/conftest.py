@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from oncue import files, logs, storage
+from oncue import confidence, files, logs, storage
 
 
 @pytest.fixture(autouse=True)
@@ -20,3 +20,9 @@ def isolated_state(tmp_path, tmp_path_factory, monkeypatch):
     auth.KNOWN_CLIENTS.clear()
     auth.ACCOUNT.clear()
     return tmp_path
+
+
+@pytest.fixture
+def timing_writes(monkeypatch):
+    # for tests of the write path itself: a timing fix normally stays a proposal unless the text check reads it
+    monkeypatch.setattr(confidence, "TIMING_ONLY_CEILING", 100)

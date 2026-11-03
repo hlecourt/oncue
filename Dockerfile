@@ -11,6 +11,8 @@ RUN corepack pnpm@12.16.1 run build
 
 FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 ARG VERSION=dev
+# 1 adds the optional text check (ONNX Runtime, the tokenizer, Tesseract for picture tracks); its model stays outside the image
+ARG ONCUE_TEXT=0
 LABEL org.opencontainers.image.title="oncue" \
       org.opencontainers.image.description="Checks subtitle timing against a track embedded in the video and repairs it" \
       org.opencontainers.image.source="https://github.com/hlecourt/oncue" \
@@ -20,6 +22,11 @@ COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 WORKDIR /app
 COPY requirements/docker.txt ./requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+COPY requirements/text.txt ./requirements-text.txt
+RUN if [ "$ONCUE_TEXT" = "1" ]; then \
+        pip install --no-cache-dir --require-hashes -r requirements-text.txt \
+        && apt-get update && apt-get install -y --no-install-recommends tesseract-ocr && rm -rf /var/lib/apt/lists/*; \
+    fi
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY --from=front /build/src/oncue/api/static ./src/oncue/api/static

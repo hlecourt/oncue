@@ -73,8 +73,13 @@ wins and shows as locked there.
 | `ONCUE_STATE` | `/config/oncue` (`/config` in the image): queue, history, log, caches, UI account |
 | `ONCUE_BACKUPS` | `/data/backup/oncue` (`/backup` in the image) |
 | `ONCUE_AUDIO_AUTOMATIC` | unset; `1` lets a high-confidence audio sync be written without a person, once `calibrate-audio` found no false positive |
+| `ONCUE_TEXT_CHECK` | unset; `1` turns on the text check (see below) |
+| `ONCUE_TEXT_MODEL` | unset; the folder of the sentence model the text check uses |
+| `ONCUE_TEXT_SEAM_AUDIO` | unset; `1` lets the text check read a few seconds of audio around the lines it cannot place between two passages (speech activity as evidence). Off by default: on the development set it added nothing and once sent a seam line to the wrong side (the true place was a pause) |
+| `ONCUE_TEXT_SEAM_SPEECH` | unset; `1` lets the text check's refine passes transcribe a few seconds around the lines still in doubt next to a written passage (faster-whisper base, int8, installed separately) and use the recognised words as evidence, never as a write on its own |
+| `ONCUE_TEXT_SPEECH_CHECK` | unset; `1` lets the text check measure the subtitle and the reference against the speech of the video (webrtcvad on the centre channel of the reference's language, about 32 s per episode on a 4-core home server, no PyTorch, no Whisper): a move that would sit off the speech is refused, a slow drift the text and the speech both measure can be written, a small passage offset (0.65 to 2.5 s) is only offered in Review (no small-move gate passed its Learn-then-Test on the development data), and a measurable residual above 0.5 s blocks "verified". A proposal from timing alone is corrected for the reference's measured lead. It fails closed: with it on and no audio, no webrtcvad, no audio stream known to be in the reference's language (several streams and none tagged with it, or a single stream tagged with another), a read that takes over 15 minutes, or no settled measure of the file's final timing, the file is never verified and no such move is made. With it off, the text alone can verify a file, and cannot tell a reference track that is off its own audio |
 | `ONCUE_KEEP_VERSIONS` / `ONCUE_KEEP_DAYS` | `5` / `30`: backups kept per subtitle besides its first version |
-| `ONCUE_MODE` | `report`; `fix` lets OnCue write high-confidence fixes on its own |
+| `ONCUE_MODE` | `report`; `fix` lets OnCue write high-confidence fixes on its own. A fix found from timing alone stays a proposal unless the text check is on (`ONCUE_TEXT_CHECK`): timing cannot tell a line from its neighbour |
 | `ONCUE_WORKERS` | `2` |
 | `ONCUE_REPLACEMENTS` | `3`: other subtitles asked from Bazarr before keeping the best version |
 | `ONCUE_WEBHOOK_URL` / `ONCUE_WEBHOOK_MINUTES` | unset / `15`: a digest of what reached Review, at most once per interval |
@@ -93,6 +98,44 @@ wins and shows as locked there.
 | `BAZARR_URL` | `http://localhost:6767` |
 | `BAZARR_API_KEY` | read from `BAZARR_CONFIG` |
 | `BAZARR_CONFIG` | `/config/config/config.yaml` |
+
+## Text check
+
+Off by default. When it is on, every check also reads what the lines say: a multilingual sentence model matches each line with
+the reference line it translates, which timing alone cannot do (see [how OnCue decides](how-it-works.md) and ADR 0007). It writes
+a passage only when its calibrated safety is high and it stays in order with the lines around it, shows a file as in sync only when
+no line is in doubt, lists everything else in Review with its minutes, and reports reference dialogue that has no subtitle line.
+
+It needs the `text` extra (ONNX Runtime and a tokenizer, no PyTorch): `pip install 'oncue[text]'`, or an image built with
+`--build-arg ONCUE_TEXT=1`, which also adds Tesseract to read picture tracks. The model is not in the image: download a
+sentence-transformers model that publishes an ONNX export once, into the state volume, quantise it to int8 once
+(`onnxruntime.quantization.quantize_dynamic`), and point `ONCUE_TEXT_MODEL` at it. Nothing is downloaded at run time. Only the two
+calibrated families can write: multilingual-e5-small (the light default) and LaBSE; any other model only proposes.
+
+```
+hf download intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3 --include "onnx/model.onnx" "tokenizer.json" "modules.json" "sentence_bert_config.json" "1_Pooling/*" --local-dir /config/models/e5small
+python -c 'from onnxruntime.quantization import QuantType, quantize_dynamic; quantize_dynamic("/config/models/e5small/onnx/model.onnx", "/config/models/e5small/onnx/model.int8.onnx", weight_type=QuantType.QInt8)'
+mv /config/models/e5small/onnx/model.int8.onnx /config/models/e5small/onnx/model.onnx
+echo '{"prompts": {"query": "query: "}}' > /config/models/e5small/config_sentence_transformers.json
+ONCUE_TEXT_CHECK=1 ONCUE_TEXT_MODEL=/config/models/e5small
+```
+
+The calibration was measured on that revision: `tokenizer.json` sha256 `0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39`, and
+the int8 `onnx/model.onnx` quantised by ONNX Runtime 1.31.1 sha256 `8da4c9ba0ad59f58e8566839425d7fd6339d31414d0ce5cba2d7d0afb75dd8b6`. Another
+revision or quantiser may score lines differently from what the safety models were fitted on.
+
+| Model (int8) | Size | 22-minute episode, 4-core home server, 2 threads |
+|---|---|---|
+| `intfloat/multilingual-e5-small` (MIT), the default | 112 MB | about 4 s, about 0.5 GB |
+| `sentence-transformers/LaBSE` (Apache-2.0), optional | 449 MB | about 12 s, about 0.9 GB |
+
+With the check on, OnCue writes passages it can vouch for and leaves the rest to a person. On its last blind evaluation set
+(363 damaged cases from 10 videos) it made 72 automatic writes, 1 of them with a wrong line, and on 8 real downloaded files it
+made 2 writes, none wrong, without fully repairing any of them; most files still end in Review (see ADR 0012).
+
+The reference text comes from a text track directly. A picture track (PGS) is read by Tesseract when it is installed (a few
+minutes per episode, once, then cached), or from an SRT you made elsewhere, saved as
+`<state>/reference-texts/<video file name>.<track index>.srt`, which is used first.
 
 ## Video in the editor
 

@@ -4,7 +4,7 @@
 DECISION = {"kept": "kept", "fixed": "fixed", "rejected": "rejected", "unverified": "unverified", "wrong_episode": "wrong-episode",
             "best_effort": "best-effort", "audio_synced": "audio-synced", "manual": "manual", "reverted": "reverted", "proposed": "proposed",
             "approved": "approved", "deleted": "deleted"}
-FIX_KIND = {"aligned": "aligned", "audio": "audio"}
+FIX_KIND = {"aligned": "aligned", "audio": "audio", "text": "text"}
 SETTLED_DECISIONS = (DECISION["kept"], DECISION["fixed"], DECISION["manual"], DECISION["approved"])
 DECISION_WORDS = {"kept": "In sync", "fixed": "Fixed automatically", "rejected": "Could not be fixed", "wrong-episode": "Belongs to another episode",
                   "unverified": "Cannot be checked", "audio-synced": "Synced to the audio, not checked", "best-effort": "Best version kept, not fully in sync",

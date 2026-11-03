@@ -100,7 +100,7 @@ def test_hook_job_runs_the_bazarr_flow(monkeypatch):
 
 
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
-def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path):
+def test_a_queued_misaligned_subtitle_is_fixed_end_to_end(tmp_path, timing_writes):
     starts, ends = dialogue(5, minutes=6)
     lines = [f"{number}\n{timestamp(start)} --> {timestamp(end)}\nline {number}\n" for number, (start, end) in enumerate(zip(starts, ends, strict=False), 1)]
     (tmp_path / "reference.srt").write_text("\n".join(lines))

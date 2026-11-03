@@ -4,7 +4,7 @@ import itertools
 import pytest
 from media import video_with_reference
 
-from oncue import matroska, review
+from oncue import matroska, reference_text
 from oncue.errors import MatroskaError
 
 ID = matroska.MATROSKA_ID
@@ -69,7 +69,7 @@ def test_bitmap_like_tracks_get_the_size_of_each_simple_or_grouped_block(tmp_pat
 def test_review_lines_fall_back_to_ffmpeg_when_the_index_gives_no_text(tmp_path, monkeypatch):
     video, starts, _ = video_with_reference(tmp_path, minutes=2)
     indexed = matroska.matroska_texts(str(video), 2, 1)
-    monkeypatch.setattr(review, "matroska_texts", lambda *arguments, **options: None)
-    extracted = review.reference_texts(str(video), {"image": False, "index": 1})
+    monkeypatch.setattr(reference_text, "matroska_texts", lambda *arguments, **options: None)
+    extracted = reference_text.reference_texts(str(video), {"image": False, "index": 1})
     assert len(extracted) == len(starts) and [text for _, _, text in extracted] == [text for _, _, text in indexed]
     assert all(abs(start - indexed_start) < 0.01 for (start, _, _), (indexed_start, _, _) in zip(extracted, indexed, strict=True))

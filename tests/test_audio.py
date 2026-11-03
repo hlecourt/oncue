@@ -122,7 +122,7 @@ def test_a_sync_whose_parts_all_land_on_speech_is_trusted_and_one_off_by_a_secon
 
 
 @pytest.mark.parametrize(("agreement", "score", "band"), [
-    ({"parts": 8, "agreeing": 8}, 100, "high"), ({"parts": 8, "agreeing": 7}, 88, "high"), ({"parts": 8, "agreeing": 6}, 75, "medium"),
+    ({"parts": 8, "agreeing": 8}, 100, "high"), ({"parts": 8, "agreeing": 7}, 88, "medium"), ({"parts": 8, "agreeing": 6}, 75, "medium"),
     ({"parts": 3, "agreeing": 3}, 30, "low"), (None, 30, "low"),
 ])
 def test_audio_confidence_is_the_share_of_parts_that_agree(agreement, score, band):

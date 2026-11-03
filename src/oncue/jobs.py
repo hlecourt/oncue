@@ -165,8 +165,11 @@ def connect():
             connection.execute("pragma journal_mode = wal")
             for statement in SCHEMA:
                 connection.execute(statement)
-            if "seconds" not in {column["name"] for column in connection.execute("pragma table_info(reports)")}:
+            present = {column["name"] for column in connection.execute("pragma table_info(reports)")}
+            if "seconds" not in present:
                 connection.execute("alter table reports add column seconds real")
+            if "text_verdict" not in present:
+                connection.execute("alter table reports add column text_verdict text not null default ''")
             connection.execute("update jobs set kind = ? where kind = ?", (KIND["replacement_check"], LEGACY_REPLACEMENT_CHECK))
         PREPARED.add(database)
     return connection

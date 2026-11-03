@@ -40,3 +40,7 @@ class EditRefusedError(OnCueError):
 
 class StaleVersionError(EditRefusedError):
     pass
+
+
+class OutputRefusedError(EditRefusedError):
+    pass

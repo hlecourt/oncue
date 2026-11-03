@@ -73,7 +73,7 @@ def test_same_named_subtitles_never_share_backups_and_backups_never_overwrite(tm
         files.save_version(str(first), folder, "original")
 
 
-def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch):
+def test_a_subtitle_changed_during_the_check_is_not_overwritten(tmp_path, monkeypatch, timing_writes):
     from oncue import guard
     starts = numpy.cumsum(numpy.random.default_rng(3).uniform(1.5, 6.0, LINES))
     late = "".join(f"{number}\n{timestamp(start)} --> {timestamp(start + 1)}\nline {number}\n\n" for number, start in enumerate(starts, 1))

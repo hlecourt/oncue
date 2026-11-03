@@ -29,3 +29,16 @@ def translation(starts, ends, seed):
         cues.append((starts[index] + rng.uniform(-0.1, 0.1), ends[index], f"line {index}"))
         index += 1
     return cues
+
+
+def split_translation(starts, ends, seed):
+    """A correct translation timed by hand: half of the long lines split in two, starts and ends a quarter second off."""
+    rng = numpy.random.default_rng(seed + 2000)
+    cues = []
+    for start, end in zip(starts, ends, strict=False):
+        if end - start > 1.6 and rng.random() < 0.5:
+            middle = start + (end - start) * rng.uniform(0.4, 0.6)
+            cues += [(start + rng.normal(0, 0.25), middle, "first half"), (middle + rng.normal(0, 0.25), end + rng.normal(0, 0.25), "second half")]
+            continue
+        cues.append((start + rng.normal(0, 0.25), end + rng.normal(0, 0.25), "line"))
+    return cues

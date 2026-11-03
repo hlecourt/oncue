@@ -9,7 +9,7 @@ from oncue import files, guard, storage
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg and ffprobe")
 
 
-def test_a_sure_fix_is_not_written_and_not_backed_up_without_allowed_folders(tmp_path, monkeypatch):
+def test_a_sure_fix_is_not_written_and_not_backed_up_without_allowed_folders(tmp_path, monkeypatch, timing_writes):
     video, starts, ends = video_with_reference(tmp_path)
     subtitle = video.with_suffix(".fr.srt")
     write_subtitle_file(subtitle, starts, ends, lambda value: value + 3)

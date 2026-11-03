@@ -23,7 +23,7 @@ automatic syncs rarely tell you when they got it wrong. OnCue instead:
   source of timing made for that exact file;
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
 - only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
-- writes on its own only at 80 or more; anything else waits for you in a review queue;
+- writes on its own only at 90 or more; anything else waits for you in a review queue;
 - changes only the timings, after a backup, and never while the file is being changed by something else.
 
 How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
@@ -102,7 +102,7 @@ Most settings can be changed in the UI; an environment variable always wins. The
 
 | Variable | Default |
 |---|---|
-| `ONCUE_MODE` | `report`; `fix` writes sure fixes on its own |
+| `ONCUE_MODE` | `report`; `fix` writes sure fixes on its own (a timing fix only when the text check is on and vouches for it) |
 | `ONCUE_LIBRARY` | unset: the media folders to watch |
 | `ONCUE_ROOTS` | unset: the folders OnCue may change; nothing is written when unset |
 | `ONCUE_WORKERS` | `2` |

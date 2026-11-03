@@ -22,6 +22,8 @@ CUE_PER_PACKET_BITMAP_CODECS = ("dvd_subtitle",)
 SPLIT_BITMAP_CODECS = ("hdmv_pgs_subtitle",)
 BITMAP_MIN_PACKET_BYTES = 100
 EMPTY_TEXT_PACKET_BYTES = 2
+MAX_SHOWN_SECONDS = 10.0
+LAST_SHOWN_SECONDS = 2.0
 MEDIA_INPUT_OPTIONS = ("-protocol_whitelist", "file", "-format_whitelist", "matroska,webm,mov,mp4,avi,mpegts")
 
 
@@ -126,6 +128,20 @@ def cue_times(codec, entries):
         return starts, ends
     shown = [(start, duration) for start, duration, size in entries if size is None or size > EMPTY_TEXT_PACKET_BYTES]
     return sorted(start for start, _ in shown), sorted(start + duration for start, duration in shown if duration)
+
+
+def paired_cues(starts, ends):
+    # a picture subtitle shows until the next clear or the next picture replaces it, so starts and clears are not one-to-one
+    starts, ends = sorted(float(start) for start in starts), sorted(float(end) for end in ends)
+    pairs, clear = [], 0
+    for position, start in enumerate(starts):
+        while clear < len(ends) and ends[clear] <= start:
+            clear += 1
+        following = starts[position + 1] if position + 1 < len(starts) else None
+        candidates = [moment for moment in (ends[clear] if clear < len(ends) else None, following) if moment is not None]
+        end = min(candidates) if candidates else start + LAST_SHOWN_SECONDS
+        pairs.append((start, min(end, start + MAX_SHOWN_SECONDS)))
+    return pairs
 
 
 def packet_timings(video):
