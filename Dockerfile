@@ -9,7 +9,7 @@ RUN corepack pnpm@12.16.1 install --frozen-lockfile
 COPY frontend ./
 RUN corepack pnpm@12.16.1 run build
 
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="oncue" \
       org.opencontainers.image.description="Checks subtitle timing against a track embedded in the video and repairs it" \
