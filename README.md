@@ -5,9 +5,10 @@
 [![licence: GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Docker pulls](https://img.shields.io/docker/pulls/hlecourt/oncue)](https://hub.docker.com/r/hlecourt/oncue)
 
-Out-of-sync subtitles, fixed for you. OnCue checks every external subtitle in your media library against the
-subtitle track embedded in the video, fixes the timing on its own when it is sure, and lets you fix the rest by ear in a web
-editor. It works on the folders of a Jellyfin, Plex or Emby library, and can also plug into Bazarr.
+Find out-of-sync subtitles in your library, see exactly what is off, and fix it by ear. OnCue checks every external
+subtitle of a Jellyfin, Plex or Emby library against the subtitle track embedded in the video, proposes timing fixes, and lets
+you check and adjust them in a web editor. Once you allow it, it can also write the fixes it scores high on its own. It can
+plug into Bazarr.
 
 Status: alpha.
 
@@ -16,14 +17,15 @@ Status: alpha.
 ## Why
 
 Subtitles found online are often made for another release: a streaming cut instead of the Blu-ray, a 25 fps master instead of
-23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync mostly apply one offset and one frame rate, and
-automatic syncs rarely tell you when they got it wrong. OnCue instead:
+23.976, a TV recording with ad breaks. Audio-based tools such as ffsubsync work best on a single offset or frame rate, and
+most automatic syncs give one verdict for the whole file. OnCue instead:
 
-- compares your subtitle with a track already embedded in the video (text or picture, any language), which is the one
-  source of timing made for that exact file;
+- compares your subtitle with a track already embedded in the video (text or picture, any language), a timing reference
+  made for that exact file;
 - realigns it part by part, so ad breaks, cuts and frame rate errors are fixed, not just a global offset;
 - only trusts a fix that clearly beats the same search against a meaningless reference, and scores it from 0 to 100;
-- writes on its own only at 80 or more; anything else waits for you in a review queue;
+- writes on its own only in `fix` mode and at 80 or more; anything else waits for you in a review queue. The score rates the
+  parts it realigned, not every line of the file, so automatic writes are experimental and OnCue starts in `report` mode;
 - changes only the timings, after a backup, and never while the file is being changed by something else.
 
 How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
@@ -32,18 +34,22 @@ How it decides, step by step: [docs/how-it-works.md](docs/how-it-works.md).
 
 ```
 curl -O https://raw.githubusercontent.com/hlecourt/oncue/main/examples/docker-compose.yml
+```
+
+Edit the media paths in the file: `ONCUE_LIBRARY` lists the folders to watch, `ONCUE_ROOTS` the only folders whose subtitles
+may be changed, and `user:` must own your media. Then start it and read the generated password:
+
+```
 docker compose up -d
 docker compose logs oncue | grep password
 ```
 
-Edit the media paths in the file first: `ONCUE_LIBRARY` lists the folders to watch, `ONCUE_ROOTS` the only
-folders whose subtitles may be changed, and `user:` must own your media. Then open `http://<host>:8484` and log in as `admin`
-with the password printed in the logs.
+Open `http://<host>:8484` and log in as `admin` with that password.
 
 OnCue checks every external subtitle it finds (`Movie.fr.srt`, `Show.S01E02.en.hi.ass`) and every new or changed one
 after that. It starts in `report` mode: it shows what it would do and writes nothing until you switch to `fix` in Settings.
 
-Without Docker: `pip install "oncue[web,audio]"` from a release wheel, with Python 3.11+, `ffmpeg` and `ffprobe`
+Without Docker: install the wheel attached to a release (OnCue is not on PyPI), with Python 3.11+, `ffmpeg` and `ffprobe`
 on a Linux or macOS machine; see [docs/configuration.md](docs/configuration.md).
 
 ## With Bazarr (optional)
@@ -102,7 +108,7 @@ Most settings can be changed in the UI; an environment variable always wins. The
 
 | Variable | Default |
 |---|---|
-| `ONCUE_MODE` | `report`; `fix` writes sure fixes on its own |
+| `ONCUE_MODE` | `report`; `fix` writes fixes scored 80 or more on its own (experimental) |
 | `ONCUE_LIBRARY` | unset: the media folders to watch |
 | `ONCUE_ROOTS` | unset: the folders OnCue may change; nothing is written when unset |
 | `ONCUE_WORKERS` | `2` |
@@ -115,8 +121,9 @@ All of them, the CLI and the log format: [docs/configuration.md](docs/configurat
 
 `benchmarks/torture.py` misaligns known-good tracks in 42 ways and measures every line against its true time. On a private
 corpus of 12 tracks (French, Japanese and German), 502 of 504 runs ended as expected, with 97 to 100% of lines within one
-second when fixed; wrong-episode subtitles and random timings were rejected. A public corpus can be built from the Blender
-open movie Tears of Steel:
+second when fixed; wrong-episode subtitles and random timings were rejected. These are synthetic misalignments: on real
+downloads, automatic writes have not yet been shown to leave every line right, which is why `report` is the default. A public
+corpus can be built from the Blender open movie Tears of Steel:
 
 ```
 python benchmarks/tears_of_steel.py /tmp/tos
@@ -142,8 +149,8 @@ python benchmarks/torture.py /tmp/tos/work /tmp/tos/corpus.json
 ## How it is made
 
 OnCue is designed and maintained by one person. Most of the code is written with AI coding assistants (Claude Code and Codex),
-under my direction: I choose the approach, set the rules it must keep (only fix when sure, never write outside the allowed
-folders), and check the results.
+under my direction: I choose the approach, set the rules it must keep (only write what it can check, never write outside the
+allowed folders), and check the results.
 
 What keeps it honest is what runs on every change: the Python tests on 3.11 to 3.13, browser tests of every page in Chromium and
 WebKit with accessibility checks, CodeQL and OpenSSF Scorecard. Changes to how subtitles get aligned also go through the
