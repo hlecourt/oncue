@@ -16,6 +16,7 @@ LABEL org.opencontainers.image.title="oncue" \
       org.opencontainers.image.source="https://github.com/hlecourt/oncue" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}"
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 COPY --from=ffmpeg /ffmpeg /ffprobe /usr/local/bin/
 WORKDIR /app
 COPY requirements/docker.txt ./requirements.txt
