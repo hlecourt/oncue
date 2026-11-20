@@ -9,9 +9,10 @@ on:
 permissions:
   contents: read
 
+# the release calls these tests too, so each calling workflow gets its own group; only pull requests drop a run a newer push replaced
 concurrency:
-  group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:

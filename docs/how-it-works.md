@@ -43,7 +43,9 @@ when a case fails. On a private corpus of 12 tracks of 420 to 720 lines (French,
 502 of 504 runs ended as expected, with 97 to 100% of lines within one second when fixed: different cuts, ad breaks adding up to
 600 s, offsets up to 600 s, framerate and speed errors up to 5%, sloppy timing, merged or split lines, and dense stretches.
 Wrong-episode subtitles, random timings and offsets beyond +/-1200 s were rejected. These figures cannot be reproduced without
-that corpus. To measure on a public one, built from the Blender open movie Tears of Steel and its six translations:
+that corpus, and they measure synthetic damage: on real downloads, a fix scored 80 or more can still leave some lines wrong
+outside the parts it realigned, so `fix` mode is experimental. To measure on a public one, built from the Blender open movie
+Tears of Steel and its six translations:
 
 ```
 python benchmarks/tears_of_steel.py /tmp/tos
